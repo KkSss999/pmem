@@ -4,7 +4,7 @@
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/index.js",
   "bin": {
-    "pmem": "./dist/index.js"
+    "pmem": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
