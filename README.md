@@ -31,25 +31,22 @@ It is not a vector database, MCP server, Graph UI, or remote multi-user service.
 
 ## Install
 
-From the repository:
-
 ```bash
-npm install
-npm run build
-npm link
+npm install -g pmem-ai
 pmem --version
 ```
 
-For release validation, build an installable tarball:
+Node.js 18 or newer is required. `better-sqlite3` is compiled during install.
+
+To install from source:
 
 ```bash
+git clone https://github.com/KkSss999/pmem.git
+cd pmem
+npm install
 npm run build
-npm pack
-npm install -g ./pmem-*.tgz
-pmem --help
+npm link
 ```
-
-Node.js 18 or newer is required.
 
 ## 5-Minute Quick Start
 
@@ -275,6 +272,10 @@ Agents should parse command output and treat code `1` according to the command c
 
 Source-of-truth files are Markdown cards. `pmem.db` and `indexes/` are generated runtime data.
 
+## Integrating with Agent Frameworks
+
+See [docs/usage.md](docs/usage.md) for a step-by-step guide to integrating pmem with Claude Code, Codex, and Cursor.
+
 ## Troubleshooting
 
 ### No `.pmem` Directory
@@ -327,14 +328,13 @@ pmem verify
 
 ## Roadmap
 
-v0.5 is the Productization Beta milestone:
+v0.5 Productization Beta is shipped:
 
-- README and quick start
-- npm package readiness
-- install smoke E2E
-- real project workflow E2E
-- agent instruction sync
-- release checklist
+- README, quick start, and [usage guide](docs/usage.md)
+- npm package (`pmem-ai`) with metadata, E2E suite, and CI/CD
+- Agent integration templates for Claude Code, Codex, and Cursor
+- Error UX: every common failure scenario produces actionable messages
+- Release checklist and changelog
 
 Deferred beyond v0.5:
 
