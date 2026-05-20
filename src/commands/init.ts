@@ -428,11 +428,72 @@ export async function initCommand(options: { guided?: boolean; projectName?: str
   writeFile(path.join(pmemPath, 'skills', 'update.md'), UPDATE_SKILL);
   writeFile(path.join(pmemPath, 'skills', 'distill.md'), DISTILL_SKILL);
 
-  // Write integration templates (empty for now)
-  writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'CLAUDE.md'), '# Claude Code integration\n\n(Configure your integration here.)\n');
+  // Write integration templates with v0.4 pmem workflow instructions
+  writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'CLAUDE.md'), `# pmem integration for Claude Code
+
+## Session Start
+\`\`\`bash
+pmem session start -a "Claude"
+pmem recall --format compact --budget 2000
+\`\`\`
+
+## During Work (after editing files)
+\`\`\`bash
+pmem status --format json
+pmem mark-dirty -r "Modified <file> — <reason>"
+pmem update --suggest --format json
+\`\`\`
+
+## Session End
+\`\`\`bash
+pmem update --confirm -s "<summary>" -n "<next step>"
+pmem session end -s "<task summary>"
+pmem verify
+\`\`\`
+
+## Optional Hooks (.claude/settings.json)
+\`\`\`json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write",
+      "command": "cd \${CLAUDE_PROJECT_DIR} && pmem mark-dirty -r \\"File modified by Claude\\""
+    }]
+  }
+}
+\`\`\`
+`);
   writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'settings.example.json'), '{}\n');
-  writeFile(path.join(pmemPath, 'integrations', 'cursor', 'rules.example.md'), '# Cursor rules\n\n(Configure your integration here.)\n');
-  writeFile(path.join(pmemPath, 'integrations', 'codex', 'AGENTS.md'), '# Codex integration\n\n(Configure your integration here.)\n');
+  writeFile(path.join(pmemPath, 'integrations', 'cursor', 'rules.example.md'), `# Cursor Rules with pmem
+
+## Session Start
+In Cursor's AI chat: \`pmem session start -a "Cursor" && pmem recall --format compact --budget 2000\`
+
+## When Editing Code
+After each significant change: \`pmem mark-dirty -r "Modified <file>"\`
+
+## Before Requesting Review
+\`pmem update --suggest --format json\`
+
+## End of Session
+\`pmem update --confirm -s "<summary>" -n "<next>" && pmem session end -s "<summary>" && pmem verify\`
+`);
+  writeFile(path.join(pmemPath, 'integrations', 'codex', 'AGENTS.md'), `# pmem + Codex Integration
+
+## Quick Start
+\`\`\`bash
+pmem session start -a "Codex"
+pmem recall
+\`\`\`
+
+## Memory-Aware Workflow
+1. Start task: \`pmem ask "<task description>"\`
+2. Edit code
+3. Mark changes: \`pmem mark-dirty -r "Edited <file>"\`
+4. Get suggestions: \`pmem update --suggest\`
+5. Apply: \`pmem update --confirm -s "<what changed>" -n "<next step>"\`
+6. End session: \`pmem session end -s "<summary>" && pmem verify\`
+`);
 
   // Write AGENTS.md in project root
   writeFile(path.join(cwd, 'AGENTS.md'), AGENTS_MD);

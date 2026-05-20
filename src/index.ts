@@ -12,13 +12,23 @@ import { integrationCommand } from './commands/integration';
 import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
 import { sessionStartCommand, sessionEndCommand } from './commands/session';
+import { statusCommand } from './commands/status';
 
 const program = new Command();
 
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.3.0');
+  .version('0.4.0-dev');
+
+program
+  .command('status')
+  .description('Detect changed files and affected memory cards')
+  .option('-s, --since <timestamp>', 'Check changes since timestamp')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((options) => {
+    statusCommand({ since: options.since, format: options.format });
+  });
 
 program
   .command('init [project-name]')
@@ -66,10 +76,13 @@ program
   .command('update')
   .description('Update project memory')
   .option('--auto', 'Auto-detect changes, generate suggestions')
+  .option('--suggest', 'Suggest memory updates based on dirty flags and changes')
+  .option('--apply-suggestion <id>', 'Apply a specific suggestion by ID')
   .option('--confirm', 'Confirm and write changes')
   .option('--force', 'Force write without confirmation')
   .option('-s, --summary <text>', 'Summary of changes')
   .option('-n, --next <text>', 'Next step description')
+  .option('-f, --format <format>', 'Output format for --suggest (compact, json)', 'compact')
   .action((options) => {
     updateCommand(options);
   });
@@ -78,8 +91,9 @@ program
   .command('mark-dirty')
   .description('Mark memory as potentially stale')
   .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
+  .option('--auto', 'Auto-detect changed files and mark related cards dirty')
   .action((options) => {
-    markDirtyCommand(options.reason);
+    markDirtyCommand(options.reason, { auto: options.auto });
   });
 
 program

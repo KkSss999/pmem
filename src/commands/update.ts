@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
@@ -12,6 +13,9 @@ export function updateCommand(options: {
   force?: boolean;
   summary?: string;
   next?: string;
+  suggest?: boolean;
+  applySuggestion?: string;
+  format?: string;
 }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -24,6 +28,18 @@ export function updateCommand(options: {
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     console.log('No manifest found. Run `pmem init` first.');
+    return;
+  }
+
+  // --suggest: show intelligent update suggestions
+  if (options.suggest) {
+    suggestActions(pmemPath, options.format);
+    return;
+  }
+
+  // --apply-suggestion: apply a specific suggestion
+  if (options.applySuggestion) {
+    applySuggestionAction(pmemPath, options.applySuggestion);
     return;
   }
 
@@ -43,13 +59,57 @@ export function updateCommand(options: {
   showDirtyState(pmemPath);
 }
 
-export function markDirtyCommand(reason: string): void {
+export function markDirtyCommand(reason: string, options: { auto?: boolean } = {}): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
     return;
+  }
+
+  // --auto: detect changed files via git and mark related cards as dirty
+  if (options.auto) {
+    const dbPath = path.join(pmemPath, 'pmem.db');
+    if (fileExists(dbPath)) {
+      try {
+        const db = openDatabase(pmemPath);
+        const output = execSync('git status --porcelain', { encoding: 'utf8', cwd });
+        const changedFiles = output.trim().split('\n').filter(Boolean).map(line => {
+          // git status --porcelain: first two chars are status, path starts at index 3
+          return line.slice(3).trim();
+        });
+
+        const activeSession = getActiveSession(db);
+        const dirtyCards: string[] = [];
+
+        for (const filePath of changedFiles) {
+          const rows = db.prepare(
+            "SELECT card_id FROM paths WHERE ? LIKE '%' || path || '%'"
+          ).all(filePath) as Array<{ card_id: string }>;
+          for (const row of rows) {
+            if (!dirtyCards.includes(row.card_id)) {
+              insertDirtyFlag(db, 'card', row.card_id, 'file_changed: ' + filePath, activeSession?.id);
+              dirtyCards.push(row.card_id);
+            }
+          }
+        }
+
+        closeDatabase();
+
+        if (dirtyCards.length > 0) {
+          console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
+          return;
+        } else {
+          console.log('No related cards found for changed files.');
+          process.exit(1);
+        }
+      } catch (err) {
+        console.error('Error during auto dirty detection:', err);
+        process.exit(2);
+      }
+    }
+    // DB doesn't exist: fall through to existing global dirty behavior
   }
 
   const dirtyFile = path.join(pmemPath, '.dirty');
@@ -290,4 +350,230 @@ function listSourceFiles(root: string): string[] {
 
   walk(root);
   return results;
+}
+
+// === P1: suggestActions — intelligent update suggestions ===
+
+interface Suggestion {
+  id: string;
+  action: string;
+  target: string;
+  reason: string;
+  priority: string;
+}
+
+function generateSuggestions(pmemPath: string): {
+  dirtyFlags: Array<{ scope: string; target: string; reason: string; created_at: string }>;
+  stateFreshness: 'stale' | 'fresh';
+  suggestions: Suggestion[];
+} {
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (!fileExists(dbPath)) {
+    console.log('No SQLite database. Run pmem rebuild first.');
+    process.exit(2);
+  }
+
+  let db: ReturnType<typeof openDatabase>;
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    console.log('No SQLite database. Run pmem rebuild first.');
+    process.exit(2);
+  }
+
+  const unresolved = getUnresolvedDirtyFlags(db);
+  const suggestions: Suggestion[] = [];
+
+  // Card-level dirty flags → update_card suggestions
+  for (const flag of unresolved) {
+    if (flag.scope === 'card') {
+      suggestions.push({
+        id: `suggest-${suggestions.length + 1}`,
+        action: 'update_card',
+        target: flag.target,
+        reason: flag.reason,
+        priority: 'high',
+      });
+    }
+  }
+
+  // Project-level dirty → create_trace or confirm suggestions
+  for (const flag of unresolved) {
+    if (flag.scope === 'project') {
+      suggestions.push({
+        id: `suggest-${suggestions.length + 1}`,
+        action: 'create_trace',
+        target: flag.target,
+        reason: flag.reason,
+        priority: 'medium',
+      });
+    }
+  }
+
+  // Check state.md freshness
+  let stateFreshness: 'stale' | 'fresh' = 'fresh';
+  const statePath = path.join(pmemPath, 'state.md');
+  if (fileExists(statePath)) {
+    const fs = require('fs');
+    const stat = fs.statSync(statePath);
+    const hoursSinceUpdate = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60);
+    if (hoursSinceUpdate > 24) {
+      stateFreshness = 'stale';
+    }
+  }
+
+  if (stateFreshness === 'stale') {
+    suggestions.push({
+      id: `suggest-${suggestions.length + 1}`,
+      action: 'update_state',
+      target: 'state.md',
+      reason: 'state.md has not been updated in over 24 hours',
+      priority: 'medium',
+    });
+  }
+
+  // Check next.md content
+  const nextPath = path.join(pmemPath, 'next.md');
+  let nextEmpty = false;
+  if (fileExists(nextPath)) {
+    const content = readFile(nextPath) || '';
+    if (content.replace(/#.*\n/g, '').trim().length < 50) {
+      nextEmpty = true;
+    }
+  }
+
+  if (nextEmpty) {
+    suggestions.push({
+      id: `suggest-${suggestions.length + 1}`,
+      action: 'update_next',
+      target: 'next.md',
+      reason: 'next.md appears to have minimal content',
+      priority: 'low',
+    });
+  }
+
+  closeDatabase();
+  return { dirtyFlags: unresolved, stateFreshness, suggestions };
+}
+
+function suggestActions(pmemPath: string, format?: string): void {
+  const { dirtyFlags, stateFreshness, suggestions } = generateSuggestions(pmemPath);
+
+  if (format === 'json') {
+    console.log(JSON.stringify({
+      dirty_flags: dirtyFlags,
+      state_freshness: stateFreshness,
+      suggestions,
+    }, null, 2));
+  } else {
+    if (dirtyFlags.length > 0) {
+      console.log(`Dirty flags: ${dirtyFlags.length}`);
+      for (const flag of dirtyFlags) {
+        console.log(`  [${flag.scope}] ${flag.target}: ${flag.reason}`);
+      }
+    } else {
+      console.log('No unresolved dirty flags.');
+    }
+    console.log(`State freshness: ${stateFreshness}`);
+
+    if (suggestions.length > 0) {
+      console.log(`\nSuggestions (${suggestions.length}):`);
+      for (const s of suggestions) {
+        console.log(`  ${s.id}: [${s.priority}] ${s.action} ${s.target}`);
+        console.log(`    ${s.reason}`);
+      }
+    } else {
+      console.log('\nNo suggestions. Memory is up to date.');
+    }
+  }
+
+  const hasSuggestions = suggestions.length > 0;
+  process.exit(hasSuggestions ? 1 : 0);
+}
+
+function applySuggestionAction(pmemPath: string, suggestionId: string): void {
+  // Re-derive suggestions to find the matching one
+  const { suggestions, dirtyFlags } = generateSuggestions(pmemPath);
+
+  const match = suggestions.find(s => s.id === suggestionId);
+  if (!match) {
+    console.log(`Suggestion "${suggestionId}" not found. Available suggestions:`);
+    for (const s of suggestions) {
+      console.log(`  ${s.id}: ${s.action} ${s.target}`);
+    }
+    process.exit(2);
+  }
+
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (!fileExists(dbPath)) {
+    console.log('No SQLite database. Run pmem rebuild first.');
+    process.exit(2);
+  }
+
+  switch (match.action) {
+    case 'update_card': {
+      const db = openDatabase(pmemPath);
+      // Mark the card's last_verified_at as expired
+      db.prepare(
+        "UPDATE cards SET last_verified_at = ? WHERE id = ?"
+      ).run(new Date(0).toISOString(), match.target);
+      closeDatabase();
+      console.log(`Marked card "${match.target}" as needing verification.`);
+      console.log(`  Reason: ${match.reason}`);
+      break;
+    }
+    case 'create_trace': {
+      const today = new Date().toISOString().split('T')[0];
+      const traceDir = path.join(pmemPath, 'traces');
+      ensureDir(traceDir);
+
+      const fs = require('fs');
+      const existingTraces = fs.readdirSync(traceDir)
+        .filter((f: string) => f.startsWith(today))
+        .length;
+
+      const traceNum = String(existingTraces + 1).padStart(3, '0');
+      const traceFile = path.join(traceDir, `${today}-${traceNum}.md`);
+
+      atomicWrite(traceFile, `---
+id: trace.${today}-${traceNum}
+type: trace
+created: ${today}
+---
+
+# Trace: ${match.reason}
+
+## What Changed
+${match.reason}
+
+## Next
+Continue as planned.
+`);
+      console.log(`Auto-created trace: traces/${today}-${traceNum}.md`);
+      console.log(`  Reason: ${match.reason}`);
+
+      // Log in SQLite
+      const db = openDatabase(pmemPath);
+      const activeSession = getActiveSession(db);
+      insertUpdateLog(db, 'auto_trace', match.reason, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+      closeDatabase();
+      break;
+    }
+    case 'update_state': {
+      console.log(`Action required: ${match.reason}`);
+      console.log('  Please run `pmem update --confirm` to update state.md.');
+      break;
+    }
+    case 'update_next': {
+      console.log(`Action required: ${match.reason}`);
+      console.log('  Please run `pmem update --confirm --next "<next step>"` to update next.md.');
+      break;
+    }
+    default: {
+      console.log(`Unknown action "${match.action}" for suggestion ${suggestionId}.`);
+      process.exit(2);
+    }
+  }
+
+  process.exit(0);
 }

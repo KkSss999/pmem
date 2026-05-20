@@ -64,7 +64,7 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
   const undistilledCount = traces.length;
   if (undistilledCount === 0) {
     console.log('All traces are already distilled.');
-    return;
+    process.exit(0);
   }
 
   // Group by related node (DB-backed if available, frontmatter fallback otherwise)
@@ -86,6 +86,7 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
       console.log('');
     }
     console.log('Run with --confirm to apply these changes.');
+    process.exit(1);
   }
 }
 
