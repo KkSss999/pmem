@@ -121,7 +121,7 @@ program
 program
   .command('migrate')
   .description('Migrate project memory to a newer schema version')
-  .option('--to <version>', 'Target schema version', '0.2')
+  .option('--to <version>', 'Target schema version', '0.3')
   .option('--dry-run', 'Preview migration without applying changes')
   .option('--backup', 'Create backup before migrating', true)
   .action((options) => {
@@ -131,6 +131,7 @@ program
 program
   .command('distill')
   .description('Consolidate trace files into stable memory cards')
+  .option('--suggest', 'Suggest memory distillation (dry-run, default behavior)')
   .option('--confirm', 'Apply distillation changes')
   .option('--apply-suggestion <id>', 'Apply distillation for a specific target card')
   .option('--suggest-splits', 'Suggest splitting oversized cards')
