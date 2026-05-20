@@ -159,4 +159,3 @@ Exit code `1` is often a workflow signal, not a failure.
 7. [src/core/db.ts](src/core/db.ts)
 8. [src/commands/update.ts](src/commands/update.ts)
 9. [src/commands/status.ts](src/commands/status.ts)
-

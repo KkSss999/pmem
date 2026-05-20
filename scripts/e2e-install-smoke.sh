@@ -25,4 +25,3 @@ npm install -g --prefix "$PREFIX" "$ROOT/$TARBALL" >/dev/null
 "$PREFIX/bin/pmem" --help | grep -q "session"
 
 echo "install smoke passed"
-

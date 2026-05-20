@@ -22,4 +22,3 @@ export function parseGitStatusPorcelain(output: string): GitStatusChange[] {
 
   return changes;
 }
-

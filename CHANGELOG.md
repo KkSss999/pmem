@@ -55,4 +55,3 @@ All notable changes to pmem are documented here.
 
 - Added initial CLI loop: init, rebuild, recall, ask, related, trace, verify, update, mark-dirty, and integration commands.
 - Established Markdown cards as the source of truth.
-

@@ -107,4 +107,3 @@ After publishing:
 - [ ] Create git tag `v0.5.0`.
 - [ ] Push branch and tag.
 - [ ] Create GitHub release notes from `CHANGELOG.md`.
-

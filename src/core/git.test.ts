@@ -23,4 +23,3 @@ test('parseGitStatusPorcelain handles added, untracked, and renamed files', () =
     { status: 'R', path: 'src/current.ts' },
   ]);
 });
-

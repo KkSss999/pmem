@@ -71,4 +71,3 @@ echo "$SUGGEST_OUTPUT" | grep -q "suggestions"
 "${PMEM[@]}" verify >/dev/null
 
 echo "real workflow passed"
-
