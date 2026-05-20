@@ -162,16 +162,24 @@ function formatAskCompact(r: Record<string, unknown>): string {
     lines.push('\nNo matching memory cards found.');
   }
 
-  if (Array.isArray(r.recommended_files)) {
+  const recFiles = Array.isArray(r.recommended_files) ? (r.recommended_files as string[]) : [];
+  const recRead = Array.isArray(r.recommendedRead) ? (r.recommendedRead as string[]) : [];
+
+  if (recFiles.length > 0) {
     lines.push('\nRecommended:');
-    for (const f of (r.recommended_files as string[]).slice(0, 6)) {
+    for (const f of recFiles.slice(0, 6)) {
       lines.push(`  ${f}`);
     }
-  } else if (Array.isArray(r.recommendedRead)) {
+  } else if (recRead.length > 0) {
     lines.push('\nRecommended:');
-    for (const f of (r.recommendedRead as string[]).slice(0, 6)) {
+    for (const f of recRead.slice(0, 6)) {
       lines.push(`  ${f}`);
     }
+  } else if (!matched || matched.length === 0) {
+    lines.push('\nTry:');
+    lines.push('  pmem recall                  — full project context');
+    lines.push('  pmem ask "<keyword>"         — try a different query');
+    lines.push('  Check card aliases and tags  — frontmatter alias: / tags:');
   }
 
   return lines.join('\n');

@@ -185,7 +185,7 @@ export function statusCommand(options: { since?: string; format?: string }): voi
     }, null, 2));
   } else {
     // compact output
-    console.log(`Changed files (${changes.length}):`);
+    console.log(`Changed files (${changes.length}) [${source}]:`);
     for (const c of changes) {
       const related = c.relatedCards.length > 0
         ? c.relatedCards.map(rc => `${rc.card_id} (${rc.match_type})`).join(', ')
