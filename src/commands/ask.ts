@@ -41,8 +41,19 @@ export function askCommand(query: string, format: CliFormat = 'compact'): void {
     return;
   }
 
-  const db = openDatabase(pmemPath);
-  createSchema(db);
+  let db: ReturnType<typeof openDatabase>;
+  try {
+    db = openDatabase(pmemPath);
+    createSchema(db);
+  } catch (err: any) {
+    if (err?.message?.includes('not a valid SQLite database')) {
+      console.log(err.message);
+      return;
+    }
+    console.log(`Failed to open database: ${err?.message || err}`);
+    console.log('Run `pmem rebuild --full` to rebuild the database.');
+    return;
+  }
 
   const normalizedQuery = query.toLowerCase().trim();
   const queryTokens = tokenize(normalizedQuery);

@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { readFile, writeJson, listFiles, ensureDir } from '../core/fs';
+import { readFile, writeJson, listFiles, ensureDir, fileExists } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
@@ -27,7 +27,11 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
 
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
-    console.log('No .pmem/manifest.yml found. Run `pmem init` first.');
+    if (fileExists(pmemPath)) {
+      console.log('.pmem/manifest.yml not found. Run `pmem init` to regenerate the manifest, or restore it from backup.');
+    } else {
+      console.log('No .pmem directory found. Run `pmem init` first.');
+    }
     return;
   }
 

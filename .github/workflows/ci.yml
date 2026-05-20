@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:e2e:install
+      - run: npm run test:e2e:workflow
+      - run: npm run test:e2e:non-git
+
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm pack --dry-run
+      - name: Verify tarball excludes test and source files
+        run: |
+          TARBALL="$(npm pack --silent)"
+          echo "Packaging $TARBALL"
+          tar -tzf "$TARBALL" > tarball-contents.txt
+          echo "=== tarball contents ===" && cat tarball-contents.txt
+          echo "=== exclusions check ==="
+          ! grep -qE '(^|/)src/' tarball-contents.txt || { echo "FAIL: tarball contains src/"; exit 1; }
+          ! grep -q '\.test\.' tarball-contents.txt || { echo "FAIL: tarball contains test files"; exit 1; }
+          ! grep -qE '(^|/)temp/' tarball-contents.txt || { echo "FAIL: tarball contains temp/"; exit 1; }
+          ! grep -qE '(^|/)node_modules/' tarball-contents.txt || { echo "FAIL: tarball contains node_modules/"; exit 1; }
+          grep -q 'dist/index\.js' tarball-contents.txt || { echo "FAIL: tarball missing dist/index.js"; exit 1; }
+          grep -q 'README\.md' tarball-contents.txt || { echo "FAIL: tarball missing README.md"; exit 1; }
+          echo "Pack verification passed"

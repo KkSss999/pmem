@@ -44,8 +44,18 @@ export function verifyCommand(options: { fix?: boolean }): void {
       fix: 'Run: pmem rebuild',
     });
   } else {
-    db = openDatabase(pmemPath);
-    createSchema(db);
+    try {
+      db = openDatabase(pmemPath);
+      createSchema(db);
+    } catch (err: any) {
+      issues.push({
+        severity: 'error',
+        type: 'corrupt_database',
+        message: err?.message || '.pmem/pmem.db is corrupted.',
+        fix: 'Back up the file if needed, then run: pmem rebuild --full',
+      });
+      db = null;
+    }
   }
 
   if (manifest) {
