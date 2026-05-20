@@ -4,6 +4,7 @@ import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists,
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
 import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, insertUpdateLog, getRecentUpdateLogs, getActiveSession, closeDatabase } from '../core/db';
+import { parseGitStatusPorcelain } from '../core/git';
 
 const PMEM_DIR = '.pmem';
 
@@ -75,10 +76,7 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean } = {
       try {
         const db = openDatabase(pmemPath);
         const output = execSync('git status --porcelain', { encoding: 'utf8', cwd });
-        const changedFiles = output.trim().split('\n').filter(Boolean).map(line => {
-          // git status --porcelain: first two chars are status, path starts at index 3
-          return line.slice(3).trim();
-        });
+        const changedFiles = parseGitStatusPorcelain(output).map(change => change.path);
 
         const activeSession = getActiveSession(db);
         const dirtyCards: string[] = [];

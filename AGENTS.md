@@ -1,20 +1,20 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with this repository.
 
 ## Project Overview
 
-`pmem` is **Project Memory for AI Agents**: a local CLI runtime that gives coding agents compact project recall, graph-guided memory lookup, code-change awareness, memory update suggestions, and consistency verification.
+`pmem` is **Project Memory for AI Agents**: a local CLI runtime that lets coding agents recover project context, query graph-guided memory, detect changed files, suggest memory updates, and verify consistency.
 
 Current development track: **v0.5 Productization Beta**.
 
-v0.5 is about making the completed v0.4 workflow usable as a Beta product:
+v0.4 already completed the runtime loop:
 
 ```txt
-install -> init -> rebuild -> recall/ask -> status -> mark-dirty -> update -> verify
+recall / ask -> code changes -> status -> mark-dirty -> update suggest/confirm -> distill -> verify
 ```
 
-Do not expand scope into embedding, MCP/REST, Graph UI, telemetry, backup/restore commands, or remote multi-user service unless the v0.5 design is explicitly revised.
+v0.5 does not add embedding, MCP/REST, Graph UI, telemetry, or remote services. Its goal is to make the existing runtime installable, understandable, testable, and publishable as a Beta CLI product.
 
 ## Commands
 
@@ -26,6 +26,18 @@ npm test               # node:test suite for src/core/*.test.ts
 ```
 
 TypeScript is strict mode, CommonJS output, target ES2022. Runtime target is Node.js >=18.
+
+## Current v0.5 Priorities
+
+1. README and quick start
+2. npm package readiness
+3. install smoke E2E
+4. real project workflow E2E
+5. AGENTS / CLAUDE / integration template sync
+6. error UX and exit code documentation
+7. CHANGELOG and release checklist
+
+See [docs/v0.5 pre-design.md](docs/v0.5%20pre-design.md) for scope and acceptance criteria.
 
 ## Testing
 
@@ -39,7 +51,7 @@ npx ts-node ../../src/index.ts recall --format compact --budget 2000
 npx ts-node ../../src/index.ts verify
 ```
 
-For workflow testing, create at least one memory card with `source_files`, then run:
+For workflow testing, add a card with `source_files`, then run:
 
 ```bash
 npx ts-node ../../src/index.ts status --format json
@@ -125,37 +137,6 @@ pmem integration list|install <framework>|verify
 
 Exit code `1` is often a workflow signal, not a failure.
 
-## Claude Code Workflow
-
-At session start:
-
-```bash
-pmem session start -a "Claude"
-pmem recall --format compact --budget 2000
-```
-
-Before focused work:
-
-```bash
-pmem ask "<task or module>" --format compact
-```
-
-After editing code:
-
-```bash
-pmem status --format json
-pmem mark-dirty --auto
-pmem update --suggest --format json
-```
-
-At session end:
-
-```bash
-pmem update --confirm -s "<what changed>" -n "<next step>"
-pmem session end -s "<task summary>"
-pmem verify
-```
-
 ## Key Design Rules
 
 1. Markdown cards are the only source of truth.
@@ -165,7 +146,7 @@ pmem verify
 5. Agent workflow is confirmation-first: detect, suggest, confirm/apply, rebuild, verify.
 6. Manifest typing is a discriminated union. Narrow on `manifest.pmem.schema_version` before reading version-specific fields.
 7. Avoid `as any`; extend types instead.
-8. Keep v0.5 focused on productization.
+8. Keep v0.5 focused on productization. Do not add postponed systems unless the v0.5 design is explicitly revised.
 
 ## Recommended Reading
 

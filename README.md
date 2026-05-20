@@ -1,0 +1,350 @@
+# pmem
+
+Project Memory for AI Agents.
+
+`pmem` is a local CLI runtime that helps coding agents remember a project: where it is, what changed, what matters next, and why. It stores project memory as Markdown cards in `.pmem/`, then builds SQLite indexes so agents can recall context with fewer tokens and update memory as code changes.
+
+## Why pmem
+
+Coding agents lose project context quickly. A repository has source files, docs, decisions, tasks, and traces, but the agent usually has to rediscover that context every session.
+
+`pmem` gives the project a small, explicit memory layer:
+
+- `pmem recall` restores the hot project context.
+- `pmem ask "<query>"` finds relevant memory cards.
+- `pmem status` maps changed files back to affected cards.
+- `pmem update --suggest` tells an agent what memory likely needs attention.
+- `pmem verify` checks that Markdown cards and runtime indexes still agree.
+
+The design is intentionally local and Git-friendly. Markdown cards remain the source of truth. SQLite is a rebuildable runtime index, not a separate knowledge base.
+
+## Who It Is For
+
+`pmem` is useful when:
+
+- You use code agents such as Codex, Claude Code, Cursor, or similar tools.
+- Your project has decisions and context that should survive across sessions.
+- You want agents to update memory deliberately instead of auto-writing noisy logs.
+- You prefer local files over hosted memory services.
+
+It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.5 focuses on making the CLI product installable, understandable, and reliable as a Beta.
+
+## Install
+
+From the repository:
+
+```bash
+npm install
+npm run build
+npm link
+pmem --version
+```
+
+For release validation, build an installable tarball:
+
+```bash
+npm run build
+npm pack
+npm install -g ./pmem-*.tgz
+pmem --help
+```
+
+Node.js 18 or newer is required.
+
+## 5-Minute Quick Start
+
+Create project memory in a repository:
+
+```bash
+pmem init my-project
+pmem rebuild
+pmem recall --budget 2000
+pmem verify
+```
+
+For a richer setup:
+
+```bash
+pmem init my-project --guided
+```
+
+Add a module card that points at source files:
+
+```bash
+mkdir -p .pmem/modules src
+cat > .pmem/modules/core.md <<'EOF'
+---
+id: module.core
+type: module
+status: active
+tags: [core]
+source_files: [src/index.ts]
+---
+
+# Core
+
+## Purpose
+Main project entry point.
+EOF
+
+echo "export const value = 1;" > src/index.ts
+pmem rebuild
+pmem ask "core" --format compact
+```
+
+Then make a code change and let pmem identify the affected memory:
+
+```bash
+echo "export const value = 2;" > src/index.ts
+pmem status --format json
+pmem mark-dirty --auto
+pmem update --suggest --format json
+pmem update --confirm -s "Updated core module" -n "Continue development"
+pmem verify
+```
+
+Note: `pmem update --suggest` exits with code `1` when it found suggestions. That means "action suggested", not "command failed".
+
+## Core Concepts
+
+### Markdown Cards
+
+Cards under `.pmem/**/*.md` are the source of truth. Each card has YAML frontmatter and Markdown body content.
+
+Common card types include:
+
+- `module`
+- `feature`
+- `decision`
+- `task`
+- `risk`
+- `trace`
+
+Important frontmatter fields:
+
+```yaml
+id: module.core
+type: module
+status: active
+tags: [core]
+aliases: [runtime]
+source_files: [src/index.ts]
+depends_on: [decision.sqlite_runtime]
+```
+
+### SQLite Runtime
+
+`.pmem/pmem.db` stores rebuildable indexes and runtime state:
+
+- cards
+- edges
+- aliases
+- tags
+- paths
+- sessions
+- dirty flags
+- update logs
+
+Do not edit SQLite directly. Edit Markdown cards or use pmem workflow commands, then run `pmem rebuild`.
+
+### Recall And Ask
+
+Use `recall` for the current project state:
+
+```bash
+pmem recall --budget 2000
+```
+
+Use `ask` for targeted retrieval:
+
+```bash
+pmem ask "sqlite runtime" --format compact
+pmem ask "release checklist" --format json
+```
+
+### Dirty, Update, Distill
+
+The memory update flow is intentionally confirmation-first:
+
+```bash
+pmem status
+pmem mark-dirty --auto
+pmem update --suggest
+pmem update --confirm -s "<summary>" -n "<next step>"
+pmem distill --suggest
+pmem verify
+```
+
+`distill` consolidates trace cards into stable cards when enough evidence accumulates.
+
+## Agent Workflow
+
+At the start of an agent session:
+
+```bash
+pmem session start -a "Codex"
+pmem recall --format compact --budget 2000
+```
+
+Before a specific task:
+
+```bash
+pmem ask "<task or module>" --format compact
+```
+
+After editing files:
+
+```bash
+pmem status --format json
+pmem mark-dirty --auto
+pmem update --suggest --format json
+```
+
+At session end:
+
+```bash
+pmem update --confirm -s "<what changed>" -n "<next step>"
+pmem session end -s "<task summary>"
+pmem verify
+```
+
+Installed integration templates are available under:
+
+```txt
+.pmem/integrations/
+```
+
+## CLI Reference
+
+```bash
+pmem init [project-name] [--guided]
+
+pmem recall [--budget N] [--format compact|json|paths|pack]
+pmem ask <query> [--format compact|json|paths|pack]
+pmem related <id> [--depth N] [--type <edge-type>]
+pmem trace <id>
+
+pmem status [--since <timestamp>] [--format compact|json]
+pmem mark-dirty [-r <reason>] [--auto]
+pmem update [--auto|--suggest|--apply-suggestion <id>|--confirm|--force] \
+  [-s <summary>] [-n <next>] [--format compact|json]
+
+pmem distill [--suggest|--apply-suggestion <id>|--confirm|--suggest-splits]
+pmem rebuild [--changed|--full|--card <id>]
+pmem verify [--fix]
+pmem migrate --to 0.3 [--dry-run] [--backup]
+pmem session start [-a <agent-name>]
+pmem session end [-s <summary>]
+pmem integration list|install <framework>|verify
+```
+
+## Exit Codes
+
+Some pmem commands use exit code `1` as a workflow signal, not a hard failure.
+
+| Command | 0 | 1 | 2 |
+|---------|---|---|---|
+| `pmem status` | changes found | no changes | error |
+| `pmem update --suggest` | no suggestions | suggestions found | error |
+| `pmem distill --suggest` | no distillation needed | distillation suggested | error |
+| `pmem verify` | passed | warnings | errors |
+
+Agents should parse command output and treat code `1` according to the command contract.
+
+## Project Layout
+
+```txt
+.pmem/
+  manifest.yml
+  index.md
+  state.md
+  next.md
+  modules/
+  features/
+  decisions/
+  tasks/
+  traces/
+  summaries/
+  risks/
+  candidates/
+  skills/
+  integrations/
+  indexes/
+  pmem.db
+```
+
+Source-of-truth files are Markdown cards. `pmem.db` and `indexes/` are generated runtime data.
+
+## Troubleshooting
+
+### No `.pmem` Directory
+
+Run:
+
+```bash
+pmem init <project-name>
+```
+
+Run commands from the project root where `.pmem/` should live.
+
+### `.pmem/pmem.db` Missing
+
+Run:
+
+```bash
+pmem rebuild
+```
+
+If the project has no memory cards yet, add a module, decision, or task card first.
+
+### `pmem ask` Returns No Matches
+
+Try:
+
+```bash
+pmem recall --budget 2000
+```
+
+Then check whether the relevant card has useful `id`, `tags`, `aliases`, or `source_files` frontmatter.
+
+### Non-Git Projects
+
+`pmem status` uses `git status --porcelain` when available. Outside Git repositories it falls back to mtime scanning and writes `.pmem/.last-status`.
+
+### FTS5 Unavailable
+
+Some SQLite builds do not include FTS5. pmem falls back to `LIKE` search; this is slower but should not block normal use.
+
+### Dirty Flags Remain
+
+Run:
+
+```bash
+pmem update --suggest
+pmem update --confirm -s "<summary>" -n "<next step>"
+pmem verify
+```
+
+## Roadmap
+
+v0.5 is the Productization Beta milestone:
+
+- README and quick start
+- npm package readiness
+- install smoke E2E
+- real project workflow E2E
+- agent instruction sync
+- release checklist
+
+Deferred beyond v0.5:
+
+- embedding
+- `pmem serve` / MCP / REST
+- Graph UI
+- telemetry
+- multi-user remote service
+
+## License
+
+MIT
+
