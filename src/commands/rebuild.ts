@@ -3,6 +3,7 @@ import { readFile, writeJson, listFiles, ensureDir } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
+import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
 
 const PMEM_DIR = '.pmem';
@@ -267,91 +268,17 @@ function parseCard(filePath: string): ParsedCard | null {
   const fullContent = readFile(filePath);
   if (!fullContent) return null;
 
-  const match = fullContent.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!match) return null;
+  const parsed = parseFrontmatter(fullContent);
+  if (!parsed) return null;
 
-  const frontmatterText = match[1];
-  const bodyText = match[2] || '';
-  const frontmatter = parseSimpleYaml(frontmatterText) as unknown as CardFrontmatter;
+  const frontmatter = parsed.data as unknown as CardFrontmatter;
   if (!frontmatter.id) return null;
 
-  return { fullContent, frontmatterText, bodyText, frontmatter };
-}
+  // Extract frontmatter text for hash computation
+  const fmMatch = fullContent.match(/^---\n([\s\S]*?)\n---/);
+  const frontmatterText = fmMatch ? fmMatch[1] : '';
 
-/**
- * Simple inline YAML parser for pmem's constrained frontmatter format.
- * Handles: top-level scalars, nested objects (one level), list items, inline arrays.
- */
-function parseSimpleYaml(yaml: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = yaml.split('\n');
-  let currentArrayKey: string | null = null;
-  let currentSubKey: string | null = null;
-
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-
-    // Sub-object key: "  key: value"
-    const subMatch = line.match(/^  (\w[\w_]*):\s*(.*)/);
-    if (subMatch) {
-      const key = subMatch[1];
-      const val = subMatch[2].trim();
-      if (val === '') {
-        currentSubKey = key;
-        if (!result[currentArrayKey || '']) result[currentArrayKey || ''] = {};
-        continue;
-      }
-      if (currentArrayKey) {
-        if (!result[currentArrayKey]) result[currentArrayKey] = {};
-        (result[currentArrayKey] as Record<string, unknown>)[key] = parseYamlValue(val);
-      } else {
-        result[key] = parseYamlValue(val);
-      }
-      continue;
-    }
-
-    // Array item: "  - value"
-    const arrMatch = line.match(/^  -\s*(.*)/);
-    if (arrMatch) {
-      const val = arrMatch[1].trim();
-      const arrKey = currentSubKey || currentArrayKey;
-      if (arrKey) {
-        if (!result[arrKey]) result[arrKey] = [];
-        (result[arrKey] as string[]).push(val);
-      }
-      continue;
-    }
-
-    // Top-level key: value
-    const topMatch = line.match(/^(\w[\w_]*):\s*(.*)/);
-    if (topMatch) {
-      const key = topMatch[1];
-      const val = topMatch[2].trim();
-      if (val === '') {
-        currentArrayKey = key;
-        currentSubKey = null;
-      } else {
-        result[key] = parseYamlValue(val);
-        currentArrayKey = null;
-        currentSubKey = null;
-      }
-    }
-  }
-
-  return result;
-}
-
-function parseYamlValue(val: string): string | boolean | number | string[] {
-  if (val === 'true') return true;
-  if (val === 'false') return false;
-  if (/^\d+$/.test(val)) return parseInt(val, 10);
-  // Inline array: [a, b, c]
-  if (val.startsWith('[') && val.endsWith(']')) {
-    const inner = val.slice(1, -1).trim();
-    if (!inner) return [];
-    return inner.split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1')).filter(s => s.length > 0);
-  }
-  return val.replace(/^"(.*)"$/, '$1');
+  return { fullContent, frontmatterText, bodyText: parsed.body, frontmatter };
 }
 
 /** Extract the first # heading from markdown body text as the card title. */

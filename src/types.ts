@@ -145,27 +145,43 @@ export interface ManifestIntegration {
   hooks?: Record<string, string>;
 }
 
-export interface Manifest {
-  pmem: SchemaVersion;
+// === v0.4 Manifest discriminated union ===
+
+export type ManifestSchemaVersion = '0.2' | '0.3';
+
+// Base fields shared by all manifest versions
+export interface ManifestBase {
+  pmem: {
+    schema_version: ManifestSchemaVersion;
+    protocol_version: string;
+    created_by: string;
+    last_migrated_by: string | null;
+  };
   project: ManifestProject;
   source_of_truth: ManifestSourceOfTruth;
-  indexes: ManifestIndexes;
+  memory_status: MemoryStatus;
+  concurrency: ConcurrencyConfig;
+  card_policy: CardPolicy;
   auto_update: ManifestAutoUpdate;
   freshness: {
     default_ttl: string;
     stale_on_related_code_change: boolean;
     require_last_verified: boolean;
   };
+  distill: DistillConfig;
   integrations: {
     active: string[];
     [key: string]: ManifestIntegration | string[] | undefined;
   };
-  memory_status: MemoryStatus;
-  card_policy: CardPolicy;
-  concurrency: ConcurrencyConfig;
-  distill: DistillConfig;
   migrations: { applied: MigrationRecord[] };
 }
+
+export interface ManifestV02 extends ManifestBase {
+  pmem: ManifestBase['pmem'] & { schema_version: '0.2'; protocol_version: '0.2' };
+  indexes: ManifestIndexes;
+}
+
+export type Manifest = ManifestV02 | ManifestV03;
 
 // === Recall Types ===
 
@@ -338,24 +354,14 @@ export interface IndexesConfigV03 {
   legacy_json: LegacyJsonConfig;
 }
 
-export interface ManifestV03 {
-  pmem: { schema_version: '0.3'; protocol_version: string; created_by: string; last_migrated_by: string | null };
-  project: ManifestProject;
-  source_of_truth: ManifestSourceOfTruth;
+export interface ManifestV03 extends ManifestBase {
+  pmem: ManifestBase['pmem'] & { schema_version: '0.3'; protocol_version: '0.3' };
   runtime: RuntimeConfig;
   indexes: IndexesConfigV03;
   rebuild: RebuildConfig;
-  concurrency: ConcurrencyConfig;
   cli: CliConfig;
   embedding: EmbeddingConfig;
   serve: ServeConfig;
-  memory_status: MemoryStatus;
-  card_policy: CardPolicy;
-  auto_update: ManifestAutoUpdate;
-  freshness: { default_ttl: string; stale_on_related_code_change: boolean; require_last_verified: boolean };
-  distill: DistillConfig;
-  integrations: { active: string[]; [key: string]: ManifestIntegration | string[] | undefined };
-  migrations: { applied: MigrationRecord[] };
 }
 
 // === v0.3 DB Row Types ===

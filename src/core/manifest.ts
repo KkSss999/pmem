@@ -1,8 +1,8 @@
 import * as yaml from 'js-yaml';
-import { Manifest, ManifestV03 } from '../types';
+import { Manifest, ManifestV03, InitMode } from '../types';
 import * as fs from './fs';
 
-export function getDefaultManifest(projectName: string, initMode: string = 'minimal'): Manifest {
+export function getDefaultManifest(projectName: string, initMode: InitMode = 'minimal'): ManifestV03 {
   return {
     pmem: {
       schema_version: '0.3',
@@ -17,7 +17,7 @@ export function getDefaultManifest(projectName: string, initMode: string = 'mini
     },
     memory_status: {
       completeness: initMode === 'guided' ? 'partial' : 'incomplete',
-      initialized_mode: initMode as any,
+      initialized_mode: initMode,
       dirty: false,
       dirty_since: null,
       dirty_reason: null,
@@ -34,19 +34,25 @@ export function getDefaultManifest(projectName: string, initMode: string = 'mini
         '.pmem/risks/**/*.md',
       ],
     },
+    runtime: {
+      mode: 'sqlite',
+      db_path: '.pmem/pmem.db',
+      markdown_source: true,
+    },
     indexes: {
-      path: '.pmem/indexes',
-      generated: true,
-      graph: {
-        mode: 'single',
-        path: '.pmem/indexes/graph.json',
+      primary: 'sqlite',
+      legacy_json: {
+        enabled: false,
+        retained: true,
+        path: '.pmem/indexes',
       },
-      keyword: {
-        mode: 'bm25',
-        path: '.pmem/indexes/bm25.json',
-      },
-      hashes: {
-        path: '.pmem/indexes/card_hashes.json',
+    },
+    rebuild: {
+      strategy: 'content_hash',
+      hash: {
+        file_hash: true,
+        frontmatter_hash: true,
+        body_hash: true,
       },
     },
     concurrency: {
@@ -62,6 +68,27 @@ export function getDefaultManifest(projectName: string, initMode: string = 'mini
       optimistic_lock: {
         enabled: false,
         note: 'Deferred to SQLite runtime in v0.3',
+      },
+    },
+    cli: {
+      default_format: 'compact',
+      supported_formats: ['compact', 'json', 'paths', 'pack'],
+      default_budget: 1600,
+    },
+    embedding: {
+      enabled: false,
+      provider: 'none',
+      model: null,
+      dimension: null,
+      store: 'sqlite',
+      index: 'none',
+    },
+    serve: {
+      enabled: false,
+      mode: 'none',
+      experimental: {
+        mcp: false,
+        rest: false,
       },
     },
     auto_update: {
@@ -109,59 +136,8 @@ export function getDefaultManifest(projectName: string, initMode: string = 'mini
   };
 }
 
-export function getDefaultManifestV03(projectName: string, initMode: string = 'minimal'): ManifestV03 {
-  const base = getDefaultManifest(projectName, initMode);
-  return {
-    ...base,
-    pmem: {
-      schema_version: '0.3',
-      protocol_version: '0.3',
-      created_by: '0.3.0',
-      last_migrated_by: null,
-    },
-    runtime: {
-      mode: 'sqlite',
-      db_path: '.pmem/pmem.db',
-      markdown_source: true,
-    },
-    indexes: {
-      primary: 'sqlite',
-      legacy_json: {
-        enabled: false,
-        retained: true,
-        path: '.pmem/indexes',
-      },
-    },
-    rebuild: {
-      strategy: 'content_hash',
-      hash: {
-        file_hash: true,
-        frontmatter_hash: true,
-        body_hash: true,
-      },
-    },
-    cli: {
-      default_format: 'compact',
-      supported_formats: ['compact', 'json', 'paths', 'pack'],
-      default_budget: 1600,
-    },
-    embedding: {
-      enabled: false,
-      provider: 'none',
-      model: null,
-      dimension: null,
-      store: 'sqlite',
-      index: 'none',
-    },
-    serve: {
-      enabled: false,
-      mode: 'none',
-      experimental: {
-        mcp: false,
-        rest: false,
-      },
-    },
-  } as ManifestV03;
+export function getDefaultManifestV03(projectName: string, initMode: InitMode = 'minimal'): ManifestV03 {
+  return getDefaultManifest(projectName, initMode);
 }
 
 export function loadManifest(pmemDir: string): Manifest | null {

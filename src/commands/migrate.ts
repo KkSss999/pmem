@@ -3,6 +3,7 @@ import { loadManifest, saveManifest, getDefaultManifest, getDefaultManifestV03 }
 import { ensureDir, copyFile, readFile, writeFile, atomicWrite, listFiles } from '../core/fs';
 import { openDatabase, createSchema, createFTS5, setSchemaVersion, closeDatabase, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount } from '../core/hash';
+import { parseFrontmatter } from '../core/yaml';
 import { Manifest, ManifestV03, MigrationRecord, CardRow, CardFrontmatter } from '../types';
 
 const PMEM_DIR = '.pmem';
@@ -172,7 +173,7 @@ function migrate02to03(pmemPath: string, manifest: Manifest): void {
   };
   newManifest.migrations.applied = [...existingMigrations, migrationRecord];
 
-  saveManifest(pmemPath, newManifest as any);
+  saveManifest(pmemPath, newManifest);
 
   closeDatabase();
 
@@ -196,17 +197,18 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
       const content = readFile(file);
       if (!content) continue;
 
-      const parsed = parseSimpleFrontmatter(content);
-      if (!parsed || !parsed.id) continue;
+      const parsed = parseFrontmatter(content);
+      if (!parsed || !parsed.data.id) continue;
 
-      const id: string = parsed.id;
-      const cardType: string = typeof parsed.type === 'string' ? parsed.type : 'module';
-      const status: string | null = typeof parsed.status === 'string' ? parsed.status : null;
-      const priority: string | null = typeof parsed.priority === 'string' ? parsed.priority : null;
-      const schemaVer: string | null = typeof parsed.schema_version === 'string' ? parsed.schema_version : null;
-      const cardVer: number = typeof parsed.version === 'number' ? parsed.version : 1;
-      const updatedAt: string | null = typeof parsed.updated === 'string' ? parsed.updated : null;
-      const lastVerifiedAt: string | null = typeof parsed.last_verified === 'string' ? parsed.last_verified : null;
+      const data = parsed.data;
+      const id: string = data.id as string;
+      const cardType: string = typeof data.type === 'string' ? data.type : 'module';
+      const status: string | null = typeof data.status === 'string' ? data.status : null;
+      const priority: string | null = typeof data.priority === 'string' ? data.priority : null;
+      const schemaVer: string | null = typeof data.schema_version === 'string' ? data.schema_version : null;
+      const cardVer: number = typeof data.version === 'number' ? data.version : 1;
+      const updatedAt: string | null = typeof data.updated === 'string' ? data.updated : null;
+      const lastVerifiedAt: string | null = typeof data.last_verified === 'string' ? data.last_verified : null;
 
       // Extract title from first # heading in body
       let title: string = id;
@@ -222,8 +224,9 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
         summary = summaryMatch[1].trim().substring(0, 200);
       }
 
-      // Compute hashes
-      const fmText = parsed.frontmatterText || '';
+      // Extract frontmatter text for hash computation
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      const fmText = fmMatch ? fmMatch[1] : '';
       const bodyText = parsed.body || '';
       const hashes = computeCardHashes(content, fmText, bodyText);
       const tCount = tokenCount(content);
@@ -260,7 +263,7 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
       upsertCard(db, cardRow);
 
       // Insert edges from depends_on
-      const dependsOn: string[] = toArray(parsed.depends_on);
+      const dependsOn: string[] = toArray(data.depends_on);
       for (const target of dependsOn) {
         insertEdge(db, {
           from_id: id,
@@ -275,7 +278,7 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
       }
 
       // Insert edges from related
-      const relatedIds: string[] = toArray(parsed.related);
+      const relatedIds: string[] = toArray(data.related);
       for (const target of relatedIds) {
         insertEdge(db, {
           from_id: id,
@@ -290,19 +293,19 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
       }
 
       // Insert aliases
-      const aliases: string[] = toArray(parsed.aliases);
+      const aliases: string[] = toArray(data.aliases);
       for (const alias of aliases) {
         insertAlias(db, id, alias);
       }
 
       // Insert tags
-      const tags: string[] = toArray(parsed.tags);
+      const tags: string[] = toArray(data.tags);
       for (const tag of tags) {
         insertTag(db, id, tag);
       }
 
       // Insert paths (source_files from frontmatter)
-      const sourceFiles: string[] = toArray(parsed.source_files);
+      const sourceFiles: string[] = toArray(data.source_files);
       for (const sf of sourceFiles) {
         insertPath(db, id, sf, 'source');
       }
@@ -315,113 +318,6 @@ function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDat
 
   migrateAll();
   console.log(`  Imported ${cardCount} cards, ${edgeCount} edges into SQLite.`);
-}
-
-// === Simple frontmatter parser (inlined from rebuild.ts to avoid circular deps) ===
-
-interface ParsedFrontmatter {
-  id?: string;
-  type?: string;
-  status?: string;
-  priority?: string;
-  schema_version?: string;
-  version?: number;
-  updated?: string;
-  last_verified?: string;
-  depends_on?: unknown;
-  related?: unknown;
-  tags?: unknown;
-  aliases?: unknown;
-  source_files?: unknown;
-  frontmatterText: string;
-  body: string;
-}
-
-function parseSimpleFrontmatter(content: string): ParsedFrontmatter | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const fmText = match[1];
-  const body = content.substring(match[0].length);
-  const parsed = parseSimpleYaml(fmText);
-
-  return {
-    ...parsed,
-    frontmatterText: fmText,
-    body,
-  };
-}
-
-function parseSimpleYaml(yaml: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const lines = yaml.split('\n');
-  let currentArrayKey: string | null = null;
-  let currentSubKey: string | null = null;
-
-  for (const line of lines) {
-    if (line.trim() === '') continue;
-
-    // Sub-object key: "  key: value"
-    const subMatch = line.match(/^  (\w[\w_]*):\s*(.*)/);
-    if (subMatch) {
-      const key = subMatch[1];
-      const val = subMatch[2].trim();
-      if (val === '') {
-        currentSubKey = key;
-        if (!result[currentArrayKey || '']) (result[currentArrayKey || ''] as any) = {};
-        continue;
-      }
-      if (currentArrayKey) {
-        if (!result[currentArrayKey]) (result[currentArrayKey] as any) = {};
-        (result[currentArrayKey] as Record<string, unknown>)[key] = parseYamlValue(val);
-      } else {
-        result[key] = parseYamlValue(val);
-      }
-      continue;
-    }
-
-    // Array item: "  - value"
-    const arrMatch = line.match(/^  -\s*(.*)/);
-    if (arrMatch) {
-      const val = arrMatch[1].trim();
-      const arrKey = currentSubKey || currentArrayKey;
-      if (arrKey) {
-        if (!result[arrKey]) (result[arrKey] as any) = [];
-        (result[arrKey] as string[]).push(val);
-      }
-      continue;
-    }
-
-    // Top-level key: value
-    const topMatch = line.match(/^(\w[\w_]*):\s*(.*)/);
-    if (topMatch) {
-      const key = topMatch[1];
-      const val = topMatch[2].trim();
-      if (val === '') {
-        currentArrayKey = key;
-        currentSubKey = null;
-      } else {
-        result[key] = parseYamlValue(val);
-        currentArrayKey = null;
-        currentSubKey = null;
-      }
-    }
-  }
-
-  return result;
-}
-
-function parseYamlValue(val: string): string | boolean | number | string[] {
-  if (val === 'true') return true;
-  if (val === 'false') return false;
-  if (/^\d+$/.test(val)) return parseInt(val, 10);
-  // Inline array: [a, b, c]
-  if (val.startsWith('[') && val.endsWith(']')) {
-    const inner = val.slice(1, -1).trim();
-    if (!inner) return [];
-    return inner.split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1')).filter(s => s.length > 0);
-  }
-  return val.replace(/^"(.*)"$/, '$1');
 }
 
 // === Helpers ===
