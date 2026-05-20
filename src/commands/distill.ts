@@ -21,7 +21,7 @@ interface SplitSuggestion {
   suggestedSplits: string[];
 }
 
-export function distillCommand(options: { confirm?: boolean; suggestSplits?: boolean }): void {
+export function distillCommand(options: { confirm?: boolean; suggestSplits?: boolean; applySuggestion?: string }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const manifest = loadManifest(pmemPath);
@@ -39,6 +39,11 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
     } catch {
       // DB exists but can't be opened — will fall back to file scanning
     }
+  }
+
+  if (options.applySuggestion) {
+    applySuggestionAction(pmemPath, options.applySuggestion);
+    return;
   }
 
   if (options.suggestSplits) {
@@ -88,6 +93,46 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
     console.log('Run with --confirm to apply these changes.');
     process.exit(1);
   }
+}
+
+function applySuggestionAction(pmemPath: string, targetNodeId: string): void {
+  const traceFiles = listFiles(path.join(pmemPath, 'traces'), /\.md$/);
+  if (traceFiles.length === 0) {
+    console.log('No trace files found to distill.');
+    process.exit(2);
+  }
+
+  // Parse all traces
+  const traces: MemoryCard[] = [];
+  for (const file of traceFiles) {
+    const card = parseCard(file);
+    if (card && !isDistilled(card.frontmatter)) {
+      traces.push(card);
+    }
+  }
+
+  if (traces.length === 0) {
+    console.log('All traces are already distilled.');
+    process.exit(0);
+  }
+
+  // Group by related node (reuse existing function)
+  const groups = groupTracesByRelated(traces);
+
+  // Find the group matching targetNodeId
+  const matchingGroup = groups.find(g => g.relatedNode === targetNodeId);
+  if (!matchingGroup) {
+    console.log(`No undistilled traces found for target: ${targetNodeId}`);
+    console.log('Available targets: ' + groups.map(g => g.relatedNode).join(', '));
+    process.exit(2);
+  }
+
+  // Apply distillation for this group only
+  applyDistillation(pmemPath, [matchingGroup]);
+  markTracesDistilled(traceFiles, matchingGroup.traces);
+  console.log(`Applied distillation to ${targetNodeId}: ${matchingGroup.traces.length} trace(s) merged.`);
+  console.log('Run `pmem rebuild` to update indexes.');
+  process.exit(0);
 }
 
 function parseCard(filePath: string): MemoryCard | null {

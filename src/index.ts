@@ -132,9 +132,10 @@ program
   .command('distill')
   .description('Consolidate trace files into stable memory cards')
   .option('--confirm', 'Apply distillation changes')
+  .option('--apply-suggestion <id>', 'Apply distillation for a specific target card')
   .option('--suggest-splits', 'Suggest splitting oversized cards')
   .action((options) => {
-    distillCommand({ confirm: options.confirm, suggestSplits: options.suggestSplits });
+    distillCommand({ confirm: options.confirm, applySuggestion: options.applySuggestion, suggestSplits: options.suggestSplits });
   });
 
 const session = program
