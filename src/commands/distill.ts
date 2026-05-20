@@ -1,7 +1,9 @@
 import * as path from 'path';
 import { loadManifest } from '../core/manifest';
 import { readFile, atomicWrite, listFiles, fileExists } from '../core/fs';
-import { CardFrontmatter, MemoryCard, DistillConfig } from '../types';
+import { CardFrontmatter, MemoryCard, DistillConfig, CardRow } from '../types';
+import Database from 'better-sqlite3';
+import { openDatabase, getDatabase } from '../core/db';
 
 const PMEM_DIR = '.pmem';
 
@@ -27,6 +29,16 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
   if (!manifest) {
     console.log('No .pmem/manifest.yml found. Run `pmem init` first.');
     return;
+  }
+
+  // Eagerly open DB if it exists, so downstream helpers can use getDatabase()
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (fileExists(dbPath)) {
+    try {
+      openDatabase(pmemPath);
+    } catch {
+      // DB exists but can't be opened — will fall back to file scanning
+    }
   }
 
   if (options.suggestSplits) {
@@ -55,7 +67,7 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
     return;
   }
 
-  // Group by related node
+  // Group by related node (DB-backed if available, frontmatter fallback otherwise)
   const groups = groupTracesByRelated(traces);
 
   console.log(`Found ${undistilledCount} undistilled trace(s) in ${groups.length} group(s).\n`);
@@ -114,7 +126,48 @@ function isDistilled(fm: CardFrontmatter): boolean {
   return (fm as any).distilled === true || (fm as any).distilled === 'true';
 }
 
+// ---------------------------------------------------------------------------
+// groupTracesByRelated — DB-backed grouping via edges table, with fallback
+// ---------------------------------------------------------------------------
+
 function groupTracesByRelated(traces: MemoryCard[]): TraceGroup[] {
+  const db = getDatabase();
+  if (db) {
+    try {
+      return groupTracesByRelatedDb(traces, db);
+    } catch {
+      // DB query failed — fall back
+    }
+  }
+  return groupTracesByRelatedFallback(traces);
+}
+
+function groupTracesByRelatedDb(traces: MemoryCard[], db: Database.Database): TraceGroup[] {
+  const map = new Map<string, MemoryCard[]>();
+
+  // For each trace, look up edges to find related module/decision/task/feature cards
+  const relatedStmt = db.prepare(`
+    SELECT e.to_id AS related_id FROM edges e
+      JOIN cards c ON e.to_id = c.id
+      WHERE e.from_id = ? AND c.type IN ('module', 'decision', 'task', 'feature') AND c.is_deleted = 0
+    UNION
+    SELECT e.from_id AS related_id FROM edges e
+      JOIN cards c ON e.from_id = c.id
+      WHERE e.to_id = ? AND c.type IN ('module', 'decision', 'task', 'feature') AND c.is_deleted = 0
+  `);
+
+  for (const trace of traces) {
+    const traceId = trace.frontmatter.id;
+    const edgeRows = relatedStmt.all(traceId, traceId) as Array<{ related_id: string }>;
+    const key = edgeRows.length > 0 ? edgeRows[0].related_id : 'project';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(trace);
+  }
+
+  return buildTraceGroups(map);
+}
+
+function groupTracesByRelatedFallback(traces: MemoryCard[]): TraceGroup[] {
   const map = new Map<string, MemoryCard[]>();
 
   for (const trace of traces) {
@@ -124,6 +177,10 @@ function groupTracesByRelated(traces: MemoryCard[]): TraceGroup[] {
     map.get(key)!.push(trace);
   }
 
+  return buildTraceGroups(map);
+}
+
+function buildTraceGroups(map: Map<string, MemoryCard[]>): TraceGroup[] {
   const groups: TraceGroup[] = [];
   for (const [node, nodeTraces] of map) {
     const summaryParts = nodeTraces.map(t => {
@@ -136,7 +193,6 @@ function groupTracesByRelated(traces: MemoryCard[]): TraceGroup[] {
       suggestedUpdate: `Add distilled insights from ${nodeTraces.length} trace(s):\n${summaryParts.join('\n')}`,
     });
   }
-
   return groups;
 }
 
@@ -144,6 +200,45 @@ function extractMarkdownTitle(body: string): string | null {
   const match = body.match(/^#\s+(.+)/m);
   return match ? match[1].trim() : null;
 }
+
+// ---------------------------------------------------------------------------
+// findCardFile — DB-backed card lookup, with file-scanning fallback
+// ---------------------------------------------------------------------------
+
+function findCardFile(pmemPath: string, nodeId: string): string | null {
+  const db = getDatabase();
+  if (db) {
+    try {
+      const row = db.prepare(
+        "SELECT file_path FROM cards WHERE id = ? AND is_deleted = 0"
+      ).get(nodeId) as { file_path: string } | undefined;
+      if (row) return row.file_path;
+    } catch {
+      // DB query failed — fall back
+    }
+  }
+
+  // Fall back to file scanning through modules/, features/, decisions/, tasks/
+  for (const dir of ['modules', 'features', 'decisions', 'tasks']) {
+    const dirPath = path.join(pmemPath, dir);
+    if (!fileExists(dirPath)) continue;
+    const files = listFiles(dirPath, /\.md$/);
+    for (const file of files) {
+      const content = readFile(file);
+      if (content) {
+        const fmMatch = content.match(/^id:\s*(.+)$/m);
+        if (fmMatch && fmMatch[1].trim() === nodeId) {
+          return file;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// applyDistillation / markTracesDistilled — unchanged core logic
+// ---------------------------------------------------------------------------
 
 function applyDistillation(pmemPath: string, groups: TraceGroup[]): void {
   for (const group of groups) {
@@ -163,25 +258,6 @@ function applyDistillation(pmemPath: string, groups: TraceGroup[]): void {
     atomicWrite(cardPath, updated);
     console.log(`  ✓ Updated ${group.relatedNode} (${cardPath})`);
   }
-}
-
-function findCardFile(pmemPath: string, nodeId: string): string | null {
-  // Search through modules/, features/, decisions/, tasks/
-  for (const dir of ['modules', 'features', 'decisions', 'tasks']) {
-    const dirPath = path.join(pmemPath, dir);
-    if (!fileExists(dirPath)) continue;
-    const files = listFiles(dirPath, /\.md$/);
-    for (const file of files) {
-      const content = readFile(file);
-      if (content) {
-        const fmMatch = content.match(/^id:\s*(.+)$/m);
-        if (fmMatch && fmMatch[1].trim() === nodeId) {
-          return file;
-        }
-      }
-    }
-  }
-  return null;
 }
 
 function markTracesDistilled(allTraceFiles: string[], allTraces: MemoryCard[]): void {
@@ -215,6 +291,10 @@ function markTracesDistilled(allTraceFiles: string[], allTraces: MemoryCard[]): 
   }
 }
 
+// ---------------------------------------------------------------------------
+// suggestCardSplits — DB-backed token counts, file-reading fallback
+// ---------------------------------------------------------------------------
+
 function suggestCardSplits(pmemPath: string, manifest: ReturnType<typeof loadManifest>): void {
   if (!manifest?.card_policy) {
     console.log('No card_policy defined in manifest.');
@@ -224,6 +304,78 @@ function suggestCardSplits(pmemPath: string, manifest: ReturnType<typeof loadMan
   const policy = manifest.card_policy;
   const suggestions: SplitSuggestion[] = [];
 
+  const db = getDatabase();
+  if (db) {
+    try {
+      suggestCardSplitsDb(db, policy, suggestions);
+    } catch {
+      // DB query failed — fall back to file scanning
+      suggestCardSplitsFallback(pmemPath, policy, suggestions);
+    }
+  } else {
+    suggestCardSplitsFallback(pmemPath, policy, suggestions);
+  }
+
+  if (suggestions.length === 0) {
+    console.log('No oversized cards detected.');
+    return;
+  }
+
+  console.log('Card Split Suggestions:\n');
+  for (const s of suggestions) {
+    console.log(`## ${s.cardId}`);
+    console.log(`  File: ${s.cardFile}`);
+    console.log(`  Tokens: ~${s.currentTokens} / max ${s.maxTokens}`);
+    console.log(`  Suggested splits:`);
+    for (const split of s.suggestedSplits) {
+      console.log(`    - ${s.cardId}.${toSlug(split)}`);
+    }
+    console.log('');
+  }
+  console.log('Review each card and split manually, or use a future `pmem split --interactive` command.');
+}
+
+function suggestCardSplitsDb(
+  db: Database.Database,
+  policy: { max_tokens: Record<string, number> },
+  suggestions: SplitSuggestion[]
+): void {
+  const rows = db.prepare(`
+    SELECT id, type, file_path, token_count FROM cards
+    WHERE is_deleted = 0
+      AND type != 'trace'
+      AND file_path NOT LIKE '%/traces/%'
+      AND file_path NOT LIKE '%/backups/%'
+      AND file_path NOT LIKE '%/indexes/%'
+      AND file_path NOT LIKE '%/integrations/%'
+    ORDER BY token_count DESC
+  `).all() as Array<{ id: string; type: string; file_path: string; token_count: number }>;
+
+  for (const row of rows) {
+    const maxForType = policy.max_tokens[row.type];
+    const currentTokens = row.token_count > 0 ? row.token_count : 0;
+    if (!maxForType || currentTokens <= maxForType) continue;
+
+    // Still need to read the file for h2 section splitting suggestions
+    const content = readFile(row.file_path);
+    const h2s = content ? content.match(/^##\s+(.+)$/gm) : null;
+    const splitNames = h2s ? h2s.slice(0, 4).map(h => h.replace(/^##\s+/, '').trim()) : [];
+
+    suggestions.push({
+      cardId: row.id,
+      cardFile: row.file_path,
+      currentTokens,
+      maxTokens: maxForType,
+      suggestedSplits: splitNames.length > 0 ? splitNames : ['(No H2 sections to suggest splits from)'],
+    });
+  }
+}
+
+function suggestCardSplitsFallback(
+  pmemPath: string,
+  policy: { max_tokens: Record<string, number> },
+  suggestions: SplitSuggestion[]
+): void {
   // Scan all cards
   const cardFiles = listFiles(pmemPath, /\.md$/);
   for (const file of cardFiles) {
@@ -251,24 +403,6 @@ function suggestCardSplits(pmemPath: string, manifest: ReturnType<typeof loadMan
       });
     }
   }
-
-  if (suggestions.length === 0) {
-    console.log('No oversized cards detected.');
-    return;
-  }
-
-  console.log('Card Split Suggestions:\n');
-  for (const s of suggestions) {
-    console.log(`## ${s.cardId}`);
-    console.log(`  File: ${s.cardFile}`);
-    console.log(`  Tokens: ~${s.currentTokens} / max ${s.maxTokens}`);
-    console.log(`  Suggested splits:`);
-    for (const split of s.suggestedSplits) {
-      console.log(`    - ${s.cardId}.${toSlug(split)}`);
-    }
-    console.log('');
-  }
-  console.log('Review each card and split manually, or use a future `pmem split --interactive` command.');
 }
 
 function toSlug(text: string): string {

@@ -2,6 +2,7 @@ import * as path from 'path';
 import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
+import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, insertUpdateLog, getRecentUpdateLogs, getActiveSession, closeDatabase } from '../core/db';
 
 const PMEM_DIR = '.pmem';
 
@@ -68,6 +69,20 @@ export function markDirtyCommand(reason: string): void {
     console.log(`  Since: ${timestamp}`);
     console.log(`\nRun \`pmem update --auto\` to detect changes or \`pmem update --confirm\` to record them.`);
   }
+
+  // SQLite: log dirty flag (additive — does not replace file-based dirty tracking)
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (fileExists(dbPath)) {
+    try {
+      const db = openDatabase(pmemPath);
+      const activeSession = getActiveSession(db);
+      insertDirtyFlag(db, 'project', '.pmem', reason, activeSession?.id);
+      closeDatabase();
+      console.log(`  Dirty flag logged to SQLite.`);
+    } catch {
+      // DB not available or schema not yet created — skip SQLite
+    }
+  }
 }
 
 function showDirtyState(pmemPath: string): void {
@@ -126,6 +141,29 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
   } else {
     console.log('  Memory appears up to date. No action needed.');
   }
+
+  // SQLite: show unresolved dirty flags and recent update activity
+  const updateDbPath = path.join(pmemPath, 'pmem.db');
+  if (fileExists(updateDbPath)) {
+    try {
+      const db = openDatabase(pmemPath);
+      const unresolved = getUnresolvedDirtyFlags(db);
+      if (unresolved.length > 0) {
+        console.log(`\nUnresolved dirty flags in SQLite: ${unresolved.length}`);
+      }
+      const recentLogs = getRecentUpdateLogs(db, 5);
+      if (recentLogs.length > 0) {
+        console.log('\nRecent update activity:');
+        for (const log of recentLogs) {
+          const icon = log.success ? '✓' : '✗';
+          console.log(`  ${icon} [${log.created_at.slice(0, 16)}] ${log.action}${log.summary ? ': ' + log.summary.slice(0, 60) : ''}`);
+        }
+      }
+      closeDatabase();
+    } catch {
+      // DB not available — skip SQLite
+    }
+  }
 }
 
 function confirmUpdate(pmemPath: string, summary?: string, next?: string): void {
@@ -152,6 +190,8 @@ Confirmed during update.
 Run \`pmem recall\` for full context.
 `);
     }
+
+    let sqliteLogged = false;
 
     // Add trace if summary provided
     if (summary) {
@@ -183,6 +223,21 @@ ${summary}
 ${next || 'Continue as planned.'}
 `);
       console.log(`Trace written: traces/${today}-${traceNum}.md`);
+
+      // SQLite: resolve dirty flags and log the update (additive)
+      const confirmDbPath = path.join(pmemPath, 'pmem.db');
+      if (fileExists(confirmDbPath)) {
+        try {
+          const db = openDatabase(pmemPath);
+          const activeSession = getActiveSession(db);
+          resolveDirtyFlags(db, 'project', '.pmem');
+          insertUpdateLog(db, 'confirm_update', summary, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+          closeDatabase();
+          sqliteLogged = true;
+        } catch {
+          // DB not available — skip SQLite
+        }
+      }
     }
 
     // Clear dirty flag
@@ -205,6 +260,10 @@ ${next || 'Continue as planned.'}
     rebuildCommand();
 
     console.log('\n✓ Memory updated.');
+
+    if (sqliteLogged) {
+      console.log('  Update logged to SQLite.');
+    }
   } finally {
     releaseLock(lockPath);
   }

@@ -11,13 +11,14 @@ import { updateCommand, markDirtyCommand } from './commands/update';
 import { integrationCommand } from './commands/integration';
 import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
+import { sessionStartCommand, sessionEndCommand } from './commands/session';
 
 const program = new Command();
 
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.2.0');
+  .version('0.3.0');
 
 program
   .command('init [project-name]')
@@ -32,22 +33,26 @@ program
   .command('recall')
   .description('Quick project recall')
   .option('-b, --budget <tokens>', 'Token budget for recall', '2000')
+  .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
   .action((options) => {
-    recallCommand(parseInt(options.budget, 10));
+    recallCommand(parseInt(options.budget, 10), options.format);
   });
 
 program
   .command('ask <query>')
   .description('Graph-guided memory recall')
-  .action((query: string) => {
-    askCommand(query);
+  .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
+  .action((query: string, options) => {
+    askCommand(query, options.format);
   });
 
 program
   .command('related <id>')
   .description('Query graph neighbors')
-  .action((id: string) => {
-    relatedCommand(id);
+  .option('-d, --depth <n>', 'Traversal depth (1 = direct only)', '1')
+  .option('-t, --type <type>', 'Filter by edge type (e.g. depends_on)')
+  .action((id: string, options) => {
+    relatedCommand(id, { depth: parseInt(options.depth, 10), type: options.type });
   });
 
 program
@@ -79,9 +84,16 @@ program
 
 program
   .command('rebuild')
-  .description('Rebuild all indexes from source cards')
-  .action(() => {
-    rebuildCommand();
+  .description('Rebuild SQLite indexes from source cards')
+  .option('--changed', 'Incremental rebuild (hash comparison, default)')
+  .option('--full', 'Full rebuild (clear all tables first)')
+  .option('--card <id>', 'Rebuild a single card by ID')
+  .action((options) => {
+    rebuildCommand({
+      changed: options.changed,
+      full: options.full,
+      card: options.card,
+    });
   });
 
 program
@@ -109,6 +121,26 @@ program
   .option('--suggest-splits', 'Suggest splitting oversized cards')
   .action((options) => {
     distillCommand({ confirm: options.confirm, suggestSplits: options.suggestSplits });
+  });
+
+const session = program
+  .command('session')
+  .description('Manage development sessions');
+
+session
+  .command('start')
+  .description('Start a new development session')
+  .option('-a, --agent <name>', 'Agent name')
+  .action((options) => {
+    sessionStartCommand(options.agent);
+  });
+
+session
+  .command('end')
+  .description('End the current development session')
+  .option('-s, --summary <text>', 'Task summary')
+  .action((options) => {
+    sessionEndCommand(options.summary);
   });
 
 const integration = program

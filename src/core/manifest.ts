@@ -1,13 +1,13 @@
 import * as yaml from 'js-yaml';
-import { Manifest } from '../types';
+import { Manifest, ManifestV03 } from '../types';
 import * as fs from './fs';
 
 export function getDefaultManifest(projectName: string, initMode: string = 'minimal'): Manifest {
   return {
     pmem: {
-      schema_version: '0.2',
-      protocol_version: '0.2',
-      created_by: '0.2.0',
+      schema_version: '0.3',
+      protocol_version: '0.3',
+      created_by: '0.3.0',
       last_migrated_by: null,
     },
     project: {
@@ -107,6 +107,61 @@ export function getDefaultManifest(projectName: string, initMode: string = 'mini
       applied: [],
     },
   };
+}
+
+export function getDefaultManifestV03(projectName: string, initMode: string = 'minimal'): ManifestV03 {
+  const base = getDefaultManifest(projectName, initMode);
+  return {
+    ...base,
+    pmem: {
+      schema_version: '0.3',
+      protocol_version: '0.3',
+      created_by: '0.3.0',
+      last_migrated_by: null,
+    },
+    runtime: {
+      mode: 'sqlite',
+      db_path: '.pmem/pmem.db',
+      markdown_source: true,
+    },
+    indexes: {
+      primary: 'sqlite',
+      legacy_json: {
+        enabled: false,
+        retained: true,
+        path: '.pmem/indexes',
+      },
+    },
+    rebuild: {
+      strategy: 'content_hash',
+      hash: {
+        file_hash: true,
+        frontmatter_hash: true,
+        body_hash: true,
+      },
+    },
+    cli: {
+      default_format: 'compact',
+      supported_formats: ['compact', 'json', 'paths', 'pack'],
+      default_budget: 1600,
+    },
+    embedding: {
+      enabled: false,
+      provider: 'none',
+      model: null,
+      dimension: null,
+      store: 'sqlite',
+      index: 'none',
+    },
+    serve: {
+      enabled: false,
+      mode: 'none',
+      experimental: {
+        mcp: false,
+        rest: false,
+      },
+    },
+  } as ManifestV03;
 }
 
 export function loadManifest(pmemDir: string): Manifest | null {

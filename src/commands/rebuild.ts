@@ -1,12 +1,26 @@
 import * as path from 'path';
-import { readFile, writeFile, writeJson, listFiles, ensureDir } from '../core/fs';
+import { readFile, writeJson, listFiles, ensureDir } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex } from '../types';
-import * as crypto from 'crypto';
+import { openDatabase, createSchema, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
+import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
 
 const PMEM_DIR = '.pmem';
 
-export function rebuildCommand(): void {
+interface RebuildOptions {
+  changed?: boolean;
+  full?: boolean;
+  card?: string;
+}
+
+interface ParsedCard {
+  fullContent: string;
+  frontmatterText: string;
+  bodyText: string;
+  frontmatter: CardFrontmatter;
+}
+
+export function rebuildCommand(options: RebuildOptions = {}): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -16,66 +30,202 @@ export function rebuildCommand(): void {
     return;
   }
 
-  console.log('Scanning memory cards...');
+  const db = openDatabase(pmemPath);
+  createSchema(db);
+  setSchemaVersion(db, manifest.pmem.schema_version);
 
-  // Scan all .md files in card directories
+  const isFull = options.full === true;
+  const isSingleCard = typeof options.card === 'string';
+
+  if (isFull) {
+    clearAllTables(db);
+    console.log('Full rebuild: cleared all tables.');
+  }
+
+  // Scan all .md files under .pmem/, excluding non-card files
   const cardFiles = listFiles(pmemPath, /\.md$/).filter(f => {
-    // Exclude index, state, next — these aren't node cards
     const rel = path.relative(pmemPath, f);
     return !['index.md', 'state.md', 'next.md'].includes(rel) &&
            !rel.startsWith('skills/') &&
            !rel.startsWith('integrations/') &&
            !rel.startsWith('summaries/') &&
-           !rel.startsWith('indexes/');
+           !rel.startsWith('indexes/') &&
+           !rel.startsWith('backups/');
   });
 
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
+  let processed = 0;
+  let skipped = 0;
+  let updated = 0;
 
-  for (const file of cardFiles) {
-    const frontmatter = parseFrontmatter(file);
-    if (!frontmatter || !frontmatter.id) continue;
+  // Wrap all per-card SQLite writes in a single transaction for performance
+  const doRebuild = db.transaction(() => {
+    for (const file of cardFiles) {
+      const parsed = parseCard(file);
+      if (!parsed) continue;
 
-    const relPath = path.relative(cwd, file);
-    const bodyContent = readFile(file) || '';
-    const title = extractTitle(bodyContent) || frontmatter.id;
+      // In --card mode, skip cards that don't match the target ID
+      if (isSingleCard && parsed.frontmatter.id !== options.card) continue;
 
-    const node: GraphNode = {
-      id: frontmatter.id,
-      type: frontmatter.type,
-      title,
-      status: frontmatter.status,
-      file: relPath,
-      tags: frontmatter.tags,
-      aliases: frontmatter.aliases,
-    };
-    nodes.push(node);
+      const relPath = path.relative(cwd, file);
+      processed++;
 
-    // Extract explicit edges from frontmatter
-    if (frontmatter.depends_on) {
-      for (const target of frontmatter.depends_on) {
-        edges.push({ from: frontmatter.id, to: target, type: 'depends_on' });
+      const fm = parsed.frontmatter;
+      const title = extractTitle(parsed.bodyText) || fm.id;
+
+      // Build legacy graph node (always, for backward compat output)
+      nodes.push({
+        id: fm.id,
+        type: fm.type,
+        title,
+        status: fm.status,
+        file: relPath,
+        tags: fm.tags,
+        aliases: fm.aliases,
+      });
+
+      // Build legacy graph edges (always, for backward compat output)
+      collectLegacyEdges(fm, edges);
+
+      // Compute content hashes
+      const hashes = computeCardHashes(parsed.fullContent, parsed.frontmatterText, parsed.bodyText);
+
+      // In --changed mode, skip cards whose hashes match what's in SQLite
+      if (!isFull) {
+        const existing = getCardHash(db, relPath);
+        if (
+          existing &&
+          existing.file_hash === hashes.fileHash &&
+          existing.frontmatter_hash === hashes.frontmatterHash &&
+          existing.body_hash === hashes.bodyHash
+        ) {
+          skipped++;
+          continue;
+        }
       }
-    }
-    if (frontmatter.related) {
-      for (const target of frontmatter.related) {
-        edges.push({ from: frontmatter.id, to: target, type: 'related_to' });
-      }
-    }
 
-    // Derived edge: task → module
-    if (frontmatter.type === 'task' && frontmatter.related) {
-      for (const target of frontmatter.related) {
-        if (target.startsWith('module.')) {
-          edges.push({ from: frontmatter.id, to: target, type: 'next_step_of', derived: true });
+      updated++;
+
+      const tokCount = tokenCount(parsed.fullContent);
+      const secCount = sectionCount(parsed.bodyText);
+      const isCandidate = relPath.includes('/candidates/') ? 1 : 0;
+
+      // Build CardRow and upsert
+      const cardRow: CardRow = {
+        id: fm.id,
+        type: fm.type,
+        title,
+        status: fm.status ?? null,
+        priority: fm.priority ?? null,
+        file_path: relPath,
+        summary: null,
+        schema_version: fm.schema_version ?? null,
+        card_version: fm.version ?? 1,
+        created_at: null,
+        updated_at: fm.updated ?? null,
+        last_verified_at: fm.last_verified ?? null,
+        file_hash: hashes.fileHash,
+        frontmatter_hash: hashes.frontmatterHash,
+        body_hash: hashes.bodyHash,
+        token_count: tokCount,
+        section_count: secCount,
+        is_deleted: 0,
+        is_candidate: isCandidate,
+      };
+
+      upsertCard(db, cardRow);
+
+      // Clear existing relations before re-inserting
+      deleteCardEdges(db, fm.id);
+      deleteCardAliases(db, fm.id);
+      deleteCardTags(db, fm.id);
+      deleteCardPaths(db, fm.id);
+
+      // Re-insert aliases
+      if (fm.aliases) {
+        for (const alias of fm.aliases) {
+          insertAlias(db, fm.id, alias);
+        }
+      }
+
+      // Re-insert tags
+      if (fm.tags) {
+        for (const tag of fm.tags) {
+          insertTag(db, fm.id, tag);
+        }
+      }
+
+      // Re-insert source_files as paths
+      if (fm.source_files) {
+        for (const sf of fm.source_files) {
+          insertPath(db, fm.id, sf, 'source_file');
+        }
+      }
+
+      const now = new Date().toISOString();
+
+      // Insert depends_on edges
+      if (fm.depends_on) {
+        for (const target of fm.depends_on) {
+          const edgeRow: EdgeRow = {
+            from_id: fm.id,
+            to_id: target,
+            type: 'depends_on',
+            source: 'explicit',
+            confidence: 1.0,
+            created_at: now,
+            updated_at: now,
+          };
+          insertEdge(db, edgeRow);
+        }
+      }
+
+      // Insert related_to edges
+      if (fm.related) {
+        for (const target of fm.related) {
+          const edgeRow: EdgeRow = {
+            from_id: fm.id,
+            to_id: target,
+            type: 'related_to',
+            source: 'explicit',
+            confidence: 1.0,
+            created_at: now,
+            updated_at: now,
+          };
+          insertEdge(db, edgeRow);
+        }
+      }
+
+      // Derived edges: task type with module.* related → next_step_of
+      if (fm.type === 'task' && fm.related) {
+        for (const target of fm.related) {
+          if (target.startsWith('module.')) {
+            const edgeRow: EdgeRow = {
+              from_id: fm.id,
+              to_id: target,
+              type: 'next_step_of',
+              source: 'inferred',
+              confidence: 0.8,
+              created_at: now,
+              updated_at: now,
+            };
+            insertEdge(db, edgeRow);
+          }
         }
       }
     }
-  }
+  });
 
-  // Compute source hash
+  // Execute all SQLite writes in a single transaction
+  doRebuild();
+
+  // Create FTS5 virtual table for full-text search (outside transaction)
+  createFTS5(db);
+
+  // Write legacy graph.json for backward compatibility
   const allContent = cardFiles.map(f => readFile(f) || '').join('');
-  const sourceHash = crypto.createHash('sha256').update(allContent).digest('hex').substring(0, 16);
+  const sourceHash = computeHash(allContent);
 
   const graphIndex: GraphIndex = {
     kind: 'pmem.graph_index',
@@ -92,26 +242,46 @@ export function rebuildCommand(): void {
     edges,
   };
 
-  // Write graph index
   const indexesDir = path.join(pmemPath, 'indexes');
   ensureDir(indexesDir);
   writeJson(path.join(indexesDir, 'graph.json'), graphIndex);
 
-  console.log(`✓ Rebuilt graph index: ${nodes.length} nodes, ${edges.length} edges`);
-  console.log(`  Source hash: ${sourceHash}`);
+  // Output summary
+  const modeLabel = isFull
+    ? 'Full rebuild'
+    : isSingleCard
+      ? `Single card: ${options.card}`
+      : 'Incremental rebuild';
+  console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
+  console.log(`Graph: ${nodes.length} nodes, ${edges.length} edges`);
+
+  closeDatabase();
 }
 
-function parseFrontmatter(filePath: string): CardFrontmatter | null {
-  const content = readFile(filePath);
-  if (!content) return null;
+/**
+ * Parse a .md memory card file into its constituent parts.
+ * Reads the file once, extracts YAML frontmatter (between --- markers),
+ * the markdown body, and parses the frontmatter into a CardFrontmatter object.
+ */
+function parseCard(filePath: string): ParsedCard | null {
+  const fullContent = readFile(filePath);
+  if (!fullContent) return null;
 
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = fullContent.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return null;
 
-  const yamlBlock = match[1];
-  return parseSimpleYaml(yamlBlock) as unknown as CardFrontmatter;
+  const frontmatterText = match[1];
+  const bodyText = match[2] || '';
+  const frontmatter = parseSimpleYaml(frontmatterText) as unknown as CardFrontmatter;
+  if (!frontmatter.id) return null;
+
+  return { fullContent, frontmatterText, bodyText, frontmatter };
 }
 
+/**
+ * Simple inline YAML parser for pmem's constrained frontmatter format.
+ * Handles: top-level scalars, nested objects (one level), list items, inline arrays.
+ */
 function parseSimpleYaml(yaml: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = yaml.split('\n');
@@ -177,12 +347,37 @@ function parseYamlValue(val: string): string | boolean | number | string[] {
   if (/^\d+$/.test(val)) return parseInt(val, 10);
   // Inline array: [a, b, c]
   if (val.startsWith('[') && val.endsWith(']')) {
-    return val.slice(1, -1).split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1'));
+    const inner = val.slice(1, -1).trim();
+    if (!inner) return [];
+    return inner.split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1')).filter(s => s.length > 0);
   }
   return val.replace(/^"(.*)"$/, '$1');
 }
 
-function extractTitle(content: string): string | null {
-  const match = content.match(/^#\s+(.+)$/m);
+/** Extract the first # heading from markdown body text as the card title. */
+function extractTitle(bodyText: string): string | null {
+  const match = bodyText.match(/^#\s+(.+)$/m);
   return match ? match[1].trim() : null;
+}
+
+/** Build legacy GraphEdge entries from a card's frontmatter (for backward-compat graph.json). */
+function collectLegacyEdges(fm: CardFrontmatter, edges: GraphEdge[]): void {
+  if (fm.depends_on) {
+    for (const target of fm.depends_on) {
+      edges.push({ from: fm.id, to: target, type: 'depends_on' });
+    }
+  }
+  if (fm.related) {
+    for (const target of fm.related) {
+      edges.push({ from: fm.id, to: target, type: 'related_to' });
+    }
+  }
+  // Derived edge: task → module
+  if (fm.type === 'task' && fm.related) {
+    for (const target of fm.related) {
+      if (target.startsWith('module.')) {
+        edges.push({ from: fm.id, to: target, type: 'next_step_of', derived: true });
+      }
+    }
+  }
 }

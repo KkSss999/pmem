@@ -1,10 +1,12 @@
 import * as path from 'path';
 import { readFile, fileExists } from '../core/fs';
-import type { RecallResult } from '../types';
+import { openDatabase, createSchema } from '../core/db';
+import { formatOutput } from '../core/format';
+import type { RecallResult, CliFormat, CardRow } from '../types';
 
 const PMEM_DIR = '.pmem';
 
-export function recallCommand(budget: number = 2000): void {
+export function recallCommand(budget: number = 2000, format: CliFormat = 'compact'): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -13,7 +15,7 @@ export function recallCommand(budget: number = 2000): void {
     return;
   }
 
-  // Read hot memory: index, state, next
+  // Read hot memory files: index.md, state.md, next.md
   const indexContent = readFile(path.join(pmemPath, 'index.md'));
   const stateContent = readFile(path.join(pmemPath, 'state.md'));
   const nextContent = readFile(path.join(pmemPath, 'next.md'));
@@ -28,7 +30,7 @@ export function recallCommand(budget: number = 2000): void {
   const projectStage = extractField(indexContent, 'Stage:');
   const currentFocus = extractField(indexContent, 'Current Focus');
 
-  // Parse state
+  // Parse state lines
   const stateLines: string[] = [];
   if (stateContent) {
     const lines = stateContent.split('\n');
@@ -47,55 +49,67 @@ export function recallCommand(budget: number = 2000): void {
     ? extractField(nextContent, '## Recommended Next Step')
     : 'No next step recorded.';
 
-  // Build output based on budget
-  let output = '';
+  // Build result
+  const result: RecallResult & {
+    dirty_flags_count: number;
+    recent_updates: Array<{ action: string; summary: string | null; created_at: string }>;
+    active_modules: string[];
+  } = {
+    project: projectName || 'Unknown',
+    stage: projectStage || undefined,
+    focus: currentFocus || 'No focus recorded.',
+    state: stateLines,
+    next: nextStep || 'No next step recorded.',
+    mustRead: [],
+    dirty_flags_count: 0,
+    recent_updates: [],
+    active_modules: [],
+  };
 
-  // Budget 800+: always show project identity + focus + next
-  output += `Project: ${projectName || 'Unknown'}\n`;
-  if (projectStage) output += `Stage: ${projectStage}\n`;
-  output += `\nCurrent Focus:\n${currentFocus || 'No focus recorded.'}\n`;
-  output += `\nNext:\n${nextStep}\n`;
+  // Query SQLite for richer project info
+  try {
+    const db = openDatabase(pmemPath);
+    createSchema(db);
 
-  if (stateLines.length > 0) {
-    output += `\nCurrent State:\n${stateLines.join('\n')}\n`;
+    // Query active cards (non-deleted, non-candidate)
+    const activeCards = db.prepare(
+      "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
+    ).all() as CardRow[];
+
+    // Modules for recommendations
+    const modules = activeCards.filter(c => c.type === 'module');
+    result.active_modules = modules.map(m => m.file_path);
+
+    // Build mustRead list
+    result.mustRead.push(path.join('.pmem', 'state.md'));
+    result.mustRead.push(path.join('.pmem', 'next.md'));
+    for (const mod of modules.slice(0, 5)) {
+      result.mustRead.push(mod.file_path);
+    }
+
+    // Query unresolved dirty flags
+    const dirtyFlagResult = db.prepare(
+      "SELECT COUNT(*) as count FROM dirty_flags WHERE resolved_at IS NULL"
+    ).get() as { count: number };
+    result.dirty_flags_count = dirtyFlagResult.count;
+
+    // Query recent updates
+    const recentUpdates = db.prepare(
+      "SELECT action, summary, created_at FROM update_log ORDER BY created_at DESC LIMIT 5"
+    ).all() as Array<{ action: string; summary: string | null; created_at: string }>;
+    result.recent_updates = recentUpdates;
+
+  } catch {
+    // DB may not exist yet or be uninitialized; file-based mustRead is sufficient
+    if (result.mustRead.length === 0) {
+      result.mustRead.push(path.join('.pmem', 'state.md'));
+      result.mustRead.push(path.join('.pmem', 'next.md'));
+    }
   }
 
-  // Budget 2000+: add module list, must-read suggestions
-  if (budget >= 2000) {
-    const moduleFiles = listMdFiles(path.join(pmemPath, 'modules'));
-    const featureFiles = listMdFiles(path.join(pmemPath, 'features'));
-    const decisionFiles = listMdFiles(path.join(pmemPath, 'decisions'));
-
-    if (moduleFiles.length > 0 || featureFiles.length > 0) {
-      output += '\nModules:\n';
-      for (const f of [...moduleFiles, ...featureFiles]) {
-        const name = path.basename(f, '.md');
-        output += `  - ${name}\n`;
-      }
-    }
-    if (decisionFiles.length > 0) {
-      output += '\nRecent Decisions:\n';
-      for (const f of decisionFiles.slice(-5)) {
-        const name = path.basename(f, '.md');
-        output += `  - ${name}\n`;
-      }
-    }
-    output += '\nMust Read:\n';
-    output += '  - .pmem/state.md\n';
-    output += '  - .pmem/next.md\n';
-    for (const f of moduleFiles.slice(0, 3)) {
-      output += `  - ${path.relative(cwd, f)}\n`;
-    }
-  }
-
-  // Budget 5000+: full card content for top modules (truncated for now)
-  if (budget >= 5000) {
-    output += '\n---\n';
-    output += '(Extended recall with full card content — reserved for v0.2)\n';
-  }
-
-  console.log(output.trim());
-  console.log(`\n[Recall budget: ${budget} tokens (approximate)]`);
+  // Output
+  const output = formatOutput(result, format, budget);
+  console.log(output);
 }
 
 function extractField(content: string, fieldName: string): string | null {
@@ -112,12 +126,4 @@ function extractField(content: string, fieldName: string): string | null {
     }
   }
   return null;
-}
-
-function listMdFiles(dir: string): string[] {
-  if (!fileExists(dir)) return [];
-  const fs = require('fs');
-  return fs.readdirSync(dir)
-    .filter((f: string) => f.endsWith('.md'))
-    .map((f: string) => path.join(dir, f));
 }

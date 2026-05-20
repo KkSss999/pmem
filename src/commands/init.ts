@@ -190,7 +190,7 @@ async function guidedInit(projectName: string): Promise<{ description: string; s
   console.log('Answer 3 questions to set up your project memory.\n');
 
   const description = await askQuestion(rl, `1. What is this project about? (one-line description)\n> `);
-  const stage = await askQuestion(rl, `\n2. What is the current stage? (e.g., "v0.1 completed, preparing v0.2")\n> `);
+  const stage = await askQuestion(rl, `\n2. What is the current stage? (e.g., "v0.2 completed, preparing v0.3")\n> `);
   const nextStep = await askQuestion(rl, `\n3. What is the most important next step?\n> `);
 
   rl.close();

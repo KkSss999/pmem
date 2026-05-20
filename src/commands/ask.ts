@@ -1,170 +1,310 @@
 import * as path from 'path';
-import { readFile, fileExists } from '../core/fs';
-import type { GraphIndex, GraphNode, AskMatch, AskResult, MatchType } from '../types';
+import { fileExists } from '../core/fs';
+import { openDatabase, createSchema, hasFTS5 } from '../core/db';
+import { formatOutput } from '../core/format';
+import type { CliFormat, CardRow, EdgeRow } from '../types';
 
 const PMEM_DIR = '.pmem';
 
-export function askCommand(query: string): void {
+type MatchType = 'exact_id' | 'exact_title' | 'alias' | 'tag' | 'graph_expansion' | 'keyword_fallback';
+
+interface AskMatchV03 {
+  id: string;
+  title: string;
+  match_type: MatchType;
+  confidence: number;
+  graph_distance: number;
+  file: string;
+  edge_type?: string;
+  from_card?: string;
+}
+
+interface AskResultV03 {
+  query: string;
+  matched: AskMatchV03[];
+  recommended_files: string[];
+  evidence_paths: string[];
+}
+
+export function askCommand(query: string, format: CliFormat = 'compact'): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
-  const graphPath = path.join(pmemPath, 'indexes', 'graph.json');
+  const dbPath = path.join(pmemPath, 'pmem.db');
 
-  if (!fileExists(graphPath)) {
-    console.log('No graph index found. Run `pmem rebuild` first.');
+  if (!fileExists(pmemPath)) {
+    console.log('No .pmem directory found. Run `pmem init` first.');
     return;
   }
 
-  const graphContent = readFile(graphPath);
-  if (!graphContent) return;
+  if (!fileExists(dbPath)) {
+    console.log('No SQLite database found. Run `pmem rebuild` first.');
+    return;
+  }
 
-  const graph: GraphIndex = JSON.parse(graphContent);
-  const matches: AskMatch[] = [];
+  const db = openDatabase(pmemPath);
+  createSchema(db);
 
-  const normalizedQuery = query.toLowerCase();
+  const normalizedQuery = query.toLowerCase().trim();
   const queryTokens = tokenize(normalizedQuery);
 
-  // Step 1: Exact match (id, title, alias, tag)
-  for (const node of graph.nodes) {
-    // ID match
-    if (node.id.toLowerCase() === normalizedQuery || node.id.toLowerCase().includes(normalizedQuery)) {
-      matches.push({ node, matchType: 'exact_id' as MatchType, confidence: 0.95 });
-      continue;
-    }
+  const matches: AskMatchV03[] = [];
+  const seenIds = new Set<string>();
 
-    // Title match
-    if (node.title.toLowerCase().includes(normalizedQuery)) {
-      matches.push({ node, matchType: 'exact_title' as MatchType, confidence: 0.85 });
-      continue;
-    }
+  // Step 1: Exact match — card ID
+  const idMatches = db.prepare(
+    "SELECT * FROM cards WHERE (id = ? OR id LIKE ?) AND is_deleted = 0"
+  ).all(normalizedQuery, `%${normalizedQuery}%`) as CardRow[];
 
-    // Alias match
-    if (node.aliases) {
-      for (const alias of node.aliases) {
-        if (alias.toLowerCase().includes(normalizedQuery) || normalizedQuery.includes(alias.toLowerCase())) {
-          matches.push({ node, matchType: 'alias' as MatchType, confidence: 0.9 });
-          break;
-        }
-      }
-    }
+  for (const card of idMatches) {
+    if (seenIds.has(card.id)) continue;
+    seenIds.add(card.id);
+    matches.push({
+      id: card.id,
+      title: card.title,
+      match_type: card.id === normalizedQuery ? 'exact_id' : 'exact_title',
+      confidence: card.id === normalizedQuery ? 0.95 : 0.85,
+      graph_distance: 0,
+      file: card.file_path,
+    });
+  }
 
-    // Tag match
-    if (node.tags) {
-      for (const tag of node.tags) {
-        if (queryTokens.some(t => tag.toLowerCase().includes(t) || t.includes(tag.toLowerCase()))) {
-          matches.push({ node, matchType: 'tag' as MatchType, confidence: 0.7 });
-          break;
-        }
+  // Step 2: Exact match — aliases
+  const aliasMatches = db.prepare(
+    `SELECT c.* FROM cards c
+     JOIN aliases a ON c.id = a.card_id
+     WHERE (a.normalized_alias = ? OR a.normalized_alias LIKE ?)
+       AND c.is_deleted = 0`
+  ).all(normalizedQuery, `%${normalizedQuery}%`) as CardRow[];
+
+  for (const card of aliasMatches) {
+    if (seenIds.has(card.id)) continue;
+    seenIds.add(card.id);
+    matches.push({
+      id: card.id,
+      title: card.title,
+      match_type: 'alias',
+      confidence: 0.9,
+      graph_distance: 0,
+      file: card.file_path,
+    });
+  }
+
+  // Step 3: Exact match — tags
+  const tagMatches = db.prepare(
+    `SELECT c.* FROM cards c
+     JOIN tags t ON c.id = t.card_id
+     WHERE t.normalized_tag = ?
+       AND c.is_deleted = 0`
+  ).all(normalizedQuery) as CardRow[];
+
+  for (const card of tagMatches) {
+    if (seenIds.has(card.id)) continue;
+    seenIds.add(card.id);
+    matches.push({
+      id: card.id,
+      title: card.title,
+      match_type: 'tag',
+      confidence: 0.7,
+      graph_distance: 0,
+      file: card.file_path,
+    });
+  }
+
+  // Also try tag matching with individual query tokens
+  for (const token of queryTokens) {
+    const tokenTagMatches = db.prepare(
+      `SELECT c.* FROM cards c
+       JOIN tags t ON c.id = t.card_id
+       WHERE t.normalized_tag LIKE ?
+         AND c.is_deleted = 0`
+    ).all(`%${token}%`) as CardRow[];
+
+    for (const card of tokenTagMatches) {
+      if (seenIds.has(card.id)) continue;
+      seenIds.add(card.id);
+      matches.push({
+        id: card.id,
+        title: card.title,
+        match_type: 'tag',
+        confidence: 0.6,
+        graph_distance: 0,
+        file: card.file_path,
+      });
+    }
+  }
+
+  // Step 4: Graph expansion — 1-hop neighbors from matched cards
+  const matchedIdsAtThisPoint = new Set(matches.map(m => m.id));
+
+  for (const match of matches) {
+    const edges = db.prepare(
+      "SELECT * FROM edges WHERE from_id = ? OR to_id = ?"
+    ).all(match.id, match.id) as EdgeRow[];
+
+    for (const edge of edges) {
+      const neighborId = edge.from_id === match.id ? edge.to_id : edge.from_id;
+      if (matchedIdsAtThisPoint.has(neighborId) || seenIds.has(neighborId)) continue;
+      seenIds.add(neighborId);
+
+      const neighborCard = db.prepare(
+        "SELECT * FROM cards WHERE id = ? AND is_deleted = 0"
+      ).get(neighborId) as CardRow | undefined;
+
+      if (neighborCard) {
+        matches.push({
+          id: neighborCard.id,
+          title: neighborCard.title,
+          match_type: 'graph_expansion',
+          confidence: 0.6,
+          graph_distance: 1,
+          file: neighborCard.file_path,
+          edge_type: edge.type,
+          from_card: match.id,
+        });
       }
     }
   }
 
-  // Step 2: Graph expansion from matched nodes
-  const matchedIds = new Set(matches.map(m => m.node.id));
-  const expandedNodes: Map<string, { node: GraphNode; graphDistance: number; edgeType: string }> = new Map();
+  // Step 5: Keyword fallback — FTS5 if available, else LIKE
+  if (matches.filter(m => m.match_type !== 'graph_expansion').length === 0) {
+    // Filter out expansions for the "no direct matches" check
+    const directMatchesBeforeFallback = matches.filter(m => m.match_type !== 'graph_expansion');
 
-  for (const match of matches) {
-    const relatedEdges = graph.edges.filter(e => e.from === match.node.id || e.to === match.node.id);
-    for (const edge of relatedEdges) {
-      const neighborId = edge.from === match.node.id ? edge.to : edge.from;
-      if (!matchedIds.has(neighborId) && !expandedNodes.has(neighborId)) {
-        const neighborNode = graph.nodes.find(n => n.id === neighborId);
-        if (neighborNode) {
-          expandedNodes.set(neighborId, { node: neighborNode, graphDistance: 1, edgeType: edge.type });
+    if (directMatchesBeforeFallback.length === 0) {
+      if (hasFTS5(db)) {
+        try {
+          const ftsResults = db.prepare(
+            "SELECT c.*, rank FROM card_fts JOIN cards c ON card_fts.card_id = c.id WHERE card_fts MATCH ? AND c.is_deleted = 0 ORDER BY rank"
+          ).all(normalizedQuery) as Array<CardRow & { rank: number }>;
+
+          for (const row of ftsResults) {
+            if (seenIds.has(row.id)) continue;
+            seenIds.add(row.id);
+            matches.push({
+              id: row.id,
+              title: row.title,
+              match_type: 'keyword_fallback',
+              confidence: Math.min(0.5, 1 / (1 + (row.rank || 1))),
+              graph_distance: 0,
+              file: row.file_path,
+            });
+          }
+        } catch {
+          // FTS5 query failed, fall through to LIKE fallback
+        }
+      }
+
+      // LIKE fallback (used if FTS5 unavailable or FTS5 returned no results)
+      if (matches.filter(m => m.match_type === 'keyword_fallback').length === 0) {
+        const likePattern = `%${normalizedQuery}%`;
+        const likeResults = db.prepare(
+          "SELECT * FROM cards WHERE (title LIKE ? OR summary LIKE ?) AND is_deleted = 0"
+        ).all(likePattern, likePattern) as CardRow[];
+
+        for (const card of likeResults) {
+          if (seenIds.has(card.id)) continue;
+          seenIds.add(card.id);
+          // Simple relevance: count token overlap in title
+          const titleLower = card.title.toLowerCase();
+          const tokenOverlap = queryTokens.filter(t => titleLower.includes(t)).length;
           matches.push({
-            node: neighborNode,
-            matchType: 'graph_expansion' as MatchType,
-            confidence: 0.6,
-            graphDistance: 1,
+            id: card.id,
+            title: card.title,
+            match_type: 'keyword_fallback',
+            confidence: Math.min(0.5, tokenOverlap / Math.max(1, queryTokens.length)),
+            graph_distance: 0,
+            file: card.file_path,
           });
         }
       }
     }
   }
 
-  // Step 3: Keyword fallback (BM25-simple: title + tag token overlap)
-  if (matches.length === 0) {
-    for (const node of graph.nodes) {
-      const nodeText = `${node.title} ${(node.tags || []).join(' ')} ${(node.aliases || []).join(' ')}`.toLowerCase();
-      const nodeTokens = tokenize(nodeText);
-      const overlap = queryTokens.filter(t => nodeTokens.some(nt => nt.includes(t) || t.includes(nt)));
-      if (overlap.length > 0) {
-        matches.push({
-          node,
-          matchType: 'keyword_fallback' as MatchType,
-          confidence: Math.min(0.5, overlap.length / queryTokens.length),
-        });
-      }
-    }
-  }
+  // Step 6: Rerank
+  const typeOrder: Record<MatchType, number> = {
+    exact_id: 5,
+    exact_title: 4,
+    alias: 3,
+    tag: 2,
+    graph_expansion: 1,
+    keyword_fallback: 0,
+  };
 
-  // Rank results
   matches.sort((a, b) => {
-    const typeOrder: Record<MatchType, number> = {
-      exact_id: 5, exact_title: 4, alias: 3, tag: 2, graph_expansion: 1, keyword_fallback: 0
-    };
-    return (typeOrder[b.matchType] - typeOrder[a.matchType]) || (b.confidence - a.confidence);
+    return (
+      (typeOrder[b.match_type] - typeOrder[a.match_type]) ||
+      (b.confidence - a.confidence) ||
+      (a.graph_distance - b.graph_distance)
+    );
   });
 
-  // Build output
-  console.log(`Query: ${query}\n`);
-
-  if (matches.length === 0) {
-    console.log('No matching memory cards found.');
-    console.log('Try: pmem related <id> or add aliases to your cards.');
-    return;
+  // Step 7: Deduplicate (keep first/highest-ranked match per id)
+  const dedupedIds = new Set<string>();
+  const deduped: AskMatchV03[] = [];
+  for (const m of matches) {
+    if (dedupedIds.has(m.id)) continue;
+    dedupedIds.add(m.id);
+    deduped.push(m);
   }
 
-  // Show matched nodes with match type
-  console.log('Matched:');
-  const directMatches = matches.filter(m => m.matchType !== 'graph_expansion');
-  for (const m of directMatches) {
-    console.log(`- ${m.node.id} by ${m.matchType}: "${m.node.title}"`);
+  // Build recommended_files and evidence_paths
+  const recommendedFiles: string[] = [];
+  for (const m of deduped.slice(0, 8)) {
+    recommendedFiles.push(m.file);
   }
 
-  // Show expanded nodes
-  const expansions = matches.filter(m => m.matchType === 'graph_expansion');
-  if (expansions.length > 0) {
-    console.log('\nExpanded:');
-    for (const m of expansions) {
-      const edge = graph.edges.find(e =>
-        (e.from === m.node.id && matchedIds.has(e.to)) ||
-        (e.to === m.node.id && matchedIds.has(e.from))
-      );
-      const via = edge ? edge.type : 'related_to';
-      const viaNodeId = edge ? (edge.from === m.node.id ? edge.to : edge.from) : '?';
-      console.log(`- ${m.node.id} via ${via} from ${viaNodeId}`);
+  const evidencePaths: string[] = [];
+  for (const m of deduped) {
+    const card = db.prepare(
+      "SELECT type, file_path FROM cards WHERE id = ? AND is_deleted = 0"
+    ).get(m.id) as { type: string; file_path: string } | undefined;
+    if (card && (card.type === 'decision' || card.type === 'trace')) {
+      evidencePaths.push(card.file_path);
     }
   }
 
-  console.log('\nRecommended Read:');
-  for (const m of matches.slice(0, 6)) {
-    console.log(`  ${m.node.file}`);
-  }
+  const result: AskResultV03 = {
+    query,
+    matched: deduped,
+    recommended_files: recommendedFiles,
+    evidence_paths: evidencePaths,
+  };
 
-  // Evidence paths
-  const evidencePaths = matches
-    .filter(m => m.node.type === 'decision' || m.node.type === 'trace')
-    .map(m => m.node.file);
-  if (evidencePaths.length > 0) {
-    console.log('\nEvidence:');
-    for (const ep of evidencePaths) {
-      console.log(`  - ${ep}`);
-    }
+  // Output
+  if (format === 'json') {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    // Adapt to formatOutput's expected shape
+    const formatCompat = {
+      query: result.query,
+      matched: result.matched.map(m => ({
+        id: m.id,
+        title: m.title,
+        matchType: m.match_type,
+        match_type: m.match_type,
+        confidence: m.confidence,
+        graphDistance: m.graph_distance,
+        graph_distance: m.graph_distance,
+        file: m.file,
+        edgeType: m.edge_type,
+        edge_type: m.edge_type,
+        fromCard: m.from_card,
+      })),
+      recommended_files: result.recommended_files,
+      evidencePaths: result.evidence_paths,
+    };
+    console.log(formatOutput(formatCompat, format, 2000));
   }
 }
 
 function tokenize(text: string): string[] {
-  // Simple CJK + English tokenizer
   const tokens: string[] = [];
-  // Split on whitespace and punctuation, keep CJK chars and alphanumeric
   const words = text.split(/[\s,，。、；;：:！!？?()（）\[\]【】{}]+/);
   for (const word of words) {
     if (word.length === 0) continue;
-    // For CJK, split each char
     if (/[一-鿿]/.test(word)) {
       const cjkChars = word.match(/[一-鿿]/g) || [];
       tokens.push(...cjkChars);
-      // Also keep the whole word if it has non-CJK parts
       const nonCjk = word.replace(/[一-鿿]/g, '').trim();
       if (nonCjk) tokens.push(nonCjk.toLowerCase());
     } else {
