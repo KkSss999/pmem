@@ -2,6 +2,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { fileExists, readFile, writeFile, getFileMtime } from '../core/fs';
 import { openDatabase, createSchema, closeDatabase } from '../core/db';
+import { parseGitStatusPorcelain } from '../core/git';
 import type { CliFormat } from '../types';
 
 // === Data structures ===
@@ -184,7 +185,7 @@ export function statusCommand(options: { since?: string; format?: string }): voi
     }, null, 2));
   } else {
     // compact output
-    console.log(`Changed files (${changes.length}):`);
+    console.log(`Changed files (${changes.length}) [${source}]:`);
     for (const c of changes) {
       const related = c.relatedCards.length > 0
         ? c.relatedCards.map(rc => `${rc.card_id} (${rc.match_type})`).join(', ')
@@ -225,18 +226,10 @@ function getChangedFiles(cwd: string, since?: string): FileChange[] {
     const source = detectChangesFrom();
     if (source === 'git') {
       const output = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
-      for (const line of output.trim().split('\n')) {
-        if (!line.trim()) continue;
-        const status = line.substring(0, 2).trim();
-        let filePath = line.substring(3).trim();
-        // Handle renamed files: "R old -> new"
-        if (status.includes('R')) {
-          const arrowIdx = filePath.indexOf(' -> ');
-          if (arrowIdx > 0) filePath = filePath.substring(arrowIdx + 4);
-        }
+      for (const change of parseGitStatusPorcelain(output)) {
         // Skip ignored directories
-        if (skipDirs.some(d => filePath.startsWith(d + '/') || filePath === d)) continue;
-        changes.push({ path: filePath, status: status || 'M', relatedCards: [] });
+        if (skipDirs.some(d => change.path.startsWith(d + '/') || change.path === d)) continue;
+        changes.push({ path: change.path, status: change.status || 'M', relatedCards: [] });
       }
       return changes;
     }

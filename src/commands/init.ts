@@ -29,8 +29,8 @@ Stage: {{PROJECT_STAGE}}
 ## CLI
 Use:
 pmem recall
-pmem next
 pmem ask "<query>"
+pmem status
 `;
 
 const STATE_MD = `# Project State
@@ -71,7 +71,7 @@ Use this when you need to understand the project.
 2. Read \`.pmem/state.md\`.
 3. Read \`.pmem/next.md\`.
 4. If the user asks about a specific module, run:
-   \`pmem recall <keyword>\`
+   \`pmem ask "<module or task>"\`
 5. Only read detailed memory cards when needed.
 
 ## Token Rule
@@ -90,9 +90,11 @@ Use this before modifying code.
 
 ## Required Writes
 After task completion:
-- Update \`.pmem/state.md\`
-- Add trace to \`.pmem/traces/\`
-- Update graph if new module/decision/task appears
+- Run \`pmem status --format json\`
+- Run \`pmem mark-dirty --auto\`
+- Run \`pmem update --suggest --format json\`
+- Confirm the memory update with \`pmem update --confirm -s "<summary>" -n "<next step>"\`
+- Run \`pmem verify\`
 `;
 
 const UPDATE_SKILL = `# Skill: Update Memory
@@ -100,9 +102,9 @@ const UPDATE_SKILL = `# Skill: Update Memory
 Use this after completing a task.
 
 ## Must Update
-- state.md
-- next.md
-- traces/YYYY-MM-DD-*.md
+- state.md when project state changed
+- next.md when the next recommended action changed
+- traces/YYYY-MM-DD-*.md when work completed
 
 ## Add Decision When
 - Architecture changed
@@ -140,33 +142,52 @@ const AGENTS_MD = `# AGENTS.md
 
 This project uses pmem for project memory.
 
-## Start
-Run:
+pmem stores source-of-truth memory as Markdown cards under \`.pmem/\` and rebuilds SQLite indexes for fast agent recall. Do not edit \`.pmem/pmem.db\` directly.
+
+## Session Start
 
 \`\`\`bash
-pmem recall --budget 2000
+pmem session start -a "Codex"
+pmem recall --format compact --budget 2000
 \`\`\`
 
-For specific tasks, run:
+For specific work, ask pmem first:
 
 \`\`\`bash
-pmem ask "<task>"
+pmem ask "<task or module>" --format compact
 \`\`\`
 
 ## Read
 
 Only read memory cards returned by pmem unless more context is needed.
 
-## Update
-
-After completing work, run:
+## After Editing Code
 
 \`\`\`bash
-pmem update
+pmem status --format json
+pmem mark-dirty --auto
+pmem update --suggest --format json
+\`\`\`
+
+\`pmem update --suggest\` exits with code 1 when suggestions exist. Treat that as "action suggested", not as a hard failure.
+
+## Session End
+
+Before finishing work:
+
+\`\`\`bash
+pmem update --confirm -s "<what changed>" -n "<next step>"
+pmem session end -s "<task summary>"
 pmem verify
 \`\`\`
 
-## More
+## Source Of Truth
+
+- Markdown cards in \`.pmem/**/*.md\` are canonical.
+- \`.pmem/pmem.db\` is a rebuildable SQLite runtime index.
+- Run \`pmem rebuild\` after changing memory cards.
+
+## More Workflows
 
 Task-specific workflows are in:
 
@@ -190,7 +211,7 @@ async function guidedInit(projectName: string): Promise<{ description: string; s
   console.log('Answer 3 questions to set up your project memory.\n');
 
   const description = await askQuestion(rl, `1. What is this project about? (one-line description)\n> `);
-  const stage = await askQuestion(rl, `\n2. What is the current stage? (e.g., "v0.2 completed, preparing v0.3")\n> `);
+  const stage = await askQuestion(rl, `\n2. What is the current stage? (e.g., "Beta productization", "MVP in progress")\n> `);
   const nextStep = await askQuestion(rl, `\n3. What is the most important next step?\n> `);
 
   rl.close();
@@ -278,8 +299,8 @@ ${info.nextStep}
 ## CLI
 Use:
 pmem recall
-pmem next
 pmem ask "<query>"
+pmem status
 `;
 
   const stateContent = `# Project State
@@ -428,8 +449,10 @@ export async function initCommand(options: { guided?: boolean; projectName?: str
   writeFile(path.join(pmemPath, 'skills', 'update.md'), UPDATE_SKILL);
   writeFile(path.join(pmemPath, 'skills', 'distill.md'), DISTILL_SKILL);
 
-  // Write integration templates with v0.4 pmem workflow instructions
+  // Write integration templates with v0.5 Productization Beta workflow instructions
   writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'CLAUDE.md'), `# pmem integration for Claude Code
+
+pmem keeps project memory in Markdown cards under .pmem/ and rebuilds SQLite indexes for fast recall. Markdown cards are the source of truth; do not edit .pmem/pmem.db directly.
 
 ## Session Start
 \`\`\`bash
@@ -437,12 +460,19 @@ pmem session start -a "Claude"
 pmem recall --format compact --budget 2000
 \`\`\`
 
+## Before Focused Work
+\`\`\`bash
+pmem ask "<task or module>" --format compact
+\`\`\`
+
 ## During Work (after editing files)
 \`\`\`bash
 pmem status --format json
-pmem mark-dirty -r "Modified <file> — <reason>"
+pmem mark-dirty --auto
 pmem update --suggest --format json
 \`\`\`
+
+\`pmem update --suggest\` exits with code 1 when suggestions exist. That is a workflow signal, not a hard failure.
 
 ## Session End
 \`\`\`bash
@@ -469,30 +499,43 @@ pmem verify
 ## Session Start
 In Cursor's AI chat: \`pmem session start -a "Cursor" && pmem recall --format compact --budget 2000\`
 
+## Before Focused Work
+\`pmem ask "<task or module>" --format compact\`
+
 ## When Editing Code
-After each significant change: \`pmem mark-dirty -r "Modified <file>"\`
+After each significant change: \`pmem status --format json && pmem mark-dirty --auto\`
 
 ## Before Requesting Review
 \`pmem update --suggest --format json\`
 
+Exit code 1 from \`pmem update --suggest\` means suggestions exist, not that the command failed.
+
 ## End of Session
 \`pmem update --confirm -s "<summary>" -n "<next>" && pmem session end -s "<summary>" && pmem verify\`
+
+## Source Of Truth
+Markdown cards under \`.pmem/\` are canonical. SQLite indexes are rebuildable runtime data.
 `);
   writeFile(path.join(pmemPath, 'integrations', 'codex', 'AGENTS.md'), `# pmem + Codex Integration
 
 ## Quick Start
 \`\`\`bash
 pmem session start -a "Codex"
-pmem recall
+pmem recall --format compact --budget 2000
 \`\`\`
 
 ## Memory-Aware Workflow
-1. Start task: \`pmem ask "<task description>"\`
+1. Start task: \`pmem ask "<task description>" --format compact\`
 2. Edit code
-3. Mark changes: \`pmem mark-dirty -r "Edited <file>"\`
-4. Get suggestions: \`pmem update --suggest\`
-5. Apply: \`pmem update --confirm -s "<what changed>" -n "<next step>"\`
-6. End session: \`pmem session end -s "<summary>" && pmem verify\`
+3. Inspect changes: \`pmem status --format json\`
+4. Mark changes: \`pmem mark-dirty --auto\`
+5. Get suggestions: \`pmem update --suggest --format json\`
+6. Treat exit code 1 from suggest commands as "action suggested", not failure
+7. Apply: \`pmem update --confirm -s "<what changed>" -n "<next step>"\`
+8. End session: \`pmem session end -s "<summary>" && pmem verify\`
+
+## Source Of Truth
+Markdown cards under \`.pmem/\` are canonical. \`.pmem/pmem.db\` is a rebuildable SQLite runtime index.
 `);
 
   // Write AGENTS.md in project root

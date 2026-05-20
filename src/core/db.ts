@@ -8,9 +8,19 @@ export function openDatabase(pmemPath: string): Database.Database {
   if (_db) return _db;
   ensureDir(pmemPath);
   const dbPath = path.join(pmemPath, 'pmem.db');
-  _db = new Database(dbPath);
-  _db.pragma('journal_mode = WAL');
-  _db.pragma('foreign_keys = ON');
+  try {
+    _db = new Database(dbPath);
+    _db.pragma('journal_mode = WAL');
+    _db.pragma('foreign_keys = ON');
+  } catch (err: any) {
+    _db = null;
+    if (err?.code === 'SQLITE_NOTADB') {
+      const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
+        `Back up the file if needed, then run: pmem rebuild --full`;
+      throw new Error(msg);
+    }
+    throw err;
+  }
   return _db;
 }
 
