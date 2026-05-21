@@ -7,6 +7,12 @@ import { InitScanResult, InitScanCandidate } from '../types';
 
 const PMEM_DIR = '.pmem';
 
+interface InitAnswers {
+  description?: string;
+  stage?: string;
+  next?: string;
+}
+
 const INDEX_MD = `# Project Memory Index
 
 ## Project
@@ -377,9 +383,43 @@ pmem init --guided
   atomicWrite(path.join(pmemPath, 'candidates', 'modules.generated.md'), candidatesContent);
 }
 
+// === Answers File ===
+
+function loadAnswersFile(filePath: string): InitAnswers | null {
+  const cwd = process.cwd();
+  const absPath = path.resolve(cwd, filePath);
+  if (!fs.existsSync(absPath)) {
+    console.error(`Answers file not found: ${absPath}`);
+    return null;
+  }
+  try {
+    const raw = fs.readFileSync(absPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) {
+      console.error('Answers file must contain a JSON object.');
+      return null;
+    }
+    return {
+      description: typeof parsed.description === 'string' ? parsed.description : undefined,
+      stage: typeof parsed.stage === 'string' ? parsed.stage : undefined,
+      next: typeof parsed.next === 'string' ? parsed.next : undefined,
+    };
+  } catch (err: any) {
+    console.error(`Failed to parse answers file: ${err?.message || err}`);
+    return null;
+  }
+}
+
 // === Main Command ===
 
-export async function initCommand(options: { guided?: boolean; projectName?: string }): Promise<void> {
+export async function initCommand(options: {
+  guided?: boolean;
+  projectName?: string;
+  description?: string;
+  stage?: string;
+  next?: string;
+  answers?: string;
+}): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -394,10 +434,74 @@ export async function initCommand(options: { guided?: boolean; projectName?: str
   // Run project scan (used by both modes)
   const scan = scanProject();
 
-  // Guided mode: ask questions interactively
+  // Resolve guided info from args, answers file, or interactive prompt
   let guidedInfo: { description: string; stage: string; nextStep: string } | null = null;
+
   if (options.guided) {
-    guidedInfo = await guidedInit(name);
+    // Merge: answers file first, then CLI args override
+    const answers: InitAnswers = {};
+    if (options.answers) {
+      const fileAnswers = loadAnswersFile(options.answers);
+      if (!fileAnswers) {
+        console.error('Failed to load answers file. Falling back to defaults.');
+      } else {
+        Object.assign(answers, fileAnswers);
+      }
+    }
+    if (options.description) answers.description = options.description;
+    if (options.stage) answers.stage = options.stage;
+    if (options.next) answers.next = options.next;
+
+    const hasDescription = !!answers.description;
+    const hasStage = !!answers.stage;
+    const hasNext = !!answers.next;
+
+    // All three present → non-interactive mode
+    if (hasDescription && hasStage && hasNext) {
+      guidedInfo = {
+        description: answers.description!,
+        stage: answers.stage!,
+        nextStep: answers.next!,
+      };
+    } else if (hasDescription || hasStage || hasNext) {
+      // Partial args → error with guidance
+      const missing: string[] = [];
+      if (!hasDescription) missing.push('--description');
+      if (!hasStage) missing.push('--stage');
+      if (!hasNext) missing.push('--next');
+      console.error(`Incomplete non-interactive init. Missing: ${missing.join(', ')}`);
+      console.error('Provide all three flags, use --answers <file.json>, or run without flags for interactive mode.');
+      return;
+    } else {
+      // No args → interactive TTY
+      guidedInfo = await guidedInit(name);
+    }
+  } else if (options.answers) {
+    // --answers without --guided: also valid, implied guided
+    const fileAnswers = loadAnswersFile(options.answers);
+    if (!fileAnswers) {
+      console.error('Failed to load answers file.');
+      return;
+    }
+    if (options.description) fileAnswers.description = options.description;
+    if (options.stage) fileAnswers.stage = options.stage;
+    if (options.next) fileAnswers.next = options.next;
+
+    if (fileAnswers.description && fileAnswers.stage && fileAnswers.next) {
+      guidedInfo = {
+        description: fileAnswers.description,
+        stage: fileAnswers.stage,
+        nextStep: fileAnswers.next,
+      };
+    } else {
+      const missing: string[] = [];
+      if (!fileAnswers.description) missing.push('description');
+      if (!fileAnswers.stage) missing.push('stage');
+      if (!fileAnswers.next) missing.push('next');
+      console.error(`Answers file missing required fields: ${missing.join(', ')}`);
+      console.error('File must contain: { "description": "...", "stage": "...", "next": "..." }');
+      return;
+    }
   }
 
   // Create directory structure
@@ -423,7 +527,7 @@ export async function initCommand(options: { guided?: boolean; projectName?: str
   }
 
   // Write manifest with appropriate init mode
-  if (options.guided && guidedInfo) {
+  if (guidedInfo) {
     const manifest = getDefaultManifest(name, 'guided');
     saveManifest(pmemPath, manifest);
 
@@ -449,7 +553,7 @@ export async function initCommand(options: { guided?: boolean; projectName?: str
   writeFile(path.join(pmemPath, 'skills', 'update.md'), UPDATE_SKILL);
   writeFile(path.join(pmemPath, 'skills', 'distill.md'), DISTILL_SKILL);
 
-  // Write integration templates with v0.5 Productization Beta workflow instructions
+  // Write integration templates with v0.6 Agent-native Workflow Polish instructions
   writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'CLAUDE.md'), `# pmem integration for Claude Code
 
 pmem keeps project memory in Markdown cards under .pmem/ and rebuilds SQLite indexes for fast recall. Markdown cards are the source of truth; do not edit .pmem/pmem.db directly.
@@ -556,8 +660,10 @@ Markdown cards under \`.pmem/\` are canonical. \`.pmem/pmem.db\` is a rebuildabl
     console.log(`Module candidates: ${scan.candidates.map(c => c.suggestedId).join(', ')}`);
   }
 
-  if (options.guided) {
-    console.log(`\nGuided setup complete. Run \`pmem recall\` to see your project state.`);
+  if (guidedInfo) {
+    const mode = options.guided && !options.description && !options.stage && !options.next && !options.answers
+      ? 'interactive' : 'non-interactive';
+    console.log(`\nGuided setup (${mode}) complete. Run \`pmem recall\` to see your project state.`);
   } else {
     console.log(`\nNext: run \`pmem recall\` to see your project state, or \`pmem init --guided\` for interactive setup.`);
   }

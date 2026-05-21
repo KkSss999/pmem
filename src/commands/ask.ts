@@ -281,9 +281,23 @@ export function askCommand(query: string, format: CliFormat = 'compact'): void {
     evidence_paths: evidencePaths,
   };
 
+  // Build guidance for empty results
+  const askMessage = deduped.length > 0
+    ? `Found ${deduped.length} match(es).`
+    : 'No matching memory cards found.';
+  const askNextSteps = deduped.length > 0 ? [] : [
+    'Try a different query keyword',
+    'Run `pmem recall` for full project context',
+    'Check that cards have relevant aliases and tags',
+  ];
+
   // Output
   if (format === 'json') {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({
+      ...result,
+      message: askMessage,
+      next_steps: askNextSteps,
+    }, null, 2));
   } else {
     // Adapt to formatOutput's expected shape
     const formatCompat = {

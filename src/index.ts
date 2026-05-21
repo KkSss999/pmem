@@ -13,13 +13,15 @@ import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
 import { sessionStartCommand, sessionEndCommand } from './commands/session';
 import { statusCommand } from './commands/status';
+import { installCommand } from './commands/install';
+import { doctorCommand } from './commands/doctor';
 
 const program = new Command();
 
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.5.0');
+  .version('0.6.0');
 
 program
   .command('status')
@@ -34,9 +36,20 @@ program
   .command('init [project-name]')
   .description('Initialize pmem in the current project')
   .option('--guided', 'Interactive guided initialization (recommended)')
-  .action((projectName?: string, options?: { guided?: boolean }) => {
+  .option('--description <text>', 'Project description (non-interactive mode)')
+  .option('--stage <text>', 'Current project stage (non-interactive mode)')
+  .option('--next <text>', 'Most important next step (non-interactive mode)')
+  .option('--answers <path>', 'Path to JSON answers file for non-interactive init')
+  .action((projectName?: string, options?: { guided?: boolean; description?: string; stage?: string; next?: string; answers?: string }) => {
     const opts = options || {};
-    initCommand({ projectName, guided: opts.guided });
+    initCommand({
+      projectName,
+      guided: opts.guided,
+      description: opts.description,
+      stage: opts.stage,
+      next: opts.next,
+      answers: opts.answers,
+    });
   });
 
 program
@@ -119,6 +132,14 @@ program
   });
 
 program
+  .command('doctor')
+  .description('Run diagnostic checks on project memory setup')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((options) => {
+    doctorCommand(options.format);
+  });
+
+program
   .command('migrate')
   .description('Migrate project memory to a newer schema version')
   .option('--to <version>', 'Target schema version', '0.3')
@@ -182,6 +203,24 @@ integration
   .description('Verify integration setup')
   .action(() => {
     integrationCommand('verify');
+  });
+
+program
+  .command('install')
+  .description('Install pmem skills to agent global directories')
+  .option('--skills', 'Install skill files')
+  .option('--claude', 'Target Claude Code')
+  .option('--codex', 'Target Codex')
+  .option('--gemini', 'Target Gemini CLI')
+  .option('--all', 'Target all detected agents')
+  .action((options) => {
+    installCommand({
+      skills: options.skills,
+      claude: options.claude,
+      codex: options.codex,
+      gemini: options.gemini,
+      all: options.all,
+    });
   });
 
 program.parse();

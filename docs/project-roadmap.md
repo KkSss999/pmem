@@ -19,7 +19,8 @@ CLI：`pmem`
 | v0.2 | 文件模式可信 | 防损坏——冷启动不空、并发不丢、卡片不乱、版本可迁 |
 | v0.3 | SQLite 运行时 | 强一致——查询/索引/状态迁入 SQLite，Markdown 仍为主数据 |
 | v0.4 | Agent 集成 & 自动化 | 多框架适配、session 追踪、distill 工作流优化 |
-| v0.5 | 可上线 Beta | 安装体验、文档、稳定 CLI、SQLite 默认开启、demo 项目 |
+| v0.5 | Productization Beta | README、npm package、E2E、错误 UX、发布清单，上线 npm Beta |
+| v0.6 | Agent-native Workflow Polish | 非交互 init、友好错误、空结果引导、Claude Code slash commands |
 
 ---
 
@@ -194,21 +195,44 @@ v0.3:  文件系统 → SQLite indexes → SQL 查询 → CLI
 
 ---
 
-## v0.5 — 可上线 Beta
+## v0.5 — Productization Beta ✅ 已完成
 
-**主题：** 面向真实用户（开发者 + AI Agent）稳定可用。
+**主题：** 把 v0.4 已经跑通的 Agent Workflow Runtime 包装成一个真实项目可以安装、理解、运行、验证、反馈的 Beta CLI 产品。
 
 | 功能 | 说明 |
 |------|------|
-| CLI 安装体验 | `npm install -g pmem` 一键安装 |
-| `pmem init --guided` 完整体验 | 引导式初始化 → 首个 project 跑通 |
-| SQLite 默认开启 | v0.5 起新项目默认 SQLite |
-| 文件模式兼容 | 已有 v0.1/v0.2 项目仍可用文件模式 |
-| 完整文档 | 使用指南、CLI 参考、集成教程 |
-| demo 项目 | 开箱即用的示例项目 |
-| 回滚 / 备份 | `pmem backup` / `pmem restore` |
-| 基础遥测（可选） | `pmem telemetry` opt-in |
-| 记忆健康仪表板 | `pmem verify --report` |
+| README / quick start | 外部用户可独立理解 pmem 并跑通 5 分钟流程 |
+| npm package readiness | package metadata、bin、files、build、pack smoke |
+| install smoke E2E | 验证 tarball 安装后的 `pmem` 二进制可用 |
+| real workflow E2E | 覆盖 init → rebuild → recall/ask → status → mark-dirty → update → verify |
+| Agent docs sync | `AGENTS.md`、`CLAUDE.md`、integration templates 统一到 v0.5 产品口径 |
+| Error UX / exit code docs | 明确 workflow signal exit code，不把 exit 1 都视为失败 |
+| CHANGELOG / release checklist | 支持可重复 Beta 发布 |
+
+详细设计：`docs/v0.5 pre-design.md`
+
+---
+
+## v0.6 — Agent-native Workflow Polish
+
+**主题：** 让 v0.5 已经成立的 Beta CLI 更适合 AI Agent 程序化调用、跨会话恢复、无人工兜底使用。
+
+v0.6 不扩大能力边界，不做 embedding、MCP/REST、Graph UI、遥测或远程服务。它专注处理 v0.5 真实使用反馈中暴露出的 Agent 摩擦点。
+
+| 功能 | 说明 |
+|------|------|
+| 非交互 init | `init --guided` 提供参数 / answers 文件路径，避免 Agent 卡在 TTY |
+| git 前置检查 | `status` / `mark-dirty --auto` 在非 git 或 git 不可用时给友好提示 |
+| 空结果引导 | `update --suggest` / `ask` 不静默返回空数组，解释下一步 |
+| session 容错 UX | `session end` 未 start 时给出可操作建议，评估显式容错 option |
+| Claude Code slash commands | `integration install claude-code` 生成 `.claude/commands/pmem-*.md` |
+| integration verify 增强 | 检查 root files、settings、slash commands、rules 是否真实存在 |
+| 全局 skills 安装 | `pmem install --skills --claude/--codex/--gemini` 一键安装到 agent skills 目录 |
+| pmem doctor | 8 项诊断检查（pmem_dir/manifest/database/cards/dirty_flags/session/git/integrations） |
+| Agent-native E2E | 覆盖非交互 init、integration install、空结果、非 git UX、skills install |
+| 文档口径同步 | README / AGENTS / CLAUDE 解释 pmem 的跨会话价值 |
+
+详细设计：`docs/v0.6 pre-design.md`
 
 ---
 
@@ -233,10 +257,12 @@ v0.3 → v0.4:
        manifest integrations 扩展
 
 v0.4 → v0.5:
-  pmem migrate --to 0.5
-  变更：SQLite 成为默认
-       文件模式标记为 legacy
-       遥测配置项
+  无强制 memory schema migration
+  变更：README / package / E2E / agent docs / release checklist 产品化
+
+v0.5 → v0.6:
+  无强制 memory schema migration
+  变更：非交互 init、Agent integration 文件、错误 UX、空结果引导
 ```
 
 每次迁移自动备份到 `.pmem/backups/YYYY-MM-DD-before-vX.Y/`。
@@ -246,10 +272,10 @@ v0.4 → v0.5:
 ## 总览
 
 ```
-v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5
-能用      防损坏    强一致    自动化    可上线
-10 cmd    14 cmd    16 cmd    18 cmd    20+ cmd
-文件模式   文件模式   +SQLite   +集成     +体验
+v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ───→ v0.6
+能用      防损坏    强一致    自动化    Beta上线  Agent原生
+10 cmd    14 cmd    16 cmd    18 cmd    产品化    低摩擦
+文件模式   文件模式   +SQLite   +集成     +体验     +程序化调用
 ```
 
 ---
@@ -257,10 +283,19 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5
 ## 当前状态
 
 - **v0.1:** ✅ 完成（10 个命令实现并测试）
-- **v0.2:** 🔜 设计完成，待开工
+- **v0.2:** ✅ 完成（文件模式可信）
   - 设计决策：`docs/v0.2 pre-design.md`
   - 架构规划：`docs/v0.2 pre-roadmap.md`
-- **v0.3–v0.5:** 📋 方向确定，详细设计待 v0.2 完成后细化
+- **v0.3:** ✅ 完成（SQLite runtime）
+  - 设计决策：`docs/v0.3 pre-design.md`
+- **v0.4:** ✅ 完成（Agent workflow runtime）
+  - 设计决策：`docs/v0.4 pre-design.md`
+  - handover：`docs/handover-v0.4.md`
+- **v0.5:** ✅ 完成并上线 npm（Productization Beta）
+  - 设计决策：`docs/v0.5 pre-design.md`
+  - 发布清单：`docs/release-checklist-v0.5.md`
+- **v0.6:** 📋 设计完成，待开工（Agent-native Workflow Polish）
+  - 设计决策：`docs/v0.6 pre-design.md`
 
 ---
 
@@ -268,12 +303,10 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5
 
 以下问题留待后续版本讨论：
 
-- v0.3 SQLite schema 详细设计
 - MCP Server vs HTTP API 的选择
 - 多项目 / workspace 支持
 - 记忆共享与协作机制
 - 记忆权限模型
 - 多语言 CLI 支持
-- telemetry 的范围和隐私策略
-- npm 包发布与版本策略
+- telemetry 的范围和隐私策略（v0.6 继续不做）
 - 是否支持嵌入到 VS Code / JetBrains 插件
