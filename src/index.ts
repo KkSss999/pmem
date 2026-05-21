@@ -13,6 +13,7 @@ import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
 import { sessionStartCommand, sessionEndCommand } from './commands/session';
 import { statusCommand } from './commands/status';
+import { installCommand } from './commands/install';
 import { doctorCommand } from './commands/doctor';
 
 const program = new Command();
@@ -202,6 +203,24 @@ integration
   .description('Verify integration setup')
   .action(() => {
     integrationCommand('verify');
+  });
+
+program
+  .command('install')
+  .description('Install pmem skills to agent global directories')
+  .option('--skills', 'Install skill files')
+  .option('--claude', 'Target Claude Code')
+  .option('--codex', 'Target Codex')
+  .option('--gemini', 'Target Gemini CLI')
+  .option('--all', 'Target all detected agents')
+  .action((options) => {
+    installCommand({
+      skills: options.skills,
+      claude: options.claude,
+      codex: options.codex,
+      gemini: options.gemini,
+      all: options.all,
+    });
   });
 
 program.parse();

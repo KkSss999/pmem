@@ -18,7 +18,8 @@
     "test:e2e:v06-answers": "bash scripts/e2e-v06-answers-file.sh",
     "test:e2e:v06-claude": "bash scripts/e2e-v06-claude-integration.sh",
     "test:e2e:v06-empty": "bash scripts/e2e-v06-empty-guidance.sh",
-    "test:e2e:v06-nongit": "bash scripts/e2e-v06-non-git-ux.sh"
+    "test:e2e:v06-nongit": "bash scripts/e2e-v06-non-git-ux.sh",
+    "test:e2e:v06-skills": "bash scripts/e2e-v06-skills.sh"
   },
   "keywords": [
     "agent",
@@ -52,6 +53,7 @@
     "!dist/**/*.test.js.map",
     "!dist/**/*.test.d.ts",
     "!dist/**/*.test.d.ts.map",
+    "skills/**/*.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
