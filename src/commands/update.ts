@@ -73,6 +73,18 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean } = {
   if (options.auto) {
     const dbPath = path.join(pmemPath, 'pmem.db');
     if (fileExists(dbPath)) {
+      // Check git availability before attempting git commands
+      const useGit = (() => {
+        try { execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' }); return true; }
+        catch { return false; }
+      })();
+
+      if (!useGit) {
+        console.log('Cannot auto-detect changes: this directory is not inside a Git repository.');
+        console.log('Next: run `pmem status` (uses mtime fallback) or initialize git with `git init`.');
+        process.exit(2);
+      }
+
       try {
         const db = openDatabase(pmemPath);
         const output = execSync('git status --porcelain', { encoding: 'utf8', cwd });
@@ -103,7 +115,8 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean } = {
           process.exit(1);
         }
       } catch (err) {
-        console.error('Error during auto dirty detection:', err);
+        console.error('Could not auto-detect changed files.');
+        console.error('Run `pmem status` to check change detection, or `pmem update --confirm` to manually record changes.');
         process.exit(2);
       }
     }
@@ -457,11 +470,18 @@ function generateSuggestions(pmemPath: string): {
 function suggestActions(pmemPath: string, format?: string): void {
   const { dirtyFlags, stateFreshness, suggestions } = generateSuggestions(pmemPath);
 
+  // Build contextual message and next steps for empty results
+  const cardCount = getCardCount(pmemPath);
+  const message = buildSuggestMessage(suggestions, dirtyFlags, cardCount);
+  const nextSteps = buildSuggestNextSteps(suggestions, dirtyFlags, cardCount);
+
   if (format === 'json') {
     console.log(JSON.stringify({
       dirty_flags: dirtyFlags,
       state_freshness: stateFreshness,
       suggestions,
+      message,
+      next_steps: nextSteps,
     }, null, 2));
   } else {
     if (dirtyFlags.length > 0) {
@@ -481,12 +501,58 @@ function suggestActions(pmemPath: string, format?: string): void {
         console.log(`    ${s.reason}`);
       }
     } else {
-      console.log('\nNo suggestions. Memory is up to date.');
+      console.log(`\n${message}`);
+      if (nextSteps.length > 0) {
+        console.log('\nNext steps:');
+        for (const step of nextSteps) {
+          console.log(`  ${step}`);
+        }
+      }
     }
   }
 
   const hasSuggestions = suggestions.length > 0;
   process.exit(hasSuggestions ? 1 : 0);
+}
+
+function getCardCount(pmemPath: string): number {
+  try {
+    const db = openDatabase(pmemPath);
+    const row = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0 AND is_candidate = 0').get() as { count: number };
+    return row?.count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function buildSuggestMessage(suggestions: Suggestion[], dirtyFlags: Array<unknown>, cardCount: number): string {
+  if (suggestions.length > 0) {
+    return `${suggestions.length} suggestion(s) found.`;
+  }
+  if (dirtyFlags.length > 0) {
+    return 'Dirty flags exist but no matching suggestions could be generated.';
+  }
+  if (cardCount === 0) {
+    return 'No memory cards found. Create a first module, decision, or task card to start building project memory.';
+  }
+  return 'No suggestions. Memory is up to date.';
+}
+
+function buildSuggestNextSteps(suggestions: Suggestion[], dirtyFlags: Array<unknown>, cardCount: number): string[] {
+  if (suggestions.length > 0) return [];
+  const steps: string[] = [];
+  if (cardCount === 0) {
+    steps.push('Create a module card with source_files pointing to your code');
+    steps.push('Run `pmem rebuild` after creating cards');
+    steps.push('Then try `pmem status` and `pmem mark-dirty --auto`');
+  } else if (dirtyFlags.length === 0) {
+    steps.push('Edit some source files, then run `pmem status` and `pmem mark-dirty --auto`');
+    steps.push('Run `pmem verify` to check overall memory consistency');
+  } else {
+    steps.push('Run `pmem update --confirm` to manually record changes');
+    steps.push('Check that dirty cards have source_files defined in their frontmatter');
+  }
+  return steps;
 }
 
 function applySuggestionAction(pmemPath: string, suggestionId: string): void {

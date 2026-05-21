@@ -75,7 +75,9 @@ export function sessionEndCommand(taskSummary?: string): void {
 
   // 4. If no active session
   if (!active) {
-    console.log('No active session found.');
+    console.log('No active pmem session found.');
+    console.log('Next: run `pmem session start -a "<agent-name>"` to begin a session.');
+    console.log('If this is expected (e.g., work was done without a formal session), run `pmem update --confirm` directly to record changes.');
     closeDatabase();
     return;
   }

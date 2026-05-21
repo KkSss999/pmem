@@ -4,57 +4,89 @@ import { loadManifest, saveManifest } from '../core/manifest';
 
 const PMEM_DIR = '.pmem';
 
-const CLAUDE_CODE_TEMPLATE = `# Claude Code Instructions
+const CLAUDE_CODE_TEMPLATE = `# pmem integration for Claude Code
 
-This repository uses pmem for project memory.
+This project uses pmem for project memory. Markdown cards under .pmem/ are the source of truth; .pmem/pmem.db is a rebuildable SQLite runtime index.
 
-## Before starting a task
-Run:
+## Session Start
 
 \`\`\`bash
-pmem recall --budget 2000
+pmem session start -a "Claude"
+pmem recall --format compact --budget 2000
 \`\`\`
 
-If the task is specific, run:
+## Before Focused Work
 
 \`\`\`bash
-pmem ask "<user task>"
+pmem ask "<task or module>" --format compact
 \`\`\`
 
-Read only the memory cards returned by pmem unless more context is required.
-
-## After completing a task
-
-Run:
+## After Editing Code
 
 \`\`\`bash
-pmem update --auto
+pmem status --format json
+pmem mark-dirty --auto
+pmem update --suggest --format json
+\`\`\`
+
+\`pmem update --suggest\` exits with code 1 when suggestions exist. That is a workflow signal, not a hard failure.
+
+## Session End
+
+\`\`\`bash
+pmem update --confirm -s "<what changed>" -n "<next step>"
+pmem session end -s "<task summary>"
 pmem verify
 \`\`\`
 
-Periodically run:
+## Slash Commands
 
-\`\`\`bash
-pmem distill
-\`\`\`
-
-If architecture, product direction, or module boundaries changed, create a decision card.
+Installed under .claude/commands/pmem-*.md. Use /pmem-recall, /pmem-ask <query>, /pmem-update, /pmem-distill during your session.
 `;
 
-const SETTINGS_EXAMPLE = `{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "pmem update --auto && pmem verify"
-          }
-        ]
-      }
-    ]
-  }
-}
+const SETTINGS_EXAMPLE = '{\n' +
+  '  "hooks": {\n' +
+  '    "PostToolUse": [{\n' +
+  '      "matcher": "Edit|Write",\n' +
+  '      "command": "cd ${CLAUDE_PROJECT_DIR} && pmem mark-dirty -r \\"File modified by Claude\\""\n' +
+  '    }]\n' +
+  '  }\n' +
+  '}\n';
+
+// === Claude Code Slash Command templates ===
+
+const SLASH_RECALL = `Recall the current project memory context.
+
+Run \`pmem recall --format compact --budget 2000\` to restore project state, focus, and next steps.
+
+Use this at the start of every session to restore context across sessions.
+`;
+
+const SLASH_ASK = `Search project memory for a specific topic.
+
+Usage: /pmem-ask <query>
+
+Runs \`pmem ask "<query>" --format compact\` to find relevant memory cards by ID, alias, tag, graph neighbor, and keyword fallback.
+
+Use this before working on a specific module or task to load relevant decisions and context.
+`;
+
+const SLASH_UPDATE = `Detect code changes and update project memory.
+
+Runs the full update workflow:
+1. \`pmem status --format json\` to detect changed files
+2. \`pmem mark-dirty --auto\` to mark affected cards
+3. \`pmem update --suggest --format json\` to get suggestions
+4. Guides you to confirm with \`pmem update --confirm -s "<summary>" -n "<next>".\`
+
+Use this after editing code to keep project memory in sync.
+`;
+
+const SLASH_DISTILL = `Consolidate work traces into stable memory cards.
+
+Runs \`pmem distill --suggest\` to check for distillation candidates, then guides through confirmation and verification.
+
+Use this after completing a milestone or when traces/ accumulates.
 `;
 
 export function integrationCommand(action: string, framework?: string): void {
@@ -130,6 +162,15 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
       writeFile(path.join(integDir, 'CLAUDE.md'), CLAUDE_CODE_TEMPLATE);
       writeFile(path.join(integDir, 'settings.example.json'), SETTINGS_EXAMPLE);
 
+      // Generate slash command files
+      const commandsDir = path.join(process.cwd(), '.claude', 'commands');
+      ensureDir(commandsDir);
+      writeFile(path.join(commandsDir, 'pmem-recall.md'), SLASH_RECALL);
+      writeFile(path.join(commandsDir, 'pmem-ask.md'), SLASH_ASK);
+      writeFile(path.join(commandsDir, 'pmem-update.md'), SLASH_UPDATE);
+      writeFile(path.join(commandsDir, 'pmem-distill.md'), SLASH_DISTILL);
+      console.log('  Created .claude/commands/pmem-*.md (4 slash commands)');
+
       // Also create/update root CLAUDE.md
       const rootClaudePath = path.join(process.cwd(), 'CLAUDE.md');
       if (!fileExists(rootClaudePath)) {
@@ -157,9 +198,14 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
   // Update manifest
   if (!manifest.integrations.active.includes(framework)) {
     manifest.integrations.active.push(framework);
+    const v06files: Record<string, string[]> = {
+      'claude-code': ['CLAUDE.md', '.claude/settings.json', '.claude/commands/pmem-recall.md', '.claude/commands/pmem-ask.md', '.claude/commands/pmem-update.md', '.claude/commands/pmem-distill.md'],
+      'cursor': ['.cursor/rules/pmem.mdc'],
+      'codex': ['AGENTS.md'],
+    };
     manifest.integrations[framework] = {
-      template_version: '0.1.0',
-      files: framework === 'claude-code' ? ['CLAUDE.md', '.claude/settings.json'] : ['.cursor/rules/pmem.mdc'],
+      template_version: '0.6.0',
+      files: v06files[framework] || [],
     };
     saveManifest(pmemPath, manifest);
   }
@@ -183,13 +229,32 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
     if (active === 'claude-code') {
       const claudeMdExists = fileExists(path.join(cwd, 'CLAUDE.md'));
       const settingsExists = fileExists(path.join(cwd, '.claude', 'settings.json'));
+      const slashRecallExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-recall.md'));
+      const slashAskExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-ask.md'));
+      const slashUpdateExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-update.md'));
+      const slashDistillExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-distill.md'));
+      const slashCount = [slashRecallExists, slashAskExists, slashUpdateExists, slashDistillExists].filter(Boolean).length;
       console.log(`    CLAUDE.md: ${claudeMdExists ? '✓' : '✗'}`);
       console.log(`    .claude/settings.json: ${settingsExists ? '✓' : '✗'}`);
+      console.log(`    .claude/commands/pmem-*.md: ${slashCount}/4 slash commands`);
+      if (slashCount < 4) {
+        if (!slashRecallExists) console.log('      ✗ pmem-recall.md');
+        if (!slashAskExists) console.log('      ✗ pmem-ask.md');
+        if (!slashUpdateExists) console.log('      ✗ pmem-update.md');
+        if (!slashDistillExists) console.log('      ✗ pmem-distill.md');
+        console.log('      Fix: run `pmem integration install claude-code`');
+      }
     }
 
     if (active === 'cursor') {
       const rulesExists = fileExists(path.join(cwd, '.cursor', 'rules', 'pmem.mdc'));
       console.log(`    .cursor/rules/pmem.mdc: ${rulesExists ? '✓' : '✗'}`);
+      if (!rulesExists) console.log('      Fix: run `pmem integration install cursor`');
+    }
+    if (active === 'codex') {
+      const agentsExists = fileExists(path.join(cwd, 'AGENTS.md'));
+      console.log(`    AGENTS.md: ${agentsExists ? '✓' : '✗'}`);
+      if (!agentsExists) console.log('      Fix: run `pmem integration install codex`');
     }
   }
 

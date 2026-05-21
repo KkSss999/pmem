@@ -328,15 +328,18 @@ pmem verify
 
 ## Roadmap
 
-v0.5 Productization Beta is shipped:
-
+**v0.5 Productization Beta** — shipped on npm as `pmem-ai`:
 - README, quick start, and [usage guide](docs/usage.md)
-- npm package (`pmem-ai`) with metadata, E2E suite, and CI/CD
-- Agent integration templates for Claude Code, Codex, and Cursor
-- Error UX: every common failure scenario produces actionable messages
-- Release checklist and changelog
+- E2E suite, CI/CD, error UX, release checklist
 
-Deferred beyond v0.5:
+**v0.6 Agent-native Workflow Polish** — in development:
+- Non-interactive init (`--description`/`--stage`/`--next` flags, `--answers` file)
+- Claude Code slash commands (`/pmem-recall`, `/pmem-ask`, `/pmem-update`, `/pmem-distill`)
+- Actionable empty states and error messages
+- Session fault tolerance
+- Integration verification enhanced
+
+Deferred:
 
 - embedding
 - `pmem serve` / MCP / REST

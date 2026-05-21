@@ -19,7 +19,8 @@ trap cleanup EXIT
 
 npm install -g --prefix "$PREFIX" "$ROOT/$TARBALL" >/dev/null
 
-"$PREFIX/bin/pmem" --version | grep -q "0.5.0"
+EXPECTED_VERSION="$(node -e "console.log(require('./package.json').version)")"
+"$PREFIX/bin/pmem" --version | grep -q "$EXPECTED_VERSION"
 "$PREFIX/bin/pmem" --help | grep -q "Project Memory"
 "$PREFIX/bin/pmem" --help | grep -q "status"
 "$PREFIX/bin/pmem" --help | grep -q "session"
