@@ -38,6 +38,8 @@ pmem --version
 
 Node.js 18 or newer is required. `better-sqlite3` is compiled during install.
 
+Run `pmem doctor` anytime to check the health of your project memory setup.
+
 To install from source:
 
 ```bash
@@ -101,6 +103,48 @@ pmem verify
 ```
 
 Note: `pmem update --suggest` exits with code `1` when it found suggestions. That means "action suggested", not "command failed".
+
+### The Second Session (Cross-Session Recall)
+
+pmem's value appears when you come back. Open a new terminal or start a new agent session the next day:
+
+```bash
+pmem session start -a "Claude"
+pmem recall --format compact --budget 2000
+```
+
+Output:
+```
+PROJECT: my-project
+STAGE: Active development
+FOCUS: Updated core module
+NEXT: Continue development
+STATE:
+  - Core module value updated to 2
+READ_IF_NEEDED:
+  .pmem/state.md
+  .pmem/next.md
+  .pmem/modules/core.md
+```
+
+In a single command you restored the project context, last state, and what to read next — without re-reading all your source files or asking "where were we?" This is pmem's core value: **cross-session project memory**.
+
+### Agent-Native Init (for scripts and CI)
+
+For agents and scripts that can't answer TTY prompts:
+
+```bash
+pmem init my-project --guided \
+  --description "A backend service" \
+  --stage "Alpha" \
+  --next "Set up CI/CD"
+```
+
+Or with a JSON file:
+
+```bash
+pmem init my-project --answers ./pmem-init.json
+```
 
 ## Core Concepts
 
