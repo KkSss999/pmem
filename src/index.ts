@@ -19,7 +19,7 @@ const program = new Command();
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.5.0');
+  .version('0.6.0');
 
 program
   .command('status')
@@ -34,9 +34,20 @@ program
   .command('init [project-name]')
   .description('Initialize pmem in the current project')
   .option('--guided', 'Interactive guided initialization (recommended)')
-  .action((projectName?: string, options?: { guided?: boolean }) => {
+  .option('--description <text>', 'Project description (non-interactive mode)')
+  .option('--stage <text>', 'Current project stage (non-interactive mode)')
+  .option('--next <text>', 'Most important next step (non-interactive mode)')
+  .option('--answers <path>', 'Path to JSON answers file for non-interactive init')
+  .action((projectName?: string, options?: { guided?: boolean; description?: string; stage?: string; next?: string; answers?: string }) => {
     const opts = options || {};
-    initCommand({ projectName, guided: opts.guided });
+    initCommand({
+      projectName,
+      guided: opts.guided,
+      description: opts.description,
+      stage: opts.stage,
+      next: opts.next,
+      answers: opts.answers,
+    });
   });
 
 program
