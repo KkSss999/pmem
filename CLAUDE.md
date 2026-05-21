@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 `pmem` is **Project Memory for AI Agents**: a local CLI runtime that gives coding agents compact project recall, graph-guided memory lookup, code-change awareness, memory update suggestions, and consistency verification.
 
-Current development track: **v0.5 Productization Beta**.
+Current development track: **v0.6 Agent-native Workflow Polish**.
 
-v0.5 is about making the completed v0.4 workflow usable as a Beta product:
+v0.5 shipped as npm Beta (`pmem-ai`). v0.6 is about lowering friction for agent programmatic use:
 
 ```txt
-install -> init -> rebuild -> recall/ask -> status -> mark-dirty -> update -> verify
+non-interactive init -> integration install -> recall/ask -> status -> mark-dirty -> update --suggest -> verify -> cross-session recall
 ```
 
-Do not expand scope into embedding, MCP/REST, Graph UI, telemetry, backup/restore commands, or remote multi-user service unless the v0.5 design is explicitly revised.
+Do not expand scope into embedding, MCP/REST, Graph UI, telemetry, backup/restore commands, or remote multi-user service unless the v0.6 design is explicitly revised.
 
 ## Commands
 
@@ -127,6 +127,10 @@ Exit code `1` is often a workflow signal, not a failure.
 
 ## Claude Code Workflow
 
+**One-time setup:** `pmem install --skills --claude` places pmem skills in `~/.claude/skills/pmem/`.
+
+**Slash commands** (after `pmem integration install claude-code`): `/pmem-recall`, `/pmem-ask <query>`, `/pmem-update`, `/pmem-distill`.
+
 At session start:
 
 ```bash
@@ -156,6 +160,15 @@ pmem session end -s "<task summary>"
 pmem verify
 ```
 
+**Agent-native init** (non-interactive, for scripts and agents):
+
+```bash
+pmem init my-project --guided \
+  --description "Project description" \
+  --stage "Current stage" \
+  --next "Next step"
+```
+
 ## Key Design Rules
 
 1. Markdown cards are the only source of truth.
@@ -165,7 +178,8 @@ pmem verify
 5. Agent workflow is confirmation-first: detect, suggest, confirm/apply, rebuild, verify.
 6. Manifest typing is a discriminated union. Narrow on `manifest.pmem.schema_version` before reading version-specific fields.
 7. Avoid `as any`; extend types instead.
-8. Keep v0.5 focused on productization.
+8. Keep v0.6 focused on agent-native workflow polish.
+9. Global skills (`pmem install --skills`) follow the agent skill spec: `SKILL.md` with frontmatter + `references/`.
 
 ## Recommended Reading
 

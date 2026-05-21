@@ -2,6 +2,30 @@
 
 All notable changes to pmem are documented here.
 
+## 0.6.0 - Agent-native Workflow Polish
+
+### Added
+
+- Non-interactive init: `--guided` now accepts `--description`, `--stage`, `--next` flags and `--answers <file.json>` for agent/script usage.
+- Claude Code slash commands: `pmem integration install claude-code` generates `.claude/commands/pmem-*.md` (recall, ask, update, distill).
+- `update --suggest --format json` output includes `message` and `next_steps` for empty scenarios.
+- `ask --format json` output includes `message` and `next_steps` when no matches found.
+- `pmem integration verify` checks slash command files and gives fix instructions for all frameworks.
+- Global skills installation: `pmem install --skills --claude/--codex/--gemini/--all` copies `skills/pmem/` to agent global skills directories.
+- `pmem doctor`: unified diagnostic command checking 8 aspects of project memory health.
+- Agent-native E2E suite: non-interactive init, answers file, claude integration, empty guidance, non-git UX.
+
+### Changed
+
+- `mark-dirty --auto` checks git availability before running git commands; gives friendly guidance instead of raw stack traces.
+- `pmem session end` without an active session now provides actionable next steps.
+- `pmem rebuild` differentiates missing `.pmem` from missing `manifest.yml`.
+- Updated docs: README, CLAUDE.md, AGENTS.md, and integration templates to v0.6 scope.
+
+### Fixed
+
+- `pmem install-smoke` E2E version check now reads expected version from `package.json` dynamically.
+
 ## 0.5.0 - Productization Beta
 
 ### Added

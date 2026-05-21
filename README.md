@@ -38,6 +38,8 @@ pmem --version
 
 Node.js 18 or newer is required. `better-sqlite3` is compiled during install.
 
+Run `pmem doctor` anytime to check the health of your project memory setup.
+
 To install from source:
 
 ```bash
@@ -46,6 +48,17 @@ cd pmem
 npm install
 npm run build
 npm link
+```
+
+### Installing Agent Skills
+
+After installing the CLI, add pmem skills to your agent so it knows how to use pmem:
+
+```bash
+pmem install --skills --claude    # → ~/.claude/skills/pmem/
+pmem install --skills --codex     # → ~/.codex/skills/pmem/
+pmem install --skills --gemini    # → ~/.gemini/skills/pmem/
+pmem install --skills --all       # → all detected agents
 ```
 
 ## 5-Minute Quick Start
@@ -101,6 +114,48 @@ pmem verify
 ```
 
 Note: `pmem update --suggest` exits with code `1` when it found suggestions. That means "action suggested", not "command failed".
+
+### The Second Session (Cross-Session Recall)
+
+pmem's value appears when you come back. Open a new terminal or start a new agent session the next day:
+
+```bash
+pmem session start -a "Claude"
+pmem recall --format compact --budget 2000
+```
+
+Output:
+```
+PROJECT: my-project
+STAGE: Active development
+FOCUS: Updated core module
+NEXT: Continue development
+STATE:
+  - Core module value updated to 2
+READ_IF_NEEDED:
+  .pmem/state.md
+  .pmem/next.md
+  .pmem/modules/core.md
+```
+
+In a single command you restored the project context, last state, and what to read next — without re-reading all your source files or asking "where were we?" This is pmem's core value: **cross-session project memory**.
+
+### Agent-Native Init (for scripts and CI)
+
+For agents and scripts that can't answer TTY prompts:
+
+```bash
+pmem init my-project --guided \
+  --description "A backend service" \
+  --stage "Alpha" \
+  --next "Set up CI/CD"
+```
+
+Or with a JSON file:
+
+```bash
+pmem init my-project --answers ./pmem-init.json
+```
 
 ## Core Concepts
 
@@ -328,15 +383,18 @@ pmem verify
 
 ## Roadmap
 
-v0.5 Productization Beta is shipped:
-
+**v0.5 Productization Beta** — shipped on npm as `pmem-ai`:
 - README, quick start, and [usage guide](docs/usage.md)
-- npm package (`pmem-ai`) with metadata, E2E suite, and CI/CD
-- Agent integration templates for Claude Code, Codex, and Cursor
-- Error UX: every common failure scenario produces actionable messages
-- Release checklist and changelog
+- E2E suite, CI/CD, error UX, release checklist
 
-Deferred beyond v0.5:
+**v0.6 Agent-native Workflow Polish** — in development:
+- Non-interactive init (`--description`/`--stage`/`--next` flags, `--answers` file)
+- Claude Code slash commands (`/pmem-recall`, `/pmem-ask`, `/pmem-update`, `/pmem-distill`)
+- Actionable empty states and error messages
+- Session fault tolerance
+- Integration verification enhanced
+
+Deferred:
 
 - embedding
 - `pmem serve` / MCP / REST

@@ -6,15 +6,15 @@ This file provides guidance to Codex (Codex.ai/code) when working with this repo
 
 `pmem` is **Project Memory for AI Agents**: a local CLI runtime that lets coding agents recover project context, query graph-guided memory, detect changed files, suggest memory updates, and verify consistency.
 
-Current development track: **v0.5 Productization Beta**.
+Current development track: **v0.6 Agent-native Workflow Polish**.
 
-v0.4 already completed the runtime loop:
+v0.5 shipped as npm Beta (`pmem-ai`). v0.4 completed the runtime loop:
 
 ```txt
 recall / ask -> code changes -> status -> mark-dirty -> update suggest/confirm -> distill -> verify
 ```
 
-v0.5 does not add embedding, MCP/REST, Graph UI, telemetry, or remote services. Its goal is to make the existing runtime installable, understandable, testable, and publishable as a Beta CLI product.
+v0.6 does not add embedding, MCP/REST, Graph UI, telemetry, or remote services. Its goal is to make the CLI agent-native: non-interactive init, actionable error UX, empty result guidance, and Claude Code slash commands.
 
 ## Commands
 
