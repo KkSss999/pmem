@@ -6,7 +6,7 @@ Use this checklist before tagging or publishing v0.6.0.
 
 - [ ] v0.6 remains Agent-native Workflow Polish only.
 - [ ] No embedding, MCP/REST, Graph UI, telemetry, or remote service was added.
-- [ ] Non-interactive init, error UX, empty result guidance, and Claude Code slash commands are complete.
+- [ ] Non-interactive init, error UX, empty result guidance, Claude Code slash commands, pmem doctor, and global skills installation are complete.
 
 ## Version Check
 
@@ -30,6 +30,7 @@ npm run test:e2e:v06-answers
 npm run test:e2e:v06-claude
 npm run test:e2e:v06-empty
 npm run test:e2e:v06-nongit
+npm run test:e2e:v06-skills
 ```
 
 Expected:
@@ -51,6 +52,7 @@ Expected:
 - [ ] Package name is `pmem-ai`.
 - [ ] Package version is `0.6.0`.
 - [ ] Tarball includes `dist/`.
+- [ ] Tarball includes `skills/pmem/SKILL.md` and `skills/pmem/references/`.
 - [ ] Tarball includes `README.md`, `LICENSE`, `CHANGELOG.md`.
 - [ ] Tarball includes `docs/*.md` including `docs/usage.md`.
 - [ ] Tarball excludes `src/`, `temp/`, `.pmem/`, `node_modules/`.

@@ -127,6 +127,8 @@ Exit code `1` is often a workflow signal, not a failure.
 
 ## Claude Code Workflow
 
+**One-time setup:** `pmem install --skills --claude` places pmem skills in `~/.claude/skills/pmem/`.
+
 **Slash commands** (after `pmem integration install claude-code`): `/pmem-recall`, `/pmem-ask <query>`, `/pmem-update`, `/pmem-distill`.
 
 At session start:
@@ -176,7 +178,8 @@ pmem init my-project --guided \
 5. Agent workflow is confirmation-first: detect, suggest, confirm/apply, rebuild, verify.
 6. Manifest typing is a discriminated union. Narrow on `manifest.pmem.schema_version` before reading version-specific fields.
 7. Avoid `as any`; extend types instead.
-8. Keep v0.5 focused on productization.
+8. Keep v0.6 focused on agent-native workflow polish.
+9. Global skills (`pmem install --skills`) follow the agent skill spec: `SKILL.md` with frontmatter + `references/`.
 
 ## Recommended Reading
 
