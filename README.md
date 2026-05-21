@@ -50,6 +50,17 @@ npm run build
 npm link
 ```
 
+### Installing Agent Skills
+
+After installing the CLI, add pmem skills to your agent so it knows how to use pmem:
+
+```bash
+pmem install --skills --claude    # → ~/.claude/skills/pmem/
+pmem install --skills --codex     # → ~/.codex/skills/pmem/
+pmem install --skills --gemini    # → ~/.gemini/skills/pmem/
+pmem install --skills --all       # → all detected agents
+```
+
 ## 5-Minute Quick Start
 
 Create project memory in a repository:

@@ -11,6 +11,8 @@ All notable changes to pmem are documented here.
 - `update --suggest --format json` output includes `message` and `next_steps` for empty scenarios.
 - `ask --format json` output includes `message` and `next_steps` when no matches found.
 - `pmem integration verify` checks slash command files and gives fix instructions for all frameworks.
+- Global skills installation: `pmem install --skills --claude/--codex/--gemini/--all` copies `skills/pmem/` to agent global skills directories.
+- `pmem doctor`: unified diagnostic command checking 8 aspects of project memory health.
 - Agent-native E2E suite: non-interactive init, answers file, claude integration, empty guidance, non-git UX.
 
 ### Changed

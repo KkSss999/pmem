@@ -227,7 +227,9 @@ v0.6 不扩大能力边界，不做 embedding、MCP/REST、Graph UI、遥测或�
 | session 容错 UX | `session end` 未 start 时给出可操作建议，评估显式容错 option |
 | Claude Code slash commands | `integration install claude-code` 生成 `.claude/commands/pmem-*.md` |
 | integration verify 增强 | 检查 root files、settings、slash commands、rules 是否真实存在 |
-| Agent-native E2E | 覆盖非交互 init、integration install、空结果、非 git UX |
+| 全局 skills 安装 | `pmem install --skills --claude/--codex/--gemini` 一键安装到 agent skills 目录 |
+| pmem doctor | 8 项诊断检查（pmem_dir/manifest/database/cards/dirty_flags/session/git/integrations） |
+| Agent-native E2E | 覆盖非交互 init、integration install、空结果、非 git UX、skills install |
 | 文档口径同步 | README / AGENTS / CLAUDE 解释 pmem 的跨会话价值 |
 
 详细设计：`docs/v0.6 pre-design.md`
