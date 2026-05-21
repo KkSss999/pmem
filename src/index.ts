@@ -13,6 +13,7 @@ import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
 import { sessionStartCommand, sessionEndCommand } from './commands/session';
 import { statusCommand } from './commands/status';
+import { doctorCommand } from './commands/doctor';
 
 const program = new Command();
 
@@ -127,6 +128,14 @@ program
   .option('--fix', 'Auto-fix issues where possible')
   .action((options) => {
     verifyCommand({ fix: options.fix });
+  });
+
+program
+  .command('doctor')
+  .description('Run diagnostic checks on project memory setup')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((options) => {
+    doctorCommand(options.format);
   });
 
 program

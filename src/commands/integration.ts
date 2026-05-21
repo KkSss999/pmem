@@ -198,21 +198,23 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
   // Update manifest
   if (!manifest.integrations.active.includes(framework)) {
     manifest.integrations.active.push(framework);
-    const v06files: Record<string, string[]> = {
-      'claude-code': ['CLAUDE.md', '.claude/settings.json', '.claude/commands/pmem-recall.md', '.claude/commands/pmem-ask.md', '.claude/commands/pmem-update.md', '.claude/commands/pmem-distill.md'],
-      'cursor': ['.cursor/rules/pmem.mdc'],
-      'codex': ['AGENTS.md'],
-    };
-    manifest.integrations[framework] = {
-      template_version: '0.6.0',
-      files: v06files[framework] || [],
-    };
-    saveManifest(pmemPath, manifest);
   }
+  const v06files: Record<string, string[]> = {
+    'claude-code': ['CLAUDE.md', '.claude/settings.json', '.claude/commands/pmem-recall.md', '.claude/commands/pmem-ask.md', '.claude/commands/pmem-update.md', '.claude/commands/pmem-distill.md'],
+    'cursor': ['.cursor/rules/pmem.mdc'],
+    'codex': ['AGENTS.md'],
+  };
+  manifest.integrations[framework] = {
+    template_version: CURRENT_TEMPLATE_VERSION,
+    files: v06files[framework] || [],
+  };
+  saveManifest(pmemPath, manifest);
 
   console.log(`✓ Integration "${framework}" installed.`);
   console.log(`  Template: .pmem/integrations/${framework}/`);
 }
+
+const CURRENT_TEMPLATE_VERSION = '0.6.0';
 
 function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadManifest>): void {
   if (!manifest) return;
@@ -225,6 +227,18 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
     const exists = fileExists(integDir);
 
     console.log(`\n  ${active}: ${exists ? 'installed' : 'missing'}`);
+
+    // Template version check
+    const installedInfo = manifest.integrations[active] as { template_version?: string } | undefined;
+    if (installedInfo?.template_version) {
+      const installedVer = installedInfo.template_version;
+      if (installedVer !== CURRENT_TEMPLATE_VERSION) {
+        console.log(`    Template version: ${installedVer} (current: ${CURRENT_TEMPLATE_VERSION})`);
+        console.log(`    ⚠ Template is outdated. Run: pmem integration install ${active}`);
+      } else {
+        console.log(`    Template version: ${installedVer} (up to date)`);
+      }
+    }
 
     if (active === 'claude-code') {
       const claudeMdExists = fileExists(path.join(cwd, 'CLAUDE.md'));
