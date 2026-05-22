@@ -24,14 +24,15 @@
 ## 二、当前版本状态
 
 ```
-v0.1 → v0.2 → v0.3 → v0.4 → v0.5 → v0.6
-能用   防损坏  强一致  自动化  Beta上线   Agent原生
+v0.1 → v0.2 → v0.3 → v0.4 → v0.5 → v0.6 → v0.6.1
+能用   防损坏  强一致  自动化  Beta上线   Agent原生  建议可行动
 ```
 
 | 版本 | 主题 | 状态 |
 |------|------|------|
 | v0.5 | Productization Beta | ✅ npm 已发布 (`pmem-ai@0.5.0`) |
 | v0.6 | Agent-native Workflow Polish | ✅ npm 已发布 (`pmem-ai@0.6.0`) |
+| v0.6.1 | Actionable Update Suggestions | ✅ npm 已发布 (`pmem-ai@0.6.1`) |
 
 **v0.6 新增能力：** 非交互 init、错误 UX 不崩栈、空结果引导、Claude Code slash commands、全局 skills 安装、pmem doctor、integration 模板版本化。
 
@@ -105,7 +106,7 @@ GitHub Actions (`.github/workflows/ci.yml`)：
 
 ```bash
 npm install -g pmem-ai    # 包名 pmem-ai，命令名 pmem
-pmem --version             # 当前 0.6.0
+pmem --version             # 当前 0.6.1
 ```
 
 ## 八、已解决的反馈
@@ -120,6 +121,8 @@ pmem --version             # 当前 0.6.0
 | 无全量诊断 | `pmem doctor` 8 项检查 |
 
 ## 九、待观察的反馈点
+
+v0.6.1 已发布，当前进入真实用户观察期。优先观察 `update --suggest` 的去重、分级、compact 摘要和 verify/suggest 语义对齐是否真正降低误判与噪声。
 
 以下问题需要真实用户反馈后决定是否进入 v0.7：
 
@@ -146,4 +149,4 @@ pmem --version             # 当前 0.6.0
 **交班人：** Claude Opus 4.6  
 **交班日期：** 2026-05-22  
 **仓库：** https://github.com/KkSss999/pmem  
-**npm：** `pmem-ai@0.6.0`
+**npm：** `pmem-ai@0.6.1`

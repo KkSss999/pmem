@@ -237,11 +237,11 @@ v0.6 不扩大能力边界，不做 embedding、MCP/REST、Graph UI、遥测或�
 
 ---
 
-## v0.6.1 — Actionable Update Suggestions
+## v0.6.1 — Actionable Update Suggestions ✅ 已发布
 
 **主题：** 把 `pmem update --suggest` 从“完整 dirty event dump”打磨成“当前可行动摘要”。
 
-v0.6.1 是 v0.6 后的 patch release 目标。它不新增大型子系统，不改变 memory schema，不做完整 dirty lifecycle。它专注解决长期项目中 dirty flags 和 suggestions 输出膨胀，导致 agent / 用户误判当前仍有阻塞问题的真实反馈。
+v0.6.1 是 v0.6 后的 patch release，现已完成发布。它不新增大型子系统，不改变 memory schema，不做完整 dirty lifecycle。它专注解决长期项目中 dirty flags 和 suggestions 输出膨胀，导致 agent / 用户误判当前仍有阻塞问题的真实反馈。当前阶段进入真实用户观察期，重点收集 `update --suggest` 聚合输出是否足够清晰、是否仍有误报/噪声。
 
 | 功能 | 说明 |
 |------|------|
@@ -330,8 +330,9 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
   - 发布清单：`docs/release-checklist-v0.5.md`
 - **v0.6:** ✅ 完成并上线 npm（Agent-native Workflow Polish）
   - 设计决策：`docs/v0.6 pre-design.md`
-- **v0.6.1:** 📋 设计完成，待开工（Actionable Update Suggestions）
+- **v0.6.1:** ✅ 已发布（Actionable Update Suggestions）
   - 设计决策：`docs/v0.6.1 pre-design.md`
+  - 发布状态：`v0.6.1` 已完成 CI 并上线 npm
 
 ---
 
