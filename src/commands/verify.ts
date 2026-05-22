@@ -4,6 +4,7 @@ import { readFile, fileExists } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
+import { checkStaleMemory } from '../core/consistency';
 import type { VerifyIssue, VerifyResult, CardRow, EdgeRow } from '../types';
 import { rebuildCommand } from './rebuild';
 
@@ -193,33 +194,15 @@ export function verifyCommand(options: { fix?: boolean }): void {
       }
 
       // 9. Stale memory: source files newer than card update time
-      for (const card of cards) {
-        const sourceFiles = db.prepare(
-          "SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'"
-        ).all(card.id) as Array<{ path: string }>;
-
-        const cardUpdated = card.updated_at || card.last_verified_at;
-        if (!cardUpdated) continue;
-
-        const cardUpdatedMs = new Date(cardUpdated).getTime();
-
-        for (const sourceFile of sourceFiles) {
-          const absPath = path.join(cwd, sourceFile.path);
-          if (!fileExists(absPath)) continue;
-          try {
-            const sourceStat = statSync(absPath);
-            if (sourceStat.mtimeMs > cardUpdatedMs) {
-              issues.push({
-                severity: 'warning',
-                type: 'stale_memory',
-                message: `${card.id} may be stale — ${sourceFile.path} modified after last card update`,
-                fix: `Run: pmem update --confirm to update ${card.id}.`,
-              });
-            }
-          } catch {
-            // skip files that can't be stat'd
-          }
-        }
+      // Uses shared consistency check to stay aligned with update --suggest
+      const staleMemoryIssues = checkStaleMemory(pmemPath);
+      for (const ci of staleMemoryIssues) {
+        issues.push({
+          severity: 'warning',
+          type: ci.type,
+          message: ci.message,
+          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem rebuild',
+        });
       }
     }
 

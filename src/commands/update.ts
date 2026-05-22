@@ -3,8 +3,11 @@ import { execSync } from 'child_process';
 import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
-import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, insertUpdateLog, getRecentUpdateLogs, getActiveSession, closeDatabase } from '../core/db';
+import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, closeDatabase } from '../core/db';
+import type { DirtyFlagDetailed } from '../core/db';
 import { parseGitStatusPorcelain } from '../core/git';
+import { checkStaleMemory } from '../core/consistency';
+import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
 
 const PMEM_DIR = '.pmem';
 
@@ -17,6 +20,7 @@ export function updateCommand(options: {
   suggest?: boolean;
   applySuggestion?: string;
   format?: string;
+  includeHistory?: boolean;
 }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -34,7 +38,7 @@ export function updateCommand(options: {
 
   // --suggest: show intelligent update suggestions
   if (options.suggest) {
-    suggestActions(pmemPath, options.format);
+    suggestActions(pmemPath, options.format, options.includeHistory);
     return;
   }
 
@@ -363,156 +367,336 @@ function listSourceFiles(root: string): string[] {
   return results;
 }
 
-// === P1: suggestActions — intelligent update suggestions ===
+// === v0.6.1: Actionable Update Suggestions ===
 
-interface Suggestion {
-  id: string;
-  action: string;
-  target: string;
-  reason: string;
-  priority: string;
+interface SuggestionReport {
+  summary: SuggestSummary;
+  message: string;
+  next_steps: string[];
+  groups: SuggestGroups;
+  error?: boolean;
 }
 
-function generateSuggestions(pmemPath: string): {
-  dirtyFlags: Array<{ scope: string; target: string; reason: string; created_at: string }>;
-  stateFreshness: 'stale' | 'fresh';
-  suggestions: Suggestion[];
-} {
+/**
+ * Extract the matched file path from a dirty flag reason string.
+ * Handles formats like "file_changed: path/to/file" or plain text.
+ */
+function extractMatchedFile(reason: string): string | null {
+  const match = reason.match(/^file_changed:\s*(.+)/);
+  if (match) {
+    return match[1].trim();
+  }
+  return null;
+}
+
+/**
+ * Build the aggregation key for a dirty flag: target + reason + matched_file.
+ */
+function aggregationKey(flag: DirtyFlagDetailed): string {
+  const mf = extractMatchedFile(flag.reason);
+  return `${flag.target}||${flag.reason}||${mf ?? ''}`;
+}
+
+/**
+ * Find the most recent session end time.
+ * Returns null if no ended session exists.
+ */
+function getLatestSessionEnd(pmemPath: string): string | null {
+  try {
+    const db = openDatabase(pmemPath);
+    const row = db.prepare(
+      "SELECT ended_at FROM sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
+    ).get() as { ended_at: string } | undefined;
+    return row?.ended_at ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the active (un-ended) session if one exists.
+ */
+function getActiveSessionStart(pmemPath: string): string | null {
+  try {
+    const db = openDatabase(pmemPath);
+    const row = db.prepare(
+      "SELECT started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
+    ).get() as { started_at: string } | undefined;
+    return row?.started_at ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function generateSuggestions(pmemPath: string, includeHistory: boolean = false): SuggestionReport {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) {
-    console.log('No SQLite database. Run pmem rebuild first.');
-    process.exit(2);
+    return {
+      summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
+      message: 'No SQLite database. Run pmem rebuild first.',
+      next_steps: ['Run `pmem rebuild` to create the database index.'],
+      groups: { blocking_for_verify: [], current_suggestions: [], historical_dirty_flags: [] },
+      error: true,
+    };
   }
 
   let db: ReturnType<typeof openDatabase>;
   try {
     db = openDatabase(pmemPath);
   } catch {
-    console.log('No SQLite database. Run pmem rebuild first.');
-    process.exit(2);
+    return {
+      summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
+      message: 'Cannot open database. Run pmem rebuild first.',
+      next_steps: ['Run `pmem rebuild` to recreate the database.'],
+      groups: { blocking_for_verify: [], current_suggestions: [], historical_dirty_flags: [] },
+      error: true,
+    };
   }
 
-  const unresolved = getUnresolvedDirtyFlags(db);
-  const suggestions: Suggestion[] = [];
+  // 1. Get raw dirty flags with full details
+  const allFlags = getUnresolvedDirtyFlagsDetailed(db);
 
-  // Card-level dirty flags → update_card suggestions
-  for (const flag of unresolved) {
-    if (flag.scope === 'card') {
-      suggestions.push({
-        id: `suggest-${suggestions.length + 1}`,
-        action: 'update_card',
-        target: flag.target,
-        reason: flag.reason,
-        priority: 'high',
-      });
+  // 2. Run shared stale-memory consistency check
+  const staleIssues = checkStaleMemory(pmemPath);
+
+  // Build lookup: card_id → set of stale file paths
+  const staleByCard = new Map<string, Set<string>>();
+  for (const issue of staleIssues) {
+    if (issue.card_id) {
+      if (!staleByCard.has(issue.card_id)) {
+        staleByCard.set(issue.card_id, new Set());
+      }
+      if (issue.file_path) {
+        staleByCard.get(issue.card_id)!.add(issue.file_path);
+      }
     }
   }
 
-  // Project-level dirty → create_trace or confirm suggestions
-  for (const flag of unresolved) {
-    if (flag.scope === 'project') {
-      suggestions.push({
-        id: `suggest-${suggestions.length + 1}`,
-        action: 'create_trace',
-        target: flag.target,
-        reason: flag.reason,
-        priority: 'medium',
-      });
+  // 3. Aggregate dirty flags by target + reason + matched_file
+  const groups = new Map<string, DirtyFlagDetailed[]>();
+  for (const flag of allFlags) {
+    const key = aggregationKey(flag);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(flag);
+  }
+
+  // 4. Get session boundaries for historical classification
+  const latestSessionEnd = getLatestSessionEnd(pmemPath);
+  const activeSessionStart = getActiveSessionStart(pmemPath);
+  const sessionBoundary = latestSessionEnd || activeSessionStart;
+
+  // 5. Get total card count for affected_cards
+  const cardCount = getCardCount(pmemPath);
+
+  // 6. Classify each aggregated group
+  const blockingForVerify: AggregatedSuggestion[] = [];
+  const currentSuggestions: AggregatedSuggestion[] = [];
+  const historicalDirtyFlags: AggregatedSuggestion[] = [];
+
+  for (const [key, flags] of groups) {
+    const representative = flags[0];
+    const matchedFile = extractMatchedFile(representative.reason);
+
+    // Determine if this group blocks verify
+    let blocksVerify = false;
+    if (representative.scope === 'card' && staleByCard.has(representative.target)) {
+      const staleFiles = staleByCard.get(representative.target)!;
+      if (matchedFile && staleFiles.has(matchedFile)) {
+        blocksVerify = true;
+      } else if (!matchedFile) {
+        // Card is in stale list, even if we can't match the specific file
+        blocksVerify = true;
+      }
+    }
+
+    // Determine severity
+    let severity: 'blocking' | 'warning' | 'info';
+    if (blocksVerify) {
+      severity = 'blocking';
+    } else if (representative.scope === 'card') {
+      severity = 'warning';
+    } else {
+      severity = 'info';
+    }
+
+    // Historical classification
+    const allCreatedAts = flags.map(f => f.created_at).sort();
+    const latestCreated = allCreatedAts[allCreatedAts.length - 1];
+    const earliestCreated = allCreatedAts[0];
+    const isMulti = flags.length > 1;
+
+    let isHistorical = false;
+    let isDuplicate = false;
+
+    if (blocksVerify) {
+      // Blocking items are never historical
+      isHistorical = false;
+      isDuplicate = isMulti;
+    } else if (sessionBoundary && latestCreated < sessionBoundary) {
+      // All flags are from before the session boundary → historical
+      isHistorical = true;
+      isDuplicate = isMulti;
+    } else if (isMulti && sessionBoundary && latestCreated < sessionBoundary) {
+      // Multiple flags, all old → historical duplicate
+      isHistorical = true;
+      isDuplicate = true;
+    } else {
+      // Default: keep in current
+      isHistorical = false;
+      isDuplicate = isMulti;
+    }
+
+    const aggregated: AggregatedSuggestion = {
+      target: representative.target,
+      reason: representative.reason,
+      matched_file: matchedFile,
+      count: flags.length,
+      severity,
+      blocks_verify: blocksVerify,
+      is_duplicate: isDuplicate,
+      is_historical: isHistorical,
+      created_at_first: earliestCreated,
+      created_at_last: latestCreated,
+      sources: flags.map(f => ({
+        scope: f.scope,
+        target: f.target,
+        reason: f.reason,
+        created_at: f.created_at,
+        session_id: f.session_id,
+      })),
+    };
+
+    if (blocksVerify) {
+      blockingForVerify.push(aggregated);
+    } else if (isHistorical) {
+      historicalDirtyFlags.push(aggregated);
+    } else {
+      currentSuggestions.push(aggregated);
     }
   }
 
-  // Check state.md freshness
-  let stateFreshness: 'stale' | 'fresh' = 'fresh';
-  const statePath = path.join(pmemPath, 'state.md');
-  if (fileExists(statePath)) {
-    const fs = require('fs');
-    const stat = fs.statSync(statePath);
-    const hoursSinceUpdate = (Date.now() - stat.mtimeMs) / (1000 * 60 * 60);
-    if (hoursSinceUpdate > 24) {
-      stateFreshness = 'stale';
-    }
+  // 7. Compute summary
+  const uniqueAffectedCards = new Set<string>();
+  for (const item of [...blockingForVerify, ...currentSuggestions]) {
+    uniqueAffectedCards.add(item.target);
   }
 
-  if (stateFreshness === 'stale') {
-    suggestions.push({
-      id: `suggest-${suggestions.length + 1}`,
-      action: 'update_state',
-      target: 'state.md',
-      reason: 'state.md has not been updated in over 24 hours',
-      priority: 'medium',
-    });
-  }
+  const duplicatesHidden = [...blockingForVerify, ...currentSuggestions, ...historicalDirtyFlags]
+    .filter(g => g.count > 1)
+    .reduce((sum, g) => sum + (g.count - 1), 0);
 
-  // Check next.md content
-  const nextPath = path.join(pmemPath, 'next.md');
-  let nextEmpty = false;
-  if (fileExists(nextPath)) {
-    const content = readFile(nextPath) || '';
-    if (content.replace(/#.*\n/g, '').trim().length < 50) {
-      nextEmpty = true;
-    }
-  }
+  const summary: SuggestSummary = {
+    affected_cards: uniqueAffectedCards.size,
+    blocking: blockingForVerify.length,
+    warning: currentSuggestions.filter(g => g.severity === 'warning').length,
+    info: currentSuggestions.filter(g => g.severity === 'info').length,
+    duplicates_hidden: duplicatesHidden,
+    historical_hidden: includeHistory ? 0 : historicalDirtyFlags.length,
+    verify_blocking: blockingForVerify.length > 0,
+  };
 
-  if (nextEmpty) {
-    suggestions.push({
-      id: `suggest-${suggestions.length + 1}`,
-      action: 'update_next',
-      target: 'next.md',
-      reason: 'next.md appears to have minimal content',
-      priority: 'low',
-    });
-  }
+  // 8. Build message and next steps
+  const message = buildSuggestMessage(summary, cardCount);
+  const nextSteps = buildSuggestNextSteps(summary, cardCount);
 
-  closeDatabase();
-  return { dirtyFlags: unresolved, stateFreshness, suggestions };
+  return {
+    summary,
+    message,
+    next_steps: nextSteps,
+    groups: {
+      blocking_for_verify: blockingForVerify,
+      current_suggestions: currentSuggestions,
+      historical_dirty_flags: includeHistory ? historicalDirtyFlags : [],
+    },
+  };
 }
 
-function suggestActions(pmemPath: string, format?: string): void {
-  const { dirtyFlags, stateFreshness, suggestions } = generateSuggestions(pmemPath);
-
-  // Build contextual message and next steps for empty results
-  const cardCount = getCardCount(pmemPath);
-  const message = buildSuggestMessage(suggestions, dirtyFlags, cardCount);
-  const nextSteps = buildSuggestNextSteps(suggestions, dirtyFlags, cardCount);
+function suggestActions(pmemPath: string, format?: string, includeHistory?: boolean): void {
+  const report = generateSuggestions(pmemPath, includeHistory);
 
   if (format === 'json') {
     console.log(JSON.stringify({
-      dirty_flags: dirtyFlags,
-      state_freshness: stateFreshness,
-      suggestions,
-      message,
-      next_steps: nextSteps,
+      summary: report.summary,
+      message: report.message,
+      next_steps: report.next_steps,
+      groups: report.groups,
     }, null, 2));
   } else {
-    if (dirtyFlags.length > 0) {
-      console.log(`Dirty flags: ${dirtyFlags.length}`);
-      for (const flag of dirtyFlags) {
-        console.log(`  [${flag.scope}] ${flag.target}: ${flag.reason}`);
-      }
-    } else {
-      console.log('No unresolved dirty flags.');
-    }
-    console.log(`State freshness: ${stateFreshness}`);
+    // Compact output
+    console.log('Memory update suggestions');
+    console.log('');
+    console.log(`Affected cards: ${report.summary.affected_cards}`);
+    console.log(`Blocking for verify: ${report.summary.blocking}`);
+    console.log(`Current suggestions: ${report.summary.warning + report.summary.info}`);
+    console.log(`Historical hidden: ${report.summary.historical_hidden}`);
+    console.log(`Duplicate flags hidden: ${report.summary.duplicates_hidden}`);
 
-    if (suggestions.length > 0) {
-      console.log(`\nSuggestions (${suggestions.length}):`);
-      for (const s of suggestions) {
-        console.log(`  ${s.id}: [${s.priority}] ${s.action} ${s.target}`);
-        console.log(`    ${s.reason}`);
+    // Blocking section
+    if (report.groups.blocking_for_verify.length > 0) {
+      console.log('');
+      console.log('Blocking:');
+      for (const item of report.groups.blocking_for_verify) {
+        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const countPart = item.count > 1 ? `, count ${item.count}` : '';
+        console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
       }
+    }
+
+    // Current section
+    if (report.groups.current_suggestions.length > 0) {
+      console.log('');
+      console.log('Current:');
+      for (const item of report.groups.current_suggestions) {
+        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const countPart = item.count > 1 ? `, count ${item.count}` : '';
+        console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
+      }
+    }
+
+    // Historical section (only when --include-history)
+    if (includeHistory && report.groups.historical_dirty_flags.length > 0) {
+      console.log('');
+      console.log('Historical:');
+      for (const item of report.groups.historical_dirty_flags) {
+        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const countPart = item.count > 1 ? `, count ${item.count}` : '';
+        console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
+      }
+    }
+
+    // Message
+    console.log('');
+    if (report.summary.blocking > 0) {
+      console.log(report.message);
     } else {
-      console.log(`\n${message}`);
-      if (nextSteps.length > 0) {
-        console.log('\nNext steps:');
-        for (const step of nextSteps) {
-          console.log(`  ${step}`);
-        }
+      console.log('No blocking memory consistency issues.');
+      if (report.summary.historical_hidden > 0) {
+        console.log('Historical suggestions available with --include-history.');
+      }
+    }
+
+    // Next steps
+    if (report.next_steps.length > 0) {
+      console.log('');
+      console.log('Next:');
+      for (const step of report.next_steps) {
+        console.log(`  - ${step}`);
       }
     }
   }
 
-  const hasSuggestions = suggestions.length > 0;
-  process.exit(hasSuggestions ? 1 : 0);
+  // Exit code: 2 for runtime errors (missing DB, etc.)
+  if (report.error) {
+    process.exit(2);
+  }
+
+  // Exit code: 1 if there are blocking or current suggestions (actionable items)
+  // Exit 0 if only hidden history or nothing at all
+  const hasActionable = report.summary.blocking > 0 ||
+    (report.summary.warning + report.summary.info) > 0;
+  process.exit(hasActionable ? 1 : 0);
 }
 
 function getCardCount(pmemPath: string): number {
@@ -525,45 +709,69 @@ function getCardCount(pmemPath: string): number {
   }
 }
 
-function buildSuggestMessage(suggestions: Suggestion[], dirtyFlags: Array<unknown>, cardCount: number): string {
-  if (suggestions.length > 0) {
-    return `${suggestions.length} suggestion(s) found.`;
-  }
-  if (dirtyFlags.length > 0) {
-    return 'Dirty flags exist but no matching suggestions could be generated.';
-  }
+function buildSuggestMessage(summary: SuggestSummary, cardCount: number): string {
   if (cardCount === 0) {
     return 'No memory cards found. Create a first module, decision, or task card to start building project memory.';
+  }
+  if (summary.blocking > 0 || summary.warning > 0 || summary.info > 0) {
+    const parts: string[] = [];
+    if (summary.blocking > 0) parts.push(`${summary.blocking} blocking memory consistency issue(s)`);
+    if (summary.warning > 0) parts.push(`${summary.warning} current suggestion(s)`);
+    if (summary.info > 0) parts.push(`${summary.info} informational item(s)`);
+    return parts.join(' and ') + '.';
   }
   return 'No suggestions. Memory is up to date.';
 }
 
-function buildSuggestNextSteps(suggestions: Suggestion[], dirtyFlags: Array<unknown>, cardCount: number): string[] {
-  if (suggestions.length > 0) return [];
+function buildSuggestNextSteps(summary: SuggestSummary, cardCount: number): string[] {
   const steps: string[] = [];
   if (cardCount === 0) {
     steps.push('Create a module card with source_files pointing to your code');
     steps.push('Run `pmem rebuild` after creating cards');
     steps.push('Then try `pmem status` and `pmem mark-dirty --auto`');
-  } else if (dirtyFlags.length === 0) {
+  } else if (summary.blocking > 0 || summary.warning > 0) {
+    steps.push('Update or confirm affected cards with pmem update --confirm -s "<summary>" -n "<next step>"');
+    steps.push('Use --include-history to inspect older dirty flags.');
+  } else if (summary.historical_hidden > 0) {
+    steps.push('Use --include-history to inspect older dirty flags.');
+    steps.push('Run `pmem verify` to check overall memory consistency.');
+  } else {
     steps.push('Edit some source files, then run `pmem status` and `pmem mark-dirty --auto`');
     steps.push('Run `pmem verify` to check overall memory consistency');
-  } else {
-    steps.push('Run `pmem update --confirm` to manually record changes');
-    steps.push('Check that dirty cards have source_files defined in their frontmatter');
   }
   return steps;
 }
 
 function applySuggestionAction(pmemPath: string, suggestionId: string): void {
-  // Re-derive suggestions to find the matching one
-  const { suggestions, dirtyFlags } = generateSuggestions(pmemPath);
+  // Re-derive suggestions to find the matching one (with history included for full search)
+  const report = generateSuggestions(pmemPath, true);
 
-  const match = suggestions.find(s => s.id === suggestionId);
+  // Flatten all groups into a single searchable list with generated IDs
+  const flatList: Array<{ id: string; item: AggregatedSuggestion; action: string }> = [];
+  let idx = 1;
+
+  for (const item of report.groups.blocking_for_verify) {
+    const action = item.reason.startsWith('file_changed') ? 'update_card' : 'create_trace';
+    flatList.push({ id: `suggest-${idx}`, item, action });
+    idx++;
+  }
+  for (const item of report.groups.current_suggestions) {
+    const action = item.reason.startsWith('file_changed') ? 'update_card' : 'create_trace';
+    flatList.push({ id: `suggest-${idx}`, item, action });
+    idx++;
+  }
+  for (const item of report.groups.historical_dirty_flags) {
+    const action = item.reason.startsWith('file_changed') ? 'update_card' : 'create_trace';
+    flatList.push({ id: `suggest-${idx}`, item, action });
+    idx++;
+  }
+
+  const match = flatList.find(s => s.id === suggestionId);
   if (!match) {
     console.log(`Suggestion "${suggestionId}" not found. Available suggestions:`);
-    for (const s of suggestions) {
-      console.log(`  ${s.id}: ${s.action} ${s.target}`);
+    for (const s of flatList) {
+      const filePart = s.item.matched_file ? `, ${s.item.matched_file}` : '';
+      console.log(`  ${s.id}: ${s.action} ${s.item.target} (${s.item.reason}${filePart})`);
     }
     process.exit(2);
   }
@@ -574,16 +782,20 @@ function applySuggestionAction(pmemPath: string, suggestionId: string): void {
     process.exit(2);
   }
 
-  switch (match.action) {
+  const action = match.action;
+  const target = match.item.target;
+  const reason = match.item.reason;
+
+  switch (action) {
     case 'update_card': {
       const db = openDatabase(pmemPath);
       // Mark the card's last_verified_at as expired
       db.prepare(
         "UPDATE cards SET last_verified_at = ? WHERE id = ?"
-      ).run(new Date(0).toISOString(), match.target);
+      ).run(new Date(0).toISOString(), target);
       closeDatabase();
-      console.log(`Marked card "${match.target}" as needing verification.`);
-      console.log(`  Reason: ${match.reason}`);
+      console.log(`Marked card "${target}" as needing verification.`);
+      console.log(`  Reason: ${reason}`);
       break;
     }
     case 'create_trace': {
@@ -605,36 +817,38 @@ type: trace
 created: ${today}
 ---
 
-# Trace: ${match.reason}
+# Trace: ${reason}
 
 ## What Changed
-${match.reason}
+${reason}
 
 ## Next
 Continue as planned.
 `);
       console.log(`Auto-created trace: traces/${today}-${traceNum}.md`);
-      console.log(`  Reason: ${match.reason}`);
+      console.log(`  Reason: ${reason}`);
 
-      // Log in SQLite
+      // Resolve the associated dirty flags
       const db = openDatabase(pmemPath);
       const activeSession = getActiveSession(db);
-      insertUpdateLog(db, 'auto_trace', match.reason, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+      // Resolve all dirty flags matching this target+reason
+      resolveDirtyFlags(db, 'card', target);
+      insertUpdateLog(db, 'auto_trace', reason, activeSession?.id, [`trace.${today}-${traceNum}`], true);
       closeDatabase();
       break;
     }
     case 'update_state': {
-      console.log(`Action required: ${match.reason}`);
+      console.log(`Action required: ${reason}`);
       console.log('  Please run `pmem update --confirm` to update state.md.');
       break;
     }
     case 'update_next': {
-      console.log(`Action required: ${match.reason}`);
+      console.log(`Action required: ${reason}`);
       console.log('  Please run `pmem update --confirm --next "<next step>"` to update next.md.');
       break;
     }
     default: {
-      console.log(`Unknown action "${match.action}" for suggestion ${suggestionId}.`);
+      console.log(`Unknown action "${action}" for suggestion ${suggestionId}.`);
       process.exit(2);
     }
   }

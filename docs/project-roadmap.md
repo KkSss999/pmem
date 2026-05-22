@@ -21,6 +21,7 @@ CLI：`pmem`
 | v0.4 | Agent 集成 & 自动化 | 多框架适配、session 追踪、distill 工作流优化 |
 | v0.5 | Productization Beta | README、npm package、E2E、错误 UX、发布清单，上线 npm Beta |
 | v0.6 | Agent-native Workflow Polish | 非交互 init、友好错误、空结果引导、Claude Code slash commands |
+| v0.6.1 | Actionable Update Suggestions | `update --suggest` 去重、分级、compact 摘要、verify 语义对齐 |
 
 ---
 
@@ -236,6 +237,35 @@ v0.6 不扩大能力边界，不做 embedding、MCP/REST、Graph UI、遥测或�
 
 ---
 
+## v0.6.1 — Actionable Update Suggestions
+
+**主题：** 把 `pmem update --suggest` 从“完整 dirty event dump”打磨成“当前可行动摘要”。
+
+v0.6.1 是 v0.6 后的 patch release 目标。它不新增大型子系统，不改变 memory schema，不做完整 dirty lifecycle。它专注解决长期项目中 dirty flags 和 suggestions 输出膨胀，导致 agent / 用户误判当前仍有阻塞问题的真实反馈。
+
+| 功能 | 说明 |
+|------|------|
+| suggestion 去重聚合 | 同一 `target + reason + matched_file` 默认只展示一次，并带 `count` |
+| 输出分级 | 区分 `blocking_for_verify`、`current_suggestions`、`historical_dirty_flags` |
+| severity metadata | 每条 suggestion 带 `severity`、`blocks_verify`、`is_duplicate`、`is_historical` |
+| compact summary | 人类可读输出显示 affected cards、blocking、hidden duplicates、hidden history |
+| JSON 结构化摘要 | `summary` + `groups`，便于 agent 判断下一步 |
+| `--include-history` | 默认隐藏历史项，显式参数查看完整历史 dirty flags |
+| verify/suggest 对齐 | 抽出共享 stale-memory 检查，避免 verify 已通过但 suggest 像仍有阻塞 |
+| E2E 噪声场景 | 覆盖重复 dirty flags、仅历史项、include-history、blocking 分组 |
+
+推迟到 v0.6.2：
+
+- `pmem dirty list`
+- `pmem dirty resolve --auto`
+- `pmem dirty prune --older-than 7d`
+- 完整 dirty lifecycle：`open / resolved / superseded / ignored / archived`
+- `--current-session` / auto-cleanup
+
+详细设计：`docs/v0.6.1 pre-design.md`
+
+---
+
 ## 版本间迁移路径
 
 ```
@@ -263,6 +293,10 @@ v0.4 → v0.5:
 v0.5 → v0.6:
   无强制 memory schema migration
   变更：非交互 init、Agent integration 文件、错误 UX、空结果引导
+
+v0.6 → v0.6.1:
+  无强制 memory schema migration
+  变更：update suggestions 输出聚合、分级、compact summary、verify/suggest 对齐
 ```
 
 每次迁移自动备份到 `.pmem/backups/YYYY-MM-DD-before-vX.Y/`。
@@ -272,10 +306,10 @@ v0.5 → v0.6:
 ## 总览
 
 ```
-v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ───→ v0.6
-能用      防损坏    强一致    自动化    Beta上线  Agent原生
-10 cmd    14 cmd    16 cmd    18 cmd    产品化    低摩擦
-文件模式   文件模式   +SQLite   +集成     +体验     +程序化调用
+v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ───→ v0.6 ───→ v0.6.1
+能用      防损坏    强一致    自动化    Beta上线  Agent原生  建议可行动
+10 cmd    14 cmd    16 cmd    18 cmd    产品化    低摩擦     去重分级
+文件模式   文件模式   +SQLite   +集成     +体验     +程序化调用 +摘要
 ```
 
 ---
@@ -294,8 +328,10 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 - **v0.5:** ✅ 完成并上线 npm（Productization Beta）
   - 设计决策：`docs/v0.5 pre-design.md`
   - 发布清单：`docs/release-checklist-v0.5.md`
-- **v0.6:** 📋 设计完成，待开工（Agent-native Workflow Polish）
+- **v0.6:** ✅ 完成并上线 npm（Agent-native Workflow Polish）
   - 设计决策：`docs/v0.6 pre-design.md`
+- **v0.6.1:** 📋 设计完成，待开工（Actionable Update Suggestions）
+  - 设计决策：`docs/v0.6.1 pre-design.md`
 
 ---
 

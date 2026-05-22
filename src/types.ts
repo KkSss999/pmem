@@ -227,6 +227,54 @@ export interface VerifyResult {
   issues: VerifyIssue[];
 }
 
+// === v0.6.1 Consistency Types ===
+
+export interface ConsistencyIssue {
+  type: string;
+  severity: 'blocking' | 'warning' | 'info';
+  card_id?: string;
+  file_path?: string;
+  message: string;
+}
+
+// === v0.6.1 Suggestion Types ===
+
+export interface AggregatedSuggestion {
+  target: string;
+  reason: string;
+  matched_file: string | null;
+  count: number;
+  severity: 'blocking' | 'warning' | 'info';
+  blocks_verify: boolean;
+  is_duplicate: boolean;
+  is_historical: boolean;
+  created_at_first: string;
+  created_at_last: string;
+  sources: Array<{
+    scope: string;
+    target: string;
+    reason: string;
+    created_at: string;
+    session_id: string | null;
+  }>;
+}
+
+export interface SuggestSummary {
+  affected_cards: number;
+  blocking: number;
+  warning: number;
+  info: number;
+  duplicates_hidden: number;
+  historical_hidden: number;
+  verify_blocking: boolean;
+}
+
+export interface SuggestGroups {
+  blocking_for_verify: AggregatedSuggestion[];
+  current_suggestions: AggregatedSuggestion[];
+  historical_dirty_flags: AggregatedSuggestion[];
+}
+
 // === v0.2 Schema & Version Types ===
 
 export type MemoryCompleteness = 'incomplete' | 'partial' | 'usable' | 'mature';

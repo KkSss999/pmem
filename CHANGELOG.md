@@ -2,6 +2,30 @@
 
 All notable changes to pmem are documented here.
 
+## 0.6.1 - Actionable Update Suggestions
+
+### Added
+
+- Aggregate duplicate `update --suggest` items by `target + reason + matched_file`, with counts and `sources` arrays.
+- Split suggestion output into `blocking_for_verify`, `current_suggestions`, and `historical_dirty_flags` groups.
+- Add machine-readable severity metadata per suggestion: `severity`, `blocks_verify`, `is_duplicate`, `is_historical`.
+- Compact output summarizing affected cards, blocking issues, hidden duplicates, and hidden history.
+- `--include-history` flag to inspect historical dirty flags that are hidden by default.
+- Shared `checkStaleMemory()` in `src/core/consistency.ts`, aligning `update --suggest` with `pmem verify`.
+- Structured JSON output with `summary`, `message`, `next_steps`, and `groups` for agent decision-making.
+- v0.6.1 E2E test suite covering duplicate aggregation, historical hiding, include-history, missing DB, and blocking groups.
+
+### Changed
+
+- `update --suggest --format json` output restructured from flat arrays to `summary` + `groups`.
+- `pmem verify` stale-memory check now delegates to shared `checkStaleMemory()` from `consistency.ts`.
+- `update --suggest` exit code: only hidden historical items return 0; missing/corrupt DB returns 2 (runtime error).
+
+### Fixed
+
+- Long-term projects no longer see repeated dirty flags and historical suggestions flooding `update --suggest` output.
+- `pmem verify` 100/100 and `update --suggest` now semantically aligned — verify-clean projects see "No blocking memory consistency issues."
+
 ## 0.6.0 - Agent-native Workflow Polish
 
 ### Added
