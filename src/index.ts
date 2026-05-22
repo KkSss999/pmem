@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.6.0');
+  .version('0.6.1');
 
 program
   .command('status')
@@ -96,6 +96,7 @@ program
   .option('-s, --summary <text>', 'Summary of changes')
   .option('-n, --next <text>', 'Next step description')
   .option('-f, --format <format>', 'Output format for --suggest (compact, json)', 'compact')
+  .option('--include-history', 'Include historical dirty flags in suggestion output')
   .action((options) => {
     updateCommand(options);
   });

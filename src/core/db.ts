@@ -270,6 +270,21 @@ export function getUnresolvedDirtyFlags(db: Database.Database): Array<{ scope: s
   ).all() as Array<{ scope: string; target: string; reason: string; created_at: string }>;
 }
 
+export interface DirtyFlagDetailed {
+  id: number;
+  scope: string;
+  target: string;
+  reason: string;
+  created_at: string;
+  session_id: string | null;
+}
+
+export function getUnresolvedDirtyFlagsDetailed(db: Database.Database): DirtyFlagDetailed[] {
+  return db.prepare(
+    "SELECT id, scope, target, reason, created_at, session_id FROM dirty_flags WHERE resolved_at IS NULL ORDER BY created_at DESC"
+  ).all() as DirtyFlagDetailed[];
+}
+
 // === P1: sessions helpers ===
 
 export function startSession(db: Database.Database, id: string, agentName?: string): void {
