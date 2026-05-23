@@ -59,13 +59,13 @@ SUGGEST_OUTPUT="$("${PMEM[@]}" update --suggest --format json)"
 SUGGEST_CODE="$?"
 set -e
 
-if [[ "$SUGGEST_CODE" != "1" ]]; then
-  echo "expected update --suggest to exit 1 when suggestions exist, got $SUGGEST_CODE"
+if [[ "$SUGGEST_CODE" != "0" ]]; then
+  echo "expected update --suggest to exit 0 (v0.6.2+), got $SUGGEST_CODE"
   echo "$SUGGEST_OUTPUT"
   exit 1
 fi
 
-echo "$SUGGEST_OUTPUT" | grep -q "suggestions"
+echo "$SUGGEST_OUTPUT" | grep -q "blocking_for_verify"
 
 "${PMEM[@]}" update --confirm -s "Updated core module" -n "Continue testing pmem workflow" >/dev/null
 "${PMEM[@]}" verify >/dev/null

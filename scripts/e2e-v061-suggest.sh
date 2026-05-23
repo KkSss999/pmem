@@ -83,10 +83,10 @@ else
   fail "is_duplicate false" "expected true for aggregated group"
 fi
 
-if [[ "$CODE" == "1" ]]; then
-  pass "exit code 1 (has current suggestions)"
+if [[ "$CODE" == "0" ]]; then
+  pass "exit code 0 (v0.6.2: normal result, has suggestions)"
 else
-  fail "exit code wrong" "expected 1, got $CODE"
+  fail "exit code wrong" "expected 0, got $CODE"
 fi
 
 # ── Test 2: Verify alignment (no blocking, just suggestions) ──
@@ -265,10 +265,10 @@ else
   fail "blocking item missing blocks_verify true" ""
 fi
 
-if [[ "$BLOCK_CODE" == "1" ]]; then
-  pass "blocking present — exit code 1"
+if [[ "$BLOCK_CODE" == "0" ]]; then
+  pass "blocking present — exit code 0 (v0.6.2 normal)"
 else
-  fail "blocking exit code wrong" "expected 1, got $BLOCK_CODE"
+  fail "blocking exit code wrong" "expected 0, got $BLOCK_CODE"
 fi
 
 # ── Summary ─────────────────────────────────────────────
