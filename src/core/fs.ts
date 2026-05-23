@@ -70,8 +70,18 @@ export function acquireLock(lockPath: string, timeoutMs: number = 3000): boolean
       fs.mkdirSync(lockPath);
       return true;
     } catch {
-      // Lock exists, wait and retry
-      // Simple busy-wait (acceptable for sub-second lock timeouts)
+      // Lock exists — check if it's stale before waiting
+      if (isLockStale(lockPath, 60000)) {
+        breakLock(lockPath);
+        // Retry immediately after cleaning stale lock
+        try {
+          fs.mkdirSync(lockPath);
+          return true;
+        } catch {
+          // Another process grabbed it, fall through to wait loop
+        }
+      }
+      // Active lock, wait and retry
       const waitUntil = Date.now() + 50 + Math.random() * 50;
       while (Date.now() < waitUntil) { /* spin */ }
     }
@@ -101,6 +111,23 @@ export function isLockStale(lockPath: string, staleAfterMs: number = 60000): boo
 // NEW: Force remove a stale lock
 export function breakLock(lockPath: string): void {
   releaseLock(lockPath);
+}
+
+// NEW: Get lock age in milliseconds, or null if lock doesn't exist
+export function getLockAge(lockPath: string): number | null {
+  try {
+    const stat = fs.statSync(lockPath);
+    return Date.now() - stat.mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+// NEW: Get lock status for diagnostics
+export function getLockStatus(lockPath: string): { exists: boolean; stale: boolean; age: number | null } {
+  const age = getLockAge(lockPath);
+  if (age === null) return { exists: false, stale: false, age: null };
+  return { exists: true, stale: age > 60000, age };
 }
 
 // NEW: Read JSON file

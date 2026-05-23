@@ -128,7 +128,7 @@ pmem update --suggest --format json
 - `pmem mark-dirty --auto` marks those cards as potentially stale
 - `pmem update --suggest` generates memory update suggestions
 
-Important: `pmem update --suggest` exits with code `1` when it has suggestions. This is a workflow signal ("action suggested"), not a failure.
+Important: As of v0.6.2, `pmem update --suggest` exits 0 regardless. Check JSON output `summary.has_actionable` to decide next steps.
 
 **Session End**
 
@@ -196,7 +196,7 @@ $ pmem mark-dirty --auto
 Auto-marked 1 card(s) as dirty.
 
 $ pmem update --suggest --format json
-# exit code 1 (suggestions exist)
+# exit code 0 (v0.6.2+), check summary.has_actionable in JSON
 {
   "suggestions": [
     {
@@ -313,16 +313,16 @@ In Cursor's AI chat, prefix pmem commands with backticks:
 
 ## 9. Exit Codes
 
-Agents must treat some exit codes as workflow signals:
+As of v0.6.2: `0` = ran successfully, `2` = runtime error. Exit code `1` is no longer used.
 
-| Command | 0 | 1 | 2 |
-|---------|---|---|---|
-| `pmem status` | changes found | no changes | error |
-| `pmem update --suggest` | no suggestions | **suggestions found** | error |
-| `pmem distill --suggest` | no distillation needed | **distillation suggested** | error |
-| `pmem verify` | passed | warnings | errors |
+| Command | 0 | 2 |
+|---------|---|---|
+| `pmem status` | ok (changes or not) | runtime error |
+| `pmem update --suggest` | ok (suggestions or not) | runtime error |
+| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
+| `pmem verify` | ok (passed or warnings) | errors found |
 
-When `pmem update --suggest` returns 1, it means "action suggested" — not "command failed". Parse the JSON output for suggestions.
+> **Breaking change from v0.6.1:** Commands that previously used exit code `1` as a "workflow signal" now exit `0`. Agents should parse `--format json` output to decide next steps.
 
 ## 10. Tips for Agent Framework Authors
 
@@ -330,10 +330,9 @@ If you are an agent framework developer integrating pmem:
 
 1. **Run session start + recall at session begin.** This gives the agent immediate project orientation.
 2. **Run status after file writes.** Detect changes before the agent forgets what it edited.
-3. **Parse exit code 1 correctly.** For `update --suggest` and `distill --suggest`, code 1 is success.
-4. **Use `--format json` for machine consumption.** Compact format is for humans.
-5. **Don't edit `pmem.db` directly.** All writes go through Markdown cards or pmem CLI commands.
-6. **Run verify at session end.** Catch stale indexes, orphan edges, or dirty flags before they accumulate.
+3. **Use `--format json` for machine consumption.** Check structured output fields (e.g. `summary.has_actionable`) instead of exit codes.
+4. **Don't edit `pmem.db` directly.** All writes go through Markdown cards or pmem CLI commands.
+5. **Run verify at session end.** Catch stale indexes, orphan edges, or dirty flags before they accumulate.
 
 ## 11. Troubleshooting First-Run Issues
 

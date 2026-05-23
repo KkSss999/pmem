@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { fileExists } from '../core/fs';
+import { fileExists, getLockStatus } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, closeDatabase } from '../core/db';
 import type { CliFormat } from '../types';
@@ -78,7 +78,7 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
       }
 
       // 6. Active session
-      const sessionRow = db.prepare("SELECT id, agent_name FROM sessions WHERE ended_at IS NULL ORDER BY created_at DESC LIMIT 1").get() as { id: string; agent_name: string | null } | undefined;
+      const sessionRow = db.prepare("SELECT id, agent_name FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1").get() as { id: string; agent_name: string | null } | undefined;
       if (sessionRow) {
         checks.push({ name: 'session', status: 'ok', message: `Active session: ${sessionRow.id}${sessionRow.agent_name ? ` (${sessionRow.agent_name})` : ''}.` });
       } else {
@@ -97,6 +97,19 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
     checks.push({ name: 'git', status: 'ok', message: 'Git repository detected.' });
   } catch {
     checks.push({ name: 'git', status: 'warn', message: 'Not a Git repository.', fix: 'pmem status and mark-dirty --auto will use mtime fallback.' });
+  }
+
+  // 7b. Lock status
+  const lockPath = path.join(pmemPath, '.lock');
+  const lockStatus = getLockStatus(lockPath);
+  if (!lockStatus.exists) {
+    checks.push({ name: 'lock', status: 'ok', message: 'No lock held.' });
+  } else if (lockStatus.stale) {
+    const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
+    checks.push({ name: 'lock', status: 'warn', message: `Stale lock detected at .pmem/.lock (age: ${ageSec}s).`, fix: 'Run: pmem verify --fix-locks' });
+  } else {
+    const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
+    checks.push({ name: 'lock', status: 'warn', message: `Active lock held at .pmem/.lock (age: ${ageSec}s). Another pmem process may be running.`, fix: 'Wait for it to finish. If no other process is running, run: pmem verify --fix-locks' });
   }
 
   // 8. Integrations

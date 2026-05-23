@@ -2,6 +2,31 @@
 
 All notable changes to pmem are documented here.
 
+## 0.6.2 - Real-User Friction Fixes
+
+### Added
+
+- `pmem rename --find <text> --replace <text>`: batch text replacement in memory card bodies. Default preview, `--write` to apply. Body-only, frontmatter preserved byte-for-byte.
+- `pmem verify --fix-locks`: detect and clean stale locks at `.pmem/.lock`.
+- `pmem verify --relaxed`: temporarily double all `card_policy.max_tokens` limits.
+- `pmem doctor` lock status check: reports no lock / stale lock / active lock with fix guidance.
+- `pmem recall --since <duration>`: filter cards by update time (e.g. `--since 7d`, `--since 24h`). Uses ISO 8601 parameterized SQL contract.
+- `pmem new <type> "<title>"`: generate memory card files with valid YAML frontmatter templates. Validates type and title at creation time.
+- `pmem integration install git-hooks`: install pre-commit hook running `pmem verify --relaxed`.
+- `acquireLock()` auto-cleans stale locks (60s+) before retrying, eliminating a common `pmem update --confirm` failure mode.
+
+### Changed
+
+- **BREAKING:** `pmem update --suggest`, `pmem status`, and `pmem distill --suggest` no longer exit `1` when results exist. All normal results exit `0`; runtime errors exit `2`. Exit code `1` is no longer used as a workflow signal. Scripts checking `$? -eq 1` must parse JSON output instead.
+- Lock acquisition failure message in `pmem update --confirm` now guides users to `pmem verify --fix-locks` and `pmem doctor`.
+- `rebuild` now guarantees `cards.updated_at` is always populated (ISO 8601), using fallback chain: frontmatter.updated → file mtime → rebuild timestamp.
+- Card policy default token limits adjusted: `decision 800→1000`, `task 600→800`.
+
+### Fixed
+
+- Doctor session query bug: `ORDER BY created_at` → `ORDER BY started_at` (sessions table has no `created_at` column).
+- `pmem rename --find ""` rejected with clear error and exit 2 (empty pattern safety).
+
 ## 0.6.1 - Actionable Update Suggestions
 
 ### Added

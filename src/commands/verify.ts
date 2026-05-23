@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { statSync } from 'fs';
-import { readFile, fileExists } from '../core/fs';
+import { readFile, fileExists, getLockStatus, breakLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
@@ -10,7 +10,7 @@ import { rebuildCommand } from './rebuild';
 
 const PMEM_DIR = '.pmem';
 
-export function verifyCommand(options: { fix?: boolean }): void {
+export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; relaxed?: boolean }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -56,6 +56,39 @@ export function verifyCommand(options: { fix?: boolean }): void {
         fix: 'Back up the file if needed, then run: pmem rebuild --full',
       });
       db = null;
+    }
+  }
+
+  // 2b. Lock status check
+  const lockPath = path.join(pmemPath, '.lock');
+  const lockStatus = getLockStatus(lockPath);
+  if (lockStatus.exists) {
+    if (lockStatus.stale) {
+      const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
+      if (options.fixLocks) {
+        breakLock(lockPath);
+        issues.push({
+          severity: 'warning',
+          type: 'stale_lock_cleaned',
+          message: `Stale lock at .pmem/.lock (age: ${ageSec}s) was cleaned.`,
+          fix: 'Lock has been removed. You can now run pmem commands.',
+        });
+      } else {
+        issues.push({
+          severity: 'warning',
+          type: 'stale_lock',
+          message: `Stale lock detected at .pmem/.lock (age: ${ageSec}s).`,
+          fix: 'Run: pmem verify --fix-locks (to clean stale lock)\n       Or: pmem doctor (to diagnose lock status)',
+        });
+      }
+    } else if (lockStatus.age !== null) {
+      const ageSec = Math.round(lockStatus.age / 1000);
+      issues.push({
+        severity: 'warning',
+        type: 'active_lock',
+        message: `Active lock at .pmem/.lock (age: ${ageSec}s). Another pmem process may be running.`,
+        fix: 'Wait for the other process to finish. If no other process is running, run: pmem verify --fix-locks',
+      });
     }
   }
 
@@ -159,18 +192,20 @@ export function verifyCommand(options: { fix?: boolean }): void {
         }
 
         // 6b. Token count limits — read files and estimate tokens
+        const relaxedMultiplier = options.relaxed ? 2 : 1;
         for (const card of cards) {
           const filePath = path.join(cwd, card.file_path);
           const content = readFile(filePath);
           if (content) {
             const estimatedTokens = tokenCount(content);
             const maxForType = policy.max_tokens[card.type];
-            if (maxForType && estimatedTokens > maxForType) {
+            const effectiveMax = maxForType ? maxForType * relaxedMultiplier : undefined;
+            if (effectiveMax && estimatedTokens > effectiveMax) {
               issues.push({
                 severity: 'warning',
                 type: 'card_too_large',
-                message: `Card "${card.id}" is ~${estimatedTokens} tokens (max for ${card.type}: ${maxForType}).`,
-                fix: 'Consider splitting this card or run `pmem distill --suggest-splits`.',
+                message: `Card "${card.id}" is ~${estimatedTokens} tokens (max for ${card.type}: ${maxForType}${options.relaxed ? ', relaxed: ' + effectiveMax : ''}).`,
+                fix: `Edit .pmem/manifest.yml → card_policy → max_tokens → ${card.type} to raise the limit.\n       Or run: pmem verify --relaxed (temporarily doubles all limits).\n       Or run: pmem distill --suggest-splits (check if this card can be split).`,
               });
             }
           }
@@ -253,7 +288,7 @@ export function verifyCommand(options: { fix?: boolean }): void {
     console.log('');
   }
 
-  // Auto-fix if requested
+  // Auto-fix if requested (--fix or --fix-locks)
   if (options.fix) {
     const fixableIssue = issues.find(i =>
       i.type === 'stale_index' ||
@@ -266,6 +301,10 @@ export function verifyCommand(options: { fix?: boolean }): void {
       rebuildCommand();
     }
   }
+
+  // --fix-locks cleans stale locks during the check pass above,
+  // but if a stale lock was found and not cleaned (e.g., --fix-locks not passed),
+  // we provide guidance here.
 
   const hasErrors = issues.some(i => i.severity === 'error');
   const hasWarnings = issues.some(i => i.severity === 'warning');

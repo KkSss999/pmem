@@ -116,14 +116,16 @@ pmem integration list|install <framework>|verify
 
 ## Exit Codes
 
-| Command | 0 | 1 | 2 |
-|---------|---|---|---|
-| `pmem status` | changes found | no changes | error |
-| `pmem update --suggest` | no suggestions | suggestions found | error |
-| `pmem distill --suggest` | no distillation needed | distillation suggested | error |
-| `pmem verify` | passed | warnings | errors |
+As of v0.6.2: `0` = ran successfully, `2` = runtime error. Exit code `1` is no longer used as a workflow signal.
 
-Exit code `1` is often a workflow signal, not a failure.
+| Command | 0 | 2 |
+|---------|---|---|
+| `pmem status` | ok (changes or not) | runtime error |
+| `pmem update --suggest` | ok (suggestions or not) | runtime error |
+| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
+| `pmem verify` | ok (passed or warnings) | errors found |
+
+Agents should parse `--format json` output to determine next steps, not exit codes.
 
 ## Claude Code Workflow
 

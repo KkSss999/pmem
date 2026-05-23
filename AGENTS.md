@@ -34,7 +34,7 @@ TypeScript is strict mode, CommonJS output, target ES2022. Runtime target is Nod
 3. install smoke E2E
 4. real project workflow E2E
 5. AGENTS / CLAUDE / integration template sync
-6. error UX and exit code documentation
+6. error UX and exit code documentation (v0.6.2: exit 0 normal, exit 2 error)
 7. CHANGELOG and release checklist
 
 See [docs/v0.5 pre-design.md](docs/v0.5%20pre-design.md) for scope and acceptance criteria.

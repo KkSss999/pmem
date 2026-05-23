@@ -78,7 +78,7 @@ src/
 4. **Agent workflow 是 confirmation-first。** detect → suggest → confirm → rebuild → verify。
 5. **Manifest 类型是 discriminated union。** Narrow on `manifest.pmem.schema_version` before reading version-specific fields。
 6. **Avoid `as any`。** Extend types instead。
-7. **退出码 1 是 workflow signal。** `status`/`update --suggest`/`distill --suggest`/`verify` 的 exit 1 不是失败，是"有情况"。
+7. **退出码简化为 0/2。** v0.6.2 起，exit 1 不再作为 workflow signal。`status`/`update --suggest`/`distill --suggest`/`verify` 有结果或警告时 exit 0，仅运行时错误 exit 2。
 8. **不做 scope creep。** embedding、MCP、Graph UI、telemetry、remote service 全不做。
 
 ## 五、开发命令

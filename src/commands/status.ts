@@ -201,10 +201,9 @@ export function statusCommand(options: { since?: string; format?: string }): voi
     }
   }
 
-  // Exit code
-  if (changes.length === 0) {
-    process.exit(1);
-  }
+  // Exit code: always 0 for normal operation.
+  // Exit 1 no longer used as "no changes" workflow signal (v0.6.2).
+  // Exit 2 reserved for runtime errors (missing DB, corrupt files, etc.).
 }
 
 // === Change detection ===

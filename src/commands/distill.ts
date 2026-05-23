@@ -91,7 +91,7 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
       console.log('');
     }
     console.log('Run with --confirm to apply these changes.');
-    process.exit(1);
+    // v0.6.2: Exit 0 when suggestions exist. Exit 1 no longer used as workflow signal.
   }
 }
 

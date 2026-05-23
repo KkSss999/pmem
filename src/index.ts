@@ -15,6 +15,8 @@ import { sessionStartCommand, sessionEndCommand } from './commands/session';
 import { statusCommand } from './commands/status';
 import { installCommand } from './commands/install';
 import { doctorCommand } from './commands/doctor';
+import { renameCommand } from './commands/rename';
+import { newCommand } from './commands/new';
 
 const program = new Command();
 
@@ -57,8 +59,9 @@ program
   .description('Quick project recall')
   .option('-b, --budget <tokens>', 'Token budget for recall', '2000')
   .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
+  .option('--since <duration>', 'Only show cards updated within duration (e.g. 7d, 24h, 1w)')
   .action((options) => {
-    recallCommand(parseInt(options.budget, 10), options.format);
+    recallCommand(parseInt(options.budget, 10), options.format, options.since);
   });
 
 program
@@ -128,8 +131,10 @@ program
   .command('verify')
   .description('Check memory consistency and freshness')
   .option('--fix', 'Auto-fix issues where possible')
+  .option('--fix-locks', 'Clean stale lock at .pmem/.lock')
+  .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
   .action((options) => {
-    verifyCommand({ fix: options.fix });
+    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, relaxed: options.relaxed });
   });
 
 program
@@ -222,6 +227,23 @@ program
       gemini: options.gemini,
       all: options.all,
     });
+  });
+
+program
+  .command('new <type> <title>')
+  .description('Create a new memory card with frontmatter template')
+  .action((type: string, title: string) => {
+    newCommand(type, title);
+  });
+
+program
+  .command('rename')
+  .description('Preview or apply batch text replacement in memory card bodies')
+  .requiredOption('--find <pattern>', 'Text to find in card bodies')
+  .requiredOption('--replace <replacement>', 'Replacement text')
+  .option('--write', 'Apply changes (default is dry-run preview only)', false)
+  .action((options) => {
+    renameCommand({ find: options.find, replace: options.replace, write: options.write });
   });
 
 program.parse();

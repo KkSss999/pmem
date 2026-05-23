@@ -111,7 +111,7 @@ export function getDefaultManifest(projectName: string, initMode: InitMode = 'mi
     },
     card_policy: {
       id_pattern: '^(project|module|feature|task|decision|trace|risk|assumption|resource|integration)\\.[a-z0-9._-]+$',
-      max_tokens: { module: 1200, feature: 1000, decision: 800, task: 600, trace: 1000 },
+      max_tokens: { module: 1200, feature: 1000, decision: 1000, task: 800, trace: 1000 },
       max_sections: { module: 8, feature: 8, decision: 6, task: 6 },
       warn_when_related_count_gt: 12,
     },

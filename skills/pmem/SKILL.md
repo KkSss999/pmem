@@ -90,7 +90,7 @@ pmem mark-dirty -r "Refactored auth module"
 
 # Get memory update suggestions
 pmem update --suggest --format json
-# NOTE: exits with code 1 when suggestions exist (workflow signal, not failure)
+# NOTE: v0.6.2+ exits 0 regardless; check JSON summary.has_actionable for suggestions
 
 # Confirm and write changes
 pmem update --confirm -s "Updated auth module" -n "Add token refresh"
@@ -140,15 +140,17 @@ pmem integration verify
 
 ## Exit Codes
 
-Some commands use exit code 1 as a workflow signal:
+v0.6.2+: `0` = ok, `2` = runtime error. Exit code `1` is no longer used as a workflow signal.
 
-| Command | 0 | 1 | 2 |
-|---------|---|---|---|
-| `pmem status` | changes found | no changes | error |
-| `pmem update --suggest` | no suggestions | suggestions found | error |
-| `pmem distill --suggest` | no distillation needed | distillation suggested | error |
-| `pmem verify` | passed | warnings | errors |
-| `pmem doctor` | all ok | warnings | errors |
+| Command | 0 | 2 |
+|---------|---|---|
+| `pmem status` | ok (changes or not) | runtime error |
+| `pmem update --suggest` | ok (suggestions or not) | runtime error |
+| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
+| `pmem verify` | ok (passed or warnings) | errors |
+| `pmem doctor` | ok (passed or warnings) | errors |
+
+Agents should parse `--format json` output to decide next steps.
 
 ## Session Workflow Example
 
@@ -174,7 +176,7 @@ pmem mark-dirty --auto
 # → Auto-marked 1 card(s) as dirty.
 
 pmem update --suggest --format json
-# → exit code 1 (suggestions exist)
+# → exit code 0, check summary.has_actionable
 # → {"suggestions":[{"action":"update_card","target":"module.auth",...}]}
 
 # === Confirm the update ===
