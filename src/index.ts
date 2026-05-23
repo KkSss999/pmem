@@ -23,7 +23,7 @@ const program = new Command();
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.6.1');
+  .version('0.6.2');
 
 program
   .command('status')
