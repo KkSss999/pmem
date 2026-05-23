@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { readFile, writeJson, listFiles, ensureDir, fileExists } from '../core/fs';
+import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
@@ -105,6 +105,11 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
           existing.frontmatter_hash === hashes.frontmatterHash &&
           existing.body_hash === hashes.bodyHash
         ) {
+          // Even if hashes match, backfill updated_at if it's NULL (v0.6.2 time contract)
+          const card = db.prepare('SELECT updated_at FROM cards WHERE file_path = ?').get(relPath) as { updated_at: string | null } | undefined;
+          if (card && !card.updated_at) {
+            db.prepare('UPDATE cards SET updated_at = ? WHERE file_path = ?').run(resolveUpdatedAt(fm.updated, file), relPath);
+          }
           skipped++;
           continue;
         }
@@ -128,7 +133,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
         schema_version: fm.schema_version ?? null,
         card_version: fm.version ?? 1,
         created_at: null,
-        updated_at: fm.updated ?? null,
+        updated_at: resolveUpdatedAt(fm.updated, file),
         last_verified_at: fm.last_verified ?? null,
         file_hash: hashes.fileHash,
         frontmatter_hash: hashes.frontmatterHash,
@@ -311,4 +316,24 @@ function collectLegacyEdges(fm: CardFrontmatter, edges: GraphEdge[]): void {
       }
     }
   }
+}
+
+/**
+ * Resolve the updated_at timestamp using the time-source priority chain:
+ * 1. frontmatter.updated (user-declared time)
+ * 2. file mtime (file system modification time)
+ * 3. current rebuild time (final fallback)
+ *
+ * Returns an ISO 8601 string, never null.
+ */
+function resolveUpdatedAt(fmUpdated: string | null | undefined, absPath: string): string {
+  if (fmUpdated) {
+    // Normalize to ISO 8601 — frontmatter may contain non-ISO dates like "2026-05-20"
+    const parsed = new Date(fmUpdated);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString();
+    // Unparseable date: fall through to mtime
+  }
+  const mtime = getFileMtime(absPath);
+  if (mtime !== null) return new Date(mtime).toISOString();
+  return new Date().toISOString();
 }

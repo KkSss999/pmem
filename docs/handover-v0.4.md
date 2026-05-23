@@ -142,6 +142,8 @@ JSON indexes (.pmem/indexes/)   ← legacy 保留
 
 ### 3. 退出码协议
 
+> **v0.6.2 已变更：** exit code 1 不再作为 workflow signal。所有正常结果 exit 0，仅运行时错误 exit 2。详见 `docs/v0.6.2 pre-design.md` §5.2。
+
 | 命令 | 0 | 1 | 2 |
 |------|---|---|---|
 | `pmem status` | 有变更 | 无变更 | 错误 |

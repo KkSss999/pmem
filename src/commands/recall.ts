@@ -6,7 +6,7 @@ import type { RecallResult, CliFormat, CardRow } from '../types';
 
 const PMEM_DIR = '.pmem';
 
-export function recallCommand(budget: number = 2000, format: CliFormat = 'compact'): void {
+export function recallCommand(budget: number = 2000, format: CliFormat = 'compact', since?: string): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -71,10 +71,25 @@ export function recallCommand(budget: number = 2000, format: CliFormat = 'compac
     const db = openDatabase(pmemPath);
     createSchema(db);
 
-    // Query active cards (non-deleted, non-candidate)
-    const activeCards = db.prepare(
-      "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
-    ).all() as CardRow[];
+    // Parse --since into ISO threshold, if provided
+    let sinceThreshold: string | null = null;
+    if (since) {
+      sinceThreshold = parseSince(since);
+      if (sinceThreshold === null) {
+        console.log(`Invalid --since format: "${since}". Expected format: <N><unit> where unit is h (hours), d (days), or w (weeks).`);
+        console.log('Examples: --since 24h, --since 7d, --since 1w');
+        process.exit(2);
+      }
+    }
+
+    // Query active cards (non-deleted, non-candidate), optionally filtered by --since
+    const activeCards = sinceThreshold
+      ? db.prepare(
+          "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0 AND updated_at >= ?"
+        ).all(sinceThreshold) as CardRow[]
+      : db.prepare(
+          "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
+        ).all() as CardRow[];
 
     // Modules for recommendations
     const modules = activeCards.filter(c => c.type === 'module');
@@ -126,4 +141,22 @@ function extractField(content: string, fieldName: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Parse a --since duration string into an ISO 8601 threshold.
+ * Supported formats: <N>h (hours), <N>d (days), <N>w (weeks).
+ * Returns null for invalid input.
+ */
+function parseSince(since: string): string | null {
+  const match = since.match(/^(\d+)([hdw])$/);
+  if (!match) return null;
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const ms = unit === 'h' ? value * 3600000
+           : unit === 'd' ? value * 86400000
+           : unit === 'w' ? value * 604800000
+           : 0;
+  if (ms === 0) return null;
+  return new Date(Date.now() - ms).toISOString();
 }

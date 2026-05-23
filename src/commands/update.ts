@@ -244,8 +244,12 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
 function confirmUpdate(pmemPath: string, summary?: string, next?: string): void {
   const lockPath = path.join(pmemPath, '.lock');
   if (!acquireLock(lockPath)) {
-    console.log('Failed to acquire pmem lock. Another pmem update may be running.');
-    console.log('No memory was written. Try again later.');
+    console.log('Failed to acquire pmem lock after 3s.');
+    console.log('  The lock at .pmem/.lock may be held by another pmem process, or a stale lock from a previous crash.');
+    console.log('  → Run: pmem verify --fix-locks  (to check and clean stale locks)');
+    console.log('  → Or:  pmem doctor              (to diagnose lock status)');
+    console.log('  If no other pmem process is running, delete .pmem/.lock manually.');
+    console.log('No memory was written. Try again after resolving the lock.');
     return;
   }
 
@@ -692,11 +696,9 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
     process.exit(2);
   }
 
-  // Exit code: 1 if there are blocking or current suggestions (actionable items)
-  // Exit 0 if only hidden history or nothing at all
-  const hasActionable = report.summary.blocking > 0 ||
-    (report.summary.warning + report.summary.info) > 0;
-  process.exit(hasActionable ? 1 : 0);
+  // v0.6.2: Exit 0 regardless of whether suggestions were found.
+  // Exit 1 is no longer used as "actionable suggestions exist" workflow signal.
+  // Agents should check JSON output summary fields instead of exit code.
 }
 
 function getCardCount(pmemPath: string): number {

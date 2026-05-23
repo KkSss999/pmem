@@ -113,7 +113,7 @@ pmem update --confirm -s "Updated core module" -n "Continue development"
 pmem verify
 ```
 
-Note: `pmem update --suggest` exits with code `1` when it found suggestions. That means "action suggested", not "command failed".
+Note: `pmem update --suggest` outputs suggestions in JSON. Agents should check `summary.has_actionable` to decide next steps.
 
 ### The Second Session (Cross-Session Recall)
 
@@ -292,16 +292,18 @@ pmem integration list|install <framework>|verify
 
 ## Exit Codes
 
-Some pmem commands use exit code `1` as a workflow signal, not a hard failure.
+As of v0.6.2, exit code `0` means the command ran successfully (results or not). Exit code `2` means a runtime error occurred. Exit code `1` is no longer used as a workflow signal.
 
-| Command | 0 | 1 | 2 |
-|---------|---|---|---|
-| `pmem status` | changes found | no changes | error |
-| `pmem update --suggest` | no suggestions | suggestions found | error |
-| `pmem distill --suggest` | no distillation needed | distillation suggested | error |
-| `pmem verify` | passed | warnings | errors |
+| Command | 0 | 2 |
+|---------|---|---|
+| `pmem status` | ok (changes or not) | runtime error |
+| `pmem update --suggest` | ok (suggestions or not) | runtime error |
+| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
+| `pmem verify` | ok (passed or warnings) | errors found |
 
-Agents should parse command output and treat code `1` according to the command contract.
+Agents should parse structured JSON output (`--format json`) to decide next steps, rather than relying on exit codes.
+
+> **Breaking change from v0.6.1:** `pmem update --suggest` and `pmem distill --suggest` previously exited with code `1` when suggestions existed. Scripts that checked `$? -eq 1` must now parse JSON output instead.
 
 ## Project Layout
 

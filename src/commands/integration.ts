@@ -29,7 +29,7 @@ pmem mark-dirty --auto
 pmem update --suggest --format json
 \`\`\`
 
-\`pmem update --suggest\` exits with code 1 when suggestions exist. That is a workflow signal, not a hard failure.
+\`pmem update --suggest\` outputs JSON with \`summary.has_actionable\` for agent decision-making.
 
 ## Session End
 
@@ -82,6 +82,12 @@ Runs the full update workflow:
 Use this after editing code to keep project memory in sync.
 `;
 
+const GIT_HOOK_PRECOMMIT = `#!/bin/sh
+# pmem pre-commit hook — verify memory consistency before commit
+# Installed by: pmem integration install git-hooks
+pmem verify --relaxed
+`;
+
 const SLASH_DISTILL = `Consolidate work traces into stable memory cards.
 
 Runs \`pmem distill --suggest\` to check for distillation candidates, then guides through confirmation and verification.
@@ -111,7 +117,7 @@ export function integrationCommand(action: string, framework?: string): void {
     case 'install':
       if (!framework) {
         console.log('Usage: pmem integration install <framework>');
-        console.log('Available: claude-code, cursor, codex');
+        console.log('Available: claude-code, cursor, codex, git-hooks');
         return;
       }
       installIntegration(pmemPath, manifest, framework);
@@ -189,9 +195,38 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
       writeFile(path.join(integDir, 'AGENTS.md'), `# Codex Instructions\n\nThis project uses pmem.\n\nBefore work: run \`pmem recall --budget 2000\`.\nAfter work: run \`pmem update\`.\n`);
       break;
     }
+    case 'git-hooks': {
+      const gitHooksDir = path.join(process.cwd(), '.git', 'hooks');
+      if (!fileExists(gitHooksDir)) {
+        console.log('No .git/hooks/ directory found. Is this a git repository?');
+        return;
+      }
+      const precommitPath = path.join(gitHooksDir, 'pre-commit');
+      if (fileExists(precommitPath)) {
+        // Append to existing hook
+        const existing = readFile(precommitPath) || '';
+        if (!existing.includes('pmem verify')) {
+          writeFile(precommitPath, existing + '\n' + GIT_HOOK_PRECOMMIT);
+          console.log('  Appended pmem verify to existing .git/hooks/pre-commit');
+        } else {
+          console.log('  pmem verify already in .git/hooks/pre-commit');
+        }
+      } else {
+        writeFile(precommitPath, GIT_HOOK_PRECOMMIT);
+        // Make it executable
+        try {
+          const fs = require('fs');
+          fs.chmodSync(precommitPath, '755');
+        } catch {
+          // chmod may fail on some platforms, non-fatal
+        }
+        console.log('  Created .git/hooks/pre-commit');
+      }
+      break;
+    }
     default:
       console.log(`Unknown framework: ${framework}`);
-      console.log('Available: claude-code, cursor, codex');
+      console.log('Available: claude-code, cursor, codex, git-hooks');
       return;
   }
 
@@ -203,6 +238,7 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
     'claude-code': ['CLAUDE.md', '.claude/settings.json', '.claude/commands/pmem-recall.md', '.claude/commands/pmem-ask.md', '.claude/commands/pmem-update.md', '.claude/commands/pmem-distill.md'],
     'cursor': ['.cursor/rules/pmem.mdc'],
     'codex': ['AGENTS.md'],
+    'git-hooks': ['.git/hooks/pre-commit'],
   };
   manifest.integrations[framework] = {
     template_version: CURRENT_TEMPLATE_VERSION,
@@ -269,6 +305,20 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
       const agentsExists = fileExists(path.join(cwd, 'AGENTS.md'));
       console.log(`    AGENTS.md: ${agentsExists ? '✓' : '✗'}`);
       if (!agentsExists) console.log('      Fix: run `pmem integration install codex`');
+    }
+    if (active === 'git-hooks') {
+      const hookExists = fileExists(path.join(cwd, '.git', 'hooks', 'pre-commit'));
+      console.log(`    .git/hooks/pre-commit: ${hookExists ? '✓' : '✗'}`);
+      if (!hookExists) {
+        console.log('      Fix: run `pmem integration install git-hooks`');
+      } else {
+        const content = readFile(path.join(cwd, '.git', 'hooks', 'pre-commit')) || '';
+        if (content.includes('pmem verify')) {
+          console.log('    pmem verify hook: ✓');
+        } else {
+          console.log('    pmem verify hook: ✗ (hook exists but pmem verify not found)');
+        }
+      }
     }
   }
 
