@@ -1,0 +1,1 @@
+{"version":3,"file":"detect.d.ts","sourceRoot":"","sources":["../../../src/core/discover/detect.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,aAAa,CAAC;AAEnD;;;GAGG;AACH,wBAAgB,eAAe,CAAC,OAAO,EAAE,MAAM,EAAE,QAAQ,EAAE,eAAe,EAAE,GAAG,MAAM,EAAE,CActF;AAED;;;GAGG;AACH,wBAAgB,cAAc,CAC5B,QAAQ,EAAE,eAAe,EAAE,EAC3B,KAAK,EAAE,MAAM,EAAE,GACd,eAAe,EAAE,CAOnB"}
