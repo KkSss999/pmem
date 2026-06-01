@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/index.js",
   "bin": {
@@ -20,7 +20,8 @@
     "test:e2e:v06-empty": "bash scripts/e2e-v06-empty-guidance.sh",
     "test:e2e:v06-nongit": "bash scripts/e2e-v06-non-git-ux.sh",
     "test:e2e:v06-skills": "bash scripts/e2e-v06-skills.sh",
-    "test:e2e:v061-suggest": "bash scripts/e2e-v061-suggest.sh"
+    "test:e2e:v061-suggest": "bash scripts/e2e-v061-suggest.sh",
+    "test:e2e:v063-discover": "bash scripts/e2e-v063-discover.sh"
   },
   "keywords": [
     "agent",

@@ -8,6 +8,7 @@ import { verifyCommand } from './commands/verify';
 import { askCommand } from './commands/ask';
 import { relatedCommand, traceCommand } from './commands/graph';
 import { updateCommand, markDirtyCommand } from './commands/update';
+import { discoverCommand } from './core/discover';
 import { integrationCommand } from './commands/integration';
 import { migrateCommand } from './commands/migrate';
 import { distillCommand } from './commands/distill';
@@ -23,7 +24,7 @@ const program = new Command();
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version('0.6.2');
+  .version('0.6.3');
 
 program
   .command('status')
@@ -77,8 +78,15 @@ program
   .description('Query graph neighbors')
   .option('-d, --depth <n>', 'Traversal depth (1 = direct only)', '1')
   .option('-t, --type <type>', 'Filter by edge type (e.g. depends_on)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .option('--source <source>', 'Filter by edge source (explicit, inferred, mention, all)', 'all')
   .action((id: string, options) => {
-    relatedCommand(id, { depth: parseInt(options.depth, 10), type: options.type });
+    relatedCommand(id, {
+      depth: parseInt(options.depth, 10),
+      type: options.type,
+      format: options.format,
+      source: options.source,
+    });
   });
 
 program
@@ -100,6 +108,8 @@ program
   .option('-n, --next <text>', 'Next step description')
   .option('-f, --format <format>', 'Output format for --suggest (compact, json)', 'compact')
   .option('--include-history', 'Include historical dirty flags in suggestion output')
+  .option('--accept-edges <ids>', 'Comma-separated edge IDs to accept (upgrade to explicit)')
+  .option('--reject-edges <ids>', 'Comma-separated edge IDs to reject (delete)')
   .action((options) => {
     updateCommand(options);
   });
@@ -124,6 +134,24 @@ program
       changed: options.changed,
       full: options.full,
       card: options.card,
+    });
+  });
+
+program
+  .command('discover')
+  .description('Auto-discover project relationships (tech stack, file deps, imports)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .option('--dry-run', 'Preview discoveries without writing to database')
+  .option('--min-confidence <n>', 'Minimum confidence threshold (0-1)', '0.5')
+  .option('--lang <languages>', 'Languages to scan (auto, or comma-separated: nodejs,python,rust,go,cpp,java)', 'auto')
+  .option('--pattern-file <path>', 'Path to custom language pattern JSON file')
+  .action((options) => {
+    discoverCommand({
+      format: options.format,
+      dryRun: options.dryRun,
+      minConfidence: parseFloat(options.minConfidence),
+      lang: options.lang,
+      patternFile: options.patternFile,
     });
   });
 

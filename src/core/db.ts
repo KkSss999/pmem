@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import * as path from 'path';
 import { ensureDir } from './fs';
+import type { EdgeRow } from '../types';
 
 let _db: Database.Database | null = null;
 
@@ -189,6 +190,10 @@ export function deleteCardEdges(db: Database.Database, cardId: string): void {
   db.prepare("DELETE FROM edges WHERE from_id = ?").run(cardId);
 }
 
+export function deleteExplicitCardEdges(db: Database.Database, cardId: string): void {
+  db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'explicit'").run(cardId);
+}
+
 export function insertEdge(db: Database.Database, edge: import('../types').EdgeRow): void {
   db.prepare(`
     INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at)
@@ -327,4 +332,61 @@ export function getRecentUpdateLogs(db: Database.Database, limit: number = 10): 
   return db.prepare(
     "SELECT action, summary, created_at, success FROM update_log ORDER BY created_at DESC LIMIT ?"
   ).all(limit) as Array<{ action: string; summary: string | null; created_at: string; success: number }>;
+}
+
+// === v0.6.3: Inferred edge CRUD ===
+
+export function deleteInferredEdges(db: Database.Database): number {
+  return db.prepare("DELETE FROM edges WHERE source = 'inferred'").run().changes;
+}
+
+export function getInferredEdges(db: Database.Database): EdgeRow[] {
+  return db.prepare(
+    "SELECT * FROM edges WHERE source = 'inferred' ORDER BY confidence DESC"
+  ).all() as EdgeRow[];
+}
+
+export function getEdgesForCard(
+  db: Database.Database,
+  cardId: string,
+  source?: 'explicit' | 'inferred' | 'mention'
+): EdgeRow[] {
+  let query = "SELECT * FROM edges WHERE (from_id = ? OR to_id = ?)";
+  const params: unknown[] = [cardId, cardId];
+  if (source) {
+    query += " AND source = ?";
+    params.push(source);
+  }
+  query += " ORDER BY confidence DESC";
+  return db.prepare(query).all(...params) as EdgeRow[];
+}
+
+export function updateEdgeSource(
+  db: Database.Database,
+  edgeIds: number[],
+  newSource: 'explicit' | 'inferred',
+  newConfidence: number
+): number {
+  if (edgeIds.length === 0) return 0;
+  const placeholders = edgeIds.map(() => '?').join(',');
+  return db.prepare(
+    `UPDATE edges SET source = ?, confidence = ?, updated_at = ? WHERE id IN (${placeholders})`
+  ).run(newSource, newConfidence, new Date().toISOString(), ...edgeIds).changes;
+}
+
+export function deleteEdgesByIds(db: Database.Database, edgeIds: number[]): number {
+  if (edgeIds.length === 0) return 0;
+  const placeholders = edgeIds.map(() => '?').join(',');
+  return db.prepare(
+    `DELETE FROM edges WHERE id IN (${placeholders})`
+  ).run(...edgeIds).changes;
+}
+
+export function getOrphanEdges(db: Database.Database): EdgeRow[] {
+  return db.prepare(`
+    SELECT e.* FROM edges e
+    LEFT JOIN cards c1 ON e.from_id = c1.id
+    LEFT JOIN cards c2 ON e.to_id = c2.id
+    WHERE c1.id IS NULL OR c2.id IS NULL
+  `).all() as EdgeRow[];
 }

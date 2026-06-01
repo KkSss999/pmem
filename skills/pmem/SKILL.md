@@ -77,6 +77,37 @@ pmem related module.core --depth 2
 pmem trace decision.sqlite_runtime
 ```
 
+### Relationship Discovery (v0.6.3+)
+
+```bash
+# Auto-discover project relationships across 6 languages
+pmem discover --dry-run --format json     # preview without writing
+pmem discover --format json               # discover and write inferred edges
+
+# Filter by language
+pmem discover --lang nodejs,python
+
+# Use custom pattern file
+pmem discover --pattern-file .pmem/discover-patterns.json
+
+# Review and manage inferred edges
+pmem related <id> --format json --source inferred
+pmem update --confirm --accept-edges 1,2,3
+pmem update --confirm --reject-edges 4,5
+```
+
+The discover command scans:
+- **Source file imports** (6 languages: Node.js, Python, Rust, Go, C/C++, Java) - confidence 0.7
+- **Package manager dependencies** (package.json, Cargo.toml, go.mod, etc.) - confidence 0.7-0.85
+
+**False-positive guard**: language builtins (Node.js `fs`/`path`/`crypto`, Python `os`/`sys`/`json`, Go `fmt`/`net`, Java `java.*`/`javax.*`/`jakarta.*`/Spring, C/C++ standard headers) and `@types/*` are silently dropped before any output. They never become edges or ambiguous entries.
+
+**Ambiguous output is signal-first**: each `ambiguous` entry has a `severity` of either:
+- `actionable` — local project file that has no card. Run `pmem new module "Title"` to create one, or `pmem update --confirm --reject-edges <id>` if no card is needed.
+- `informational` — external package / framework / builtin with no card. No action needed.
+
+The compact output lists actionable items first, then collapses informational ones to a count. Parse `summary.actionable` from JSON to drive your review loop.
+
 ### Change Detection & Memory Update
 
 ```bash
@@ -193,4 +224,5 @@ pmem verify
 * **First-time project setup** — [references/first-init.md](references/first-init.md)
 * **Session workflow in detail** — [references/session-workflow.md](references/session-workflow.md)
 * **Creating memory cards** — [references/memory-cards.md](references/memory-cards.md)
+* **Discovering project relationships** — run `pmem discover --dry-run --format json` to see inferred edges, then use `pmem update --confirm --accept-edges` to promote them
 * **Troubleshooting** — [references/troubleshooting.md](references/troubleshooting.md)
