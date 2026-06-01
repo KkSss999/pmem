@@ -3,7 +3,7 @@ import { execSync } from 'child_process';
 import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
-import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, closeDatabase } from '../core/db';
+import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../core/db';
 import type { DirtyFlagDetailed } from '../core/db';
 import { parseGitStatusPorcelain } from '../core/git';
 import { checkStaleMemory } from '../core/consistency';
@@ -21,6 +21,8 @@ export function updateCommand(options: {
   applySuggestion?: string;
   format?: string;
   includeHistory?: boolean;
+  acceptEdges?: string;
+  rejectEdges?: string;
 }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -33,6 +35,12 @@ export function updateCommand(options: {
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     console.log('No manifest found. Run `pmem init` first.');
+    return;
+  }
+
+  // --accept-edges / --reject-edges: manage inferred edges
+  if (options.acceptEdges || options.rejectEdges) {
+    manageEdges(pmemPath, options.acceptEdges, options.rejectEdges);
     return;
   }
 
@@ -618,7 +626,8 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
 }
 
 function suggestActions(pmemPath: string, format?: string, includeHistory?: boolean): void {
-  const report = generateSuggestions(pmemPath, includeHistory);
+  let report = generateSuggestions(pmemPath, includeHistory);
+  report = enrichWithEdgeSuggestions(pmemPath, report);
 
   if (format === 'json') {
     console.log(JSON.stringify({
@@ -856,4 +865,126 @@ Continue as planned.
   }
 
   process.exit(0);
+}
+
+// === v0.6.3: Edge Confirmation Management ===
+
+function manageEdges(pmemPath: string, acceptRaw?: string, rejectRaw?: string): void {
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (!fileExists(dbPath)) {
+    console.log('No SQLite database. Run `pmem rebuild` first.');
+    process.exit(2);
+  }
+
+  const db = openDatabase(pmemPath);
+
+  // Accept edges: upgrade from inferred to explicit
+  if (acceptRaw) {
+    const ids = parseEdgeIds(acceptRaw);
+    if (ids.length > 0) {
+      const changed = updateEdgeSource(db, ids, 'explicit', 1.0);
+      console.log(`Accepted ${changed} edge(s): upgraded source to explicit, confidence to 1.0.`);
+    }
+  }
+
+  // Reject edges: delete them
+  if (rejectRaw) {
+    const ids = parseEdgeIds(rejectRaw);
+    if (ids.length > 0) {
+      const deleted = deleteEdgesByIds(db, ids);
+      console.log(`Rejected ${deleted} edge(s): deleted.`);
+    }
+  }
+
+  closeDatabase();
+
+  if (!acceptRaw && !rejectRaw) {
+    // Show current inferred edges for review
+    const db2 = openDatabase(pmemPath);
+    const inferred = getInferredEdges(db2);
+    if (inferred.length === 0) {
+      console.log('No inferred edges to review.');
+    } else {
+      console.log(`Inferred edges (${inferred.length} total):\n`);
+      const getCardTitle = (cid: string): string => {
+        try {
+          const row = db2.prepare('SELECT title FROM cards WHERE id = ?').get(cid) as { title: string } | undefined;
+          return row?.title ?? cid;
+        } catch { return cid; }
+      };
+      for (const edge of inferred) {
+        console.log(`  [${edge.id}] ${edge.from_id} → ${edge.to_id}`);
+        console.log(`      type: ${edge.type}, confidence: ${edge.confidence.toFixed(1)}, source: ${edge.source}`);
+      }
+      console.log('\nTo accept: pmem update --confirm --accept-edges <id1,id2>');
+      console.log('To reject: pmem update --confirm --reject-edges <id1,id2>');
+    }
+    closeDatabase();
+  }
+}
+
+function parseEdgeIds(raw: string): number[] {
+  return raw
+    .split(',')
+    .map(s => parseInt(s.trim(), 10))
+    .filter(n => !isNaN(n) && n > 0);
+}
+
+// Add edge-related suggestions to the suggestion report.
+// All inferred edges are surfaced (not just low-confidence), so the agent
+// can review and decide which to accept / reject. Confidence and source are
+// included as `sources[]` entries to drive the agent's judgment.
+function enrichWithEdgeSuggestions(
+  pmemPath: string,
+  report: SuggestionReport,
+): SuggestionReport {
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  if (!fileExists(dbPath)) return report;
+
+  try {
+    const db = openDatabase(pmemPath);
+    const inferred = getInferredEdges(db);
+    if (inferred.length === 0) return report;
+
+    for (const edge of inferred) {
+      const isLow = edge.confidence < 0.7;
+      const reasonTag = isLow
+        ? `inferred_edge_low_confidence: ${edge.from_id} → ${edge.to_id}`
+        : `inferred_edge_review: ${edge.from_id} → ${edge.to_id}`;
+      const detailReason = isLow
+        ? `inferred_${edge.type}_confidence_${edge.confidence.toFixed(1)}`
+        : `inferred_${edge.type}_confidence_${edge.confidence.toFixed(1)}_source_${edge.source}`;
+
+      report.groups.current_suggestions.push({
+        target: edge.from_id!,
+        reason: reasonTag,
+        matched_file: null,
+        count: 1,
+        severity: isLow ? 'warning' : 'info',
+        blocks_verify: false,
+        is_duplicate: false,
+        is_historical: false,
+        created_at_first: edge.created_at || new Date().toISOString(),
+        created_at_last: edge.created_at || new Date().toISOString(),
+        sources: [{
+          scope: 'edge',
+          target: `${edge.from_id} → ${edge.to_id}`,
+          reason: detailReason,
+          created_at: edge.created_at || new Date().toISOString(),
+          session_id: null,
+        }],
+        edge_ids: edge.id !== undefined ? [edge.id] : [],
+        edge_tuple: `${edge.from_id} → ${edge.to_id}`,
+      });
+    }
+
+    report.summary.info += inferred.length;
+    report.summary.affected_cards = new Set(
+      inferred.map(e => e.from_id!)
+    ).size + report.summary.affected_cards;
+
+    return report;
+  } catch {
+    return report;
+  }
 }

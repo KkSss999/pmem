@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -146,8 +146,8 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
 
       upsertCard(db, cardRow);
 
-      // Clear existing relations before re-inserting
-      deleteCardEdges(db, fm.id);
+      // Clear existing explicit relations before re-inserting (preserve inferred edges)
+      deleteExplicitCardEdges(db, fm.id);
       deleteCardAliases(db, fm.id);
       deleteCardTags(db, fm.id);
       deleteCardPaths(db, fm.id);

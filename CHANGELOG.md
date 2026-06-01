@@ -2,6 +2,40 @@
 
 All notable changes to pmem are documented here.
 
+## 0.6.3 - Relationship Auto-Discovery
+
+### Added
+
+- `pmem discover`: auto-discover project relationships across 6 languages (Node.js, Python, Rust, Go, C/C++, Java). Two-layer discovery: source file imports (regex, confidence 0.7) and package manager dependencies (package.json/Cargo.toml/go.mod/etc., confidence 0.7-0.85).
+- `pmem discover --dry-run`: preview discoveries without writing to database.
+- `pmem discover --lang <langs>`: filter to specific languages (auto-detect by default).
+- `pmem discover --pattern-file <path>`: custom language pattern JSON for additional ecosystems.
+- `pmem discover --min-confidence <0-1>`: threshold for edge creation (default 0.5).
+- `pmem related --format json`: structured output with confidence/source per edge, grouped by `high_confidence` vs `needs_review`.
+- `pmem related --source explicit|inferred|all`: filter edges by source.
+- `pmem update --confirm --accept-edges <ids>`: promote inferred edges to explicit (confidence 1.0).
+- `pmem update --confirm --reject-edges <ids>`: delete rejected inferred edges.
+- `pmem update --suggest` now includes low-confidence inferred edges as suggestions.
+- Agent-configurable language patterns via manifest `discover.additional_patterns`.
+
+### False-Positive Guard
+
+- `BUILTIN_MODULES` per-language skip list: Node.js core modules (`fs`, `path`, `crypto`, `child_process`, etc.), Python stdlib, Go stdlib, Java `java.*`/`javax.*`/`jakarta.*`/Spring/JUnit, C/C++ standard headers, Rust std crates. These are silently dropped from `discovered_edges` and `ambiguous` so the agent only sees actionable items.
+- New `AmbiguousRelation.kind = 'external_unmatched'` and `severity` field. Bare-name imports (npm packages, third-party libs) and dep-file entries with no matching card are classified as `severity: 'informational'`, distinct from `severity: 'actionable'` for internal project files missing a card.
+- Discover result `summary` now reports `actionable` and `external_refs` counts. Compact output shows actionable items first, then a collapsed count for informational ones.
+
+### Changed
+
+- `pmem rebuild` (incremental) now preserves inferred edges (only deletes/recreates explicit edges).
+- `pmem related` compact output shows `[inferred, 0.7]` tags on non-explicit edges.
+- `pmem trace` now shows edge source and confidence annotations.
+
+### Internal
+
+- New `src/core/discover/` module: `index.ts` (orchestration), `patterns.ts` (6-language registry), `detect.ts` (auto-detection).
+- New edge CRUD in `src/core/db.ts`: `deleteInferredEdges`, `getInferredEdges`, `getEdgesForCard`, `updateEdgeSource`, `deleteEdgesByIds`, `getOrphanEdges`, `deleteExplicitCardEdges`.
+- New types in `src/types.ts`: `DiscoverResult`, `DiscoveredEdge`, `AmbiguousRelation`, `LanguagePattern`, `ManifestDiscoverConfig`.
+
 ## 0.6.2 - Real-User Friction Fixes
 
 ### Added

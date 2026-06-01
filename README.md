@@ -12,6 +12,7 @@ Coding agents lose project context quickly. A repository has source files, docs,
 
 - `pmem recall` restores the hot project context.
 - `pmem ask "<query>"` finds relevant memory cards.
+- `pmem discover` auto-discovers project relationships (tech stack, file deps, imports) across 6 languages.
 - `pmem status` maps changed files back to affected cards.
 - `pmem update --suggest` tells an agent what memory likely needs attention.
 - `pmem verify` checks that Markdown cards and runtime indexes still agree.
@@ -27,7 +28,7 @@ The design is intentionally local and Git-friendly. Markdown cards remain the so
 - You want agents to update memory deliberately instead of auto-writing noisy logs.
 - You prefer local files over hosted memory services.
 
-It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.5 focuses on making the CLI product installable, understandable, and reliable as a Beta.
+It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.6 focuses on making the CLI agent-native with relationship discovery and polished workflows.
 
 ## Install
 
@@ -273,13 +274,17 @@ pmem init [project-name] [--guided]
 
 pmem recall [--budget N] [--format compact|json|paths|pack]
 pmem ask <query> [--format compact|json|paths|pack]
-pmem related <id> [--depth N] [--type <edge-type>]
+pmem discover [--dry-run] [--format compact|json] [--min-confidence 0.5]
+              [--lang auto|nodejs,python,rust,go,cpp,java]
+              [--pattern-file custom.json]
+pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|all]
 pmem trace <id>
 
 pmem status [--since <timestamp>] [--format compact|json]
 pmem mark-dirty [-r <reason>] [--auto]
 pmem update [--auto|--suggest|--apply-suggestion <id>|--confirm|--force] \
   [-s <summary>] [-n <next>] [--format compact|json]
+  [--accept-edges <ids>] [--reject-edges <ids>]
 
 pmem distill [--suggest|--apply-suggestion <id>|--confirm|--suggest-splits]
 pmem rebuild [--changed|--full|--card <id>]
@@ -389,9 +394,13 @@ pmem verify
 - README, quick start, and [usage guide](docs/usage.md)
 - E2E suite, CI/CD, error UX, release checklist
 
-**v0.6 Agent-native Workflow Polish** — in development:
+**v0.6 Agent-native Workflow Polish** — shipped:
 - Non-interactive init (`--description`/`--stage`/`--next` flags, `--answers` file)
 - Claude Code slash commands (`/pmem-recall`, `/pmem-ask`, `/pmem-update`, `/pmem-distill`)
+- Relationship auto-discovery across 6 languages (`pmem discover`)
+- Inferred edge review and confirmation workflow
+- False-positive guard: language builtins and external packages filtered out
+- Actionable vs informational `ambiguous` classification (severity field)
 - Actionable empty states and error messages
 - Session fault tolerance
 - Integration verification enhanced

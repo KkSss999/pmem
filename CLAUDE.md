@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 `pmem` is **Project Memory for AI Agents**: a local CLI runtime that gives coding agents compact project recall, graph-guided memory lookup, code-change awareness, memory update suggestions, and consistency verification.
 
-Current development track: **v0.6 Agent-native Workflow Polish**.
+Current development track: **v0.6 Agent-native Workflow Polish** (current: v0.6.3).
 
 v0.5 shipped as npm Beta (`pmem-ai`). v0.6 is about lowering friction for agent programmatic use:
 
@@ -82,6 +82,11 @@ src/
     ask.ts                     pmem ask <query>, exact/alias/tag/graph/FTS/rerank flow
     graph.ts                   pmem related / pmem trace
     status.ts                  pmem status, git/mtime change detection + affected cards
+  core/
+    discover/
+      index.ts                 pmem discover command (v0.6.3)
+      patterns.ts              Built-in language pattern registry
+      detect.ts                Auto-detect project languages
     update.ts                  pmem update and mark-dirty workflow
     distill.ts                 pmem distill workflow and suggestions
     verify.ts                  consistency, stale-memory, and freshness checks
@@ -97,13 +102,15 @@ pmem init [project-name] [--guided]
 
 pmem recall [--budget N] [--format compact|json|paths|pack]
 pmem ask <query> [--format compact|json|paths|pack]
-pmem related <id> [--depth N] [--type <edge-type>]
+pmem discover [--dry-run] [--format compact|json] [--min-confidence 0.5] [--lang <langs>]
+pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|all]
 pmem trace <id>
 
 pmem status [--since <timestamp>] [--format compact|json]
 pmem mark-dirty [-r <reason>] [--auto]
 pmem update [--auto|--suggest|--apply-suggestion <id>|--confirm|--force] \
   [-s <summary>] [-n <next>] [--format compact|json]
+  [--accept-edges <ids>] [--reject-edges <ids>]
 
 pmem distill [--suggest|--apply-suggestion <id>|--confirm|--suggest-splits]
 pmem rebuild [--changed|--full|--card <id>]
