@@ -198,15 +198,17 @@ function verifyCommand(options) {
             // 6. Card policy checks
             if (manifest.card_policy) {
                 const policy = manifest.card_policy;
-                // 6a. ID naming pattern
-                const idRegex = new RegExp(policy.id_pattern);
+                // 6a. ID naming pattern — v0.7.0: render {types} placeholder if present
+                const config = (0, manifest_1.resolveConfig)(manifest);
+                const renderedPattern = (0, manifest_1.renderIdPattern)(policy.id_pattern, config.card_types);
+                const idRegex = new RegExp(renderedPattern);
                 for (const card of cards) {
                     if (!idRegex.test(card.id)) {
                         issues.push({
                             severity: 'warning',
                             type: 'card_id_violation',
                             message: `Card "${card.id}" does not match naming pattern.`,
-                            fix: `Rename card ID to match: ${policy.id_pattern}`,
+                            fix: `Rename card ID to match: ${renderedPattern}`,
                         });
                     }
                 }

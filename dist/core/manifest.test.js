@@ -134,4 +134,92 @@ const manifest_1 = require("./manifest");
         node_assert_1.default.strictEqual(manifest.serve.enabled, false);
     });
 });
+// v0.7.0 Phase 1 — resolved config and id_pattern rendering
+(0, node_test_1.describe)('resolveConfig', () => {
+    (0, node_test_1.it)('falls back to v0.6.4 defaults when manifest has no schema', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.card_types, manifest_1.V064_DEFAULT_TYPES);
+        node_assert_1.default.strictEqual(cfg.foundational_types[0], 'module');
+        node_assert_1.default.strictEqual(cfg.default_type, 'trace');
+        node_assert_1.default.deepStrictEqual(cfg.evidence_types, ['decision', 'trace']);
+        node_assert_1.default.deepStrictEqual(cfg.merge_target_types, manifest_1.V064_DEFAULT_MERGE_TYPES);
+    });
+    (0, node_test_1.it)('uses custom card_types from schema when declared', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.schema = { card_types: ['character', 'chapter', 'trace'] };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.card_types, ['character', 'chapter', 'trace']);
+    });
+    (0, node_test_1.it)('uses custom foundational_types from schema when declared', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.schema = { foundational_types: ['character'] };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.foundational_types, ['character']);
+    });
+    (0, node_test_1.it)('reads merge_target_types from distill, not schema', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.distill = { ...manifest.distill, merge_target_types: ['module', 'character'] };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.merge_target_types, ['module', 'character']);
+    });
+    (0, node_test_1.it)('falls back merge_target_types to v0.6.4 when distill has none', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        // Default manifest distill has no merge_target_types
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.merge_target_types, manifest_1.V064_DEFAULT_MERGE_TYPES);
+    });
+    (0, node_test_1.it)('type_dirs defaults to ${type}s for types not in schema.type_dirs', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.schema = { card_types: ['custom_foo', 'module'] };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.strictEqual(cfg.type_dirs['custom_foo'], 'custom_foos');
+        node_assert_1.default.strictEqual(cfg.type_dirs['module'], 'modules');
+    });
+    (0, node_test_1.it)('type_dirs uses explicit mapping from schema when declared', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.schema = {
+            card_types: ['world'],
+            type_dirs: { world: 'world' },
+        };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.strictEqual(cfg.type_dirs['world'], 'world');
+    });
+    (0, node_test_1.it)('does not mutate the original manifest object', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        const snapshot = JSON.stringify(manifest);
+        (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.strictEqual(JSON.stringify(manifest), snapshot);
+    });
+    (0, node_test_1.it)('v0.6.4 fallback card_types matches id_pattern whitelist (10 types)', () => {
+        node_assert_1.default.deepStrictEqual(manifest_1.V064_DEFAULT_TYPES, [
+            'project', 'module', 'feature', 'task', 'decision',
+            'trace', 'risk', 'assumption', 'resource', 'integration',
+        ]);
+    });
+});
+(0, node_test_1.describe)('renderIdPattern', () => {
+    (0, node_test_1.it)('returns pattern unchanged when no {types} placeholder', () => {
+        const pattern = '^(project|module)\\.[a-z0-9._-]+$';
+        node_assert_1.default.strictEqual((0, manifest_1.renderIdPattern)(pattern, []), pattern);
+    });
+    (0, node_test_1.it)('renders {types} as regex alternation', () => {
+        const pattern = '^({types})\\.[a-z0-9._-]+$';
+        const result = (0, manifest_1.renderIdPattern)(pattern, ['project', 'module', 'character']);
+        node_assert_1.default.ok(result.includes('project|module|character'));
+        node_assert_1.default.ok(!result.includes('{types}'));
+    });
+    (0, node_test_1.it)('escapes regex special characters in type names', () => {
+        const pattern = '^({types})\\.[a-z0-9._-]+$';
+        const result = (0, manifest_1.renderIdPattern)(pattern, ['c++', 'my.type', 'dot.net']);
+        node_assert_1.default.ok(result.includes('c\\+\\+'));
+        node_assert_1.default.ok(result.includes('my\\.type'));
+        node_assert_1.default.ok(result.includes('dot\\.net'));
+    });
+    (0, node_test_1.it)('single type renders without pipe', () => {
+        const pattern = '^({types})\\..+$';
+        const result = (0, manifest_1.renderIdPattern)(pattern, ['character']);
+        node_assert_1.default.strictEqual(result, '^(character)\\..+$');
+    });
+});
 //# sourceMappingURL=manifest.test.js.map

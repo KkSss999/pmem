@@ -36,16 +36,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.newCommand = newCommand;
 const path = __importStar(require("path"));
 const fs_1 = require("../core/fs");
+const manifest_1 = require("../core/manifest");
+const manifest_2 = require("../core/manifest");
 const PMEM_DIR = '.pmem';
-const VALID_TYPES = ['decision', 'module', 'task', 'feature', 'risk', 'trace'];
-const TYPE_DIR_MAP = {
-    decision: 'decisions',
-    module: 'modules',
-    task: 'tasks',
-    feature: 'features',
-    risk: 'risks',
-    trace: 'traces',
-};
+// v0.7.0: types that exist for id_pattern / graph compat but should not
+// be created via `pmem new` (their directories are excluded from rebuild).
+const NON_CREATABLE_TYPES = ['integration'];
 function newCommand(type, title) {
     const cwd = process.cwd();
     const pmemPath = path.join(cwd, PMEM_DIR);
@@ -53,10 +49,23 @@ function newCommand(type, title) {
         console.log('No .pmem directory found. Run `pmem init` first.');
         return;
     }
-    // Validate type
-    if (!VALID_TYPES.includes(type)) {
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    if (!manifest) {
+        console.log('No manifest found. Run `pmem init` first.');
+        return;
+    }
+    const config = (0, manifest_2.resolveConfig)(manifest);
+    // Validate type against manifest-declared (or v0.6.4 fallback) card_types
+    if (!config.card_types.includes(type)) {
         console.log(`Error: Invalid card type "${type}".`);
-        console.log(`Valid types: ${VALID_TYPES.join(', ')}`);
+        console.log(`Valid types: ${config.card_types.join(', ')}`);
+        process.exit(2);
+    }
+    // v0.7.0: reject types that exist for id_pattern compat but cannot be
+    // indexed (e.g. 'integration' — its directory is excluded from rebuild).
+    if (NON_CREATABLE_TYPES.includes(type)) {
+        console.log(`Error: Card type "${type}" cannot be created via \`pmem new\`.`);
+        console.log('This type exists for internal compatibility. Create cards of other types.');
         process.exit(2);
     }
     // Validate title
@@ -75,8 +84,9 @@ function newCommand(type, title) {
         .replace(/^_|_$/g, '')
         .slice(0, 50);
     const id = `${type}.${slug}_${today}`;
-    // Determine target directory and file path
-    const dirName = TYPE_DIR_MAP[type];
+    // Determine target directory from resolved config
+    // Built-in preset types have explicit mappings; custom types fall back to `${type}s`
+    const dirName = config.type_dirs[type];
     const dirPath = path.join(pmemPath, dirName);
     (0, fs_1.ensureDir)(dirPath);
     const fileName = `${id}.md`;

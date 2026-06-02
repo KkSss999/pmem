@@ -1,11 +1,15 @@
 import * as path from 'path';
-import { loadManifest } from '../core/manifest';
+import { loadManifest, resolveConfig } from '../core/manifest';
 import { readFile, atomicWrite, listFiles, fileExists } from '../core/fs';
 import { CardFrontmatter, MemoryCard, DistillConfig, CardRow } from '../types';
 import Database from 'better-sqlite3';
 import { openDatabase, getDatabase } from '../core/db';
 
 const PMEM_DIR = '.pmem';
+
+// v0.7.0: resolved from manifest at command start; defaults set by resolveConfig().
+let _mergeTargetTypes: string[] = ['module', 'decision', 'task', 'feature'];
+let _mergeTargetDirs: string[] = ['modules', 'features', 'decisions', 'tasks'];
 
 interface TraceGroup {
   relatedNode: string;
@@ -30,6 +34,12 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
     console.log('No .pmem/manifest.yml found. Run `pmem init` first.');
     return;
   }
+
+  // v0.7.0: resolve domain-specific config (merge_target_types etc.)
+  const config = resolveConfig(manifest);
+  _mergeTargetTypes = config.merge_target_types;
+  // Only directories that correspond to merge target types (not all type_dirs).
+  _mergeTargetDirs = [...new Set(config.merge_target_types.map(t => config.type_dirs[t]).filter(Boolean))];
 
   // Eagerly open DB if it exists, so downstream helpers can use getDatabase()
   const dbPath = path.join(pmemPath, 'pmem.db');
@@ -191,20 +201,24 @@ function groupTracesByRelated(traces: MemoryCard[]): TraceGroup[] {
 function groupTracesByRelatedDb(traces: MemoryCard[], db: Database.Database): TraceGroup[] {
   const map = new Map<string, MemoryCard[]>();
 
-  // For each trace, look up edges to find related module/decision/task/feature cards
+  // v0.7.0: merge target types from manifest (v0.6.4 fallback: module/decision/task/feature)
+  const typePlaceholders = _mergeTargetTypes.map(() => '?').join(', ');
   const relatedStmt = db.prepare(`
     SELECT e.to_id AS related_id FROM edges e
       JOIN cards c ON e.to_id = c.id
-      WHERE e.from_id = ? AND c.type IN ('module', 'decision', 'task', 'feature') AND c.is_deleted = 0
+      WHERE e.from_id = ? AND c.type IN (${typePlaceholders}) AND c.is_deleted = 0
     UNION
     SELECT e.from_id AS related_id FROM edges e
       JOIN cards c ON e.from_id = c.id
-      WHERE e.to_id = ? AND c.type IN ('module', 'decision', 'task', 'feature') AND c.is_deleted = 0
+      WHERE e.to_id = ? AND c.type IN (${typePlaceholders}) AND c.is_deleted = 0
   `);
 
   for (const trace of traces) {
     const traceId = trace.frontmatter.id;
-    const edgeRows = relatedStmt.all(traceId, traceId) as Array<{ related_id: string }>;
+    const edgeRows = relatedStmt.all(
+      traceId, ..._mergeTargetTypes,
+      traceId, ..._mergeTargetTypes
+    ) as Array<{ related_id: string }>;
     const key = edgeRows.length > 0 ? edgeRows[0].related_id : 'project';
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(trace);
@@ -264,8 +278,8 @@ function findCardFile(pmemPath: string, nodeId: string): string | null {
     }
   }
 
-  // Fall back to file scanning through modules/, features/, decisions/, tasks/
-  for (const dir of ['modules', 'features', 'decisions', 'tasks']) {
+  // v0.7.0: fall back to file scanning through type_dirs from resolved config
+  for (const dir of _mergeTargetDirs) {
     const dirPath = path.join(pmemPath, dir);
     if (!fileExists(dirPath)) continue;
     const files = listFiles(dirPath, /\.md$/);
