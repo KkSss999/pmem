@@ -5,6 +5,7 @@ title: "Manifest Runtime"
 status: active
 tags: [manifest, schema, compatibility, resolved-config]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/core/manifest.ts
   - src/types.ts

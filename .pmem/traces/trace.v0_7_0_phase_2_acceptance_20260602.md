@@ -5,6 +5,7 @@ title: "v0.7.0 Phase 2 Acceptance"
 status: completed
 tags: [v0.7.0, phase-2, acceptance, domain-presets]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/commands/init.ts
   - src/commands/init.test.ts

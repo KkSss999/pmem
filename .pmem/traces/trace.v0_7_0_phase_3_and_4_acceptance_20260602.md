@@ -5,6 +5,7 @@ title: "v0.7.0 Phase 3 and 4 Acceptance"
 status: completed
 tags: [v0.7.0, phase-3, phase-4, acceptance, finalization]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/commands/recall.ts
   - src/commands/status.ts

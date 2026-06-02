@@ -5,6 +5,7 @@ title: "Dogfooding Version Skew"
 status: active
 tags: [dogfooding, release, npm, version-skew]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - package.json
   - CHANGELOG.md

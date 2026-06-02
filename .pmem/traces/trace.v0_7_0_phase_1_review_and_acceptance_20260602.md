@@ -5,6 +5,7 @@ title: "v0.7.0 Phase 1 Review and Acceptance"
 status: completed
 tags: [v0.7.0, phase-1, review, acceptance]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/commands/new.ts
   - src/core/manifest.ts

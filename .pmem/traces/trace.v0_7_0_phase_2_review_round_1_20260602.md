@@ -5,6 +5,7 @@ title: "v0.7.0 Phase 2 Review Round 1"
 status: active
 tags: [v0.7.0, phase-2, review, p0]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/commands/init.ts
   - src/core/manifest.ts
