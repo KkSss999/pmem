@@ -5,7 +5,7 @@ title: "Dogfood pmem for pmem Development"
 status: active
 tags: [dogfooding, process, cto, memory]
 created: "2026-06-02"
-updated: "2026-06-02T19:45:26Z"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - .pmem/manifest.yml
   - .pmem/index.md

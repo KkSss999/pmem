@@ -5,6 +5,7 @@ title: "CLI Runtime"
 status: active
 tags: [cli, commands, runtime]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - src/index.ts
   - src/commands/init.ts

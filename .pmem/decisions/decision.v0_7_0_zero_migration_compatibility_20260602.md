@@ -5,6 +5,7 @@ title: "v0.7.0 Zero Migration Compatibility"
 status: active
 tags: [compatibility, migration, v0.7.0, manifest]
 created: "2026-06-02"
+updated: "2026-06-02T19:52:43.628Z"
 source_files:
   - docs/v0.7.0 pre-design.md
   - src/core/manifest.ts
