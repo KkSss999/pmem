@@ -10,7 +10,7 @@
     "build": "tsc",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
-    "test": "node --require ts-node/register --test src/core/*.test.ts",
+    "test": "node --require ts-node/register --test src/core/*.test.ts src/commands/*.test.ts",
     "test:e2e:install": "bash scripts/e2e-install-smoke.sh",
     "test:e2e:workflow": "bash scripts/e2e-real-workflow.sh",
     "test:e2e:non-git": "bash scripts/e2e-non-git-fallback.sh",
