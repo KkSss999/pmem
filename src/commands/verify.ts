@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { statSync } from 'fs';
 import { readFile, fileExists, getLockStatus, breakLock } from '../core/fs';
-import { loadManifest } from '../core/manifest';
+import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
 import { checkStaleMemory } from '../core/consistency';
@@ -178,15 +178,17 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; rela
       if (manifest.card_policy) {
         const policy = manifest.card_policy;
 
-        // 6a. ID naming pattern
-        const idRegex = new RegExp(policy.id_pattern);
+        // 6a. ID naming pattern — v0.7.0: render {types} placeholder if present
+        const config = resolveConfig(manifest);
+        const renderedPattern = renderIdPattern(policy.id_pattern, config.card_types);
+        const idRegex = new RegExp(renderedPattern);
         for (const card of cards) {
           if (!idRegex.test(card.id)) {
             issues.push({
               severity: 'warning',
               type: 'card_id_violation',
               message: `Card "${card.id}" does not match naming pattern.`,
-              fix: `Rename card ID to match: ${policy.id_pattern}`,
+              fix: `Rename card ID to match: ${renderedPattern}`,
             });
           }
         }

@@ -1,4 +1,4 @@
-export type NodeType = 'project' | 'module' | 'feature' | 'task' | 'decision' | 'risk' | 'assumption' | 'constraint' | 'person' | 'resource' | 'file' | 'doc' | 'trace';
+export type NodeType = string;
 export type EdgeType = 'depends_on' | 'blocks' | 'implements' | 'constrains' | 'decided_by' | 'derived_from' | 'related_to' | 'supersedes' | 'conflicts_with' | 'next_step_of';
 export type NodeStatus = 'active' | 'designing' | 'implementing' | 'completed' | 'archived' | 'blocked';
 export type CardPriority = 'high' | 'medium' | 'low';
@@ -267,6 +267,7 @@ export interface DistillConfig {
     max_undistilled_traces: number;
     require_confirmation: boolean;
     suggest_card_splits: boolean;
+    merge_target_types?: string[];
 }
 export interface InitScanCandidate {
     suggestedId: string;
@@ -334,6 +335,22 @@ export interface ManifestV03 extends ManifestBase {
     cli: CliConfig;
     embedding: EmbeddingConfig;
     serve: ServeConfig;
+    schema?: ManifestSchemaConfig;
+}
+export interface ManifestSchemaConfig {
+    card_types?: string[];
+    type_dirs?: Record<string, string>;
+    foundational_types?: string[];
+    evidence_types?: string[];
+    default_type?: string;
+}
+export interface ResolvedConfig {
+    card_types: string[];
+    type_dirs: Record<string, string>;
+    foundational_types: string[];
+    evidence_types: string[];
+    default_type: string;
+    merge_target_types: string[];
 }
 export interface CardRow {
     id: string;

@@ -1,6 +1,65 @@
 import * as yaml from 'js-yaml';
-import { Manifest, ManifestV03, InitMode } from '../types';
+import { Manifest, ManifestV03, InitMode, ResolvedConfig } from '../types';
 import * as fs from './fs';
+
+// v0.7.0: v0.6.4 id_pattern whitelist — the exact types accepted at runtime.
+// Sourced from src/core/manifest.ts:113 (card_policy.id_pattern regex).
+export const V064_DEFAULT_TYPES = [
+  'project', 'module', 'feature', 'task', 'decision',
+  'trace', 'risk', 'assumption', 'resource', 'integration',
+];
+
+// v0.7.0: v0.6.4 distill merge target types (hardcoded in distill.ts).
+export const V064_DEFAULT_MERGE_TYPES = ['module', 'decision', 'task', 'feature'];
+
+/**
+ * Compute a ResolvedConfig from a manifest object.
+ *
+ * v0.7.0 contract:
+ * - If manifest.schema.card_types is defined → use it.
+ * - Otherwise → fall back to the v0.6.4 id_pattern whitelist.
+ * - This is a PURE FUNCTION — it does NOT write back to the manifest file.
+ *   The only path that writes schema.* fields is `pmem init --domain ...`.
+ */
+export function resolveConfig(manifest: Manifest): ResolvedConfig {
+  const schema = (manifest as ManifestV03).schema;
+
+  const card_types = schema?.card_types ?? [...V064_DEFAULT_TYPES];
+
+  // type_dirs: built-in preset types must explicitly list directories;
+  // custom types (not in any preset) fall back to `${type}s`.
+  const type_dirs: Record<string, string> = {};
+  for (const t of card_types) {
+    if (schema?.type_dirs?.[t]) {
+      type_dirs[t] = schema.type_dirs[t];
+    } else {
+      type_dirs[t] = `${t}s`;
+    }
+  }
+
+  return {
+    card_types,
+    type_dirs,
+    foundational_types: schema?.foundational_types ?? ['module'],
+    evidence_types: schema?.evidence_types ?? ['decision', 'trace'],
+    default_type: schema?.default_type ?? 'trace',
+    merge_target_types: (manifest as ManifestV03).distill?.merge_target_types ?? [...V064_DEFAULT_MERGE_TYPES],
+  };
+}
+
+/**
+ * Render a card_policy.id_pattern by replacing the `{types}` placeholder
+ * with the regex-escaped card type names.
+ *
+ * If the pattern contains `{types}`, it is replaced with the alternation
+ * of all card_types (each regex-escaped).  If the pattern does NOT contain
+ * `{types}`, it is returned unchanged (v0.6.4 compat).
+ */
+export function renderIdPattern(idPattern: string, cardTypes: string[]): string {
+  if (!idPattern.includes('{types}')) return idPattern;
+  const escaped = cardTypes.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return idPattern.replace('{types}', escaped.join('|'));
+}
 
 export function getDefaultManifest(projectName: string, initMode: InitMode = 'minimal'): ManifestV03 {
   return {

@@ -1,19 +1,9 @@
 // === Core Card Types ===
 
-export type NodeType =
-  | 'project'
-  | 'module'
-  | 'feature'
-  | 'task'
-  | 'decision'
-  | 'risk'
-  | 'assumption'
-  | 'constraint'
-  | 'person'
-  | 'resource'
-  | 'file'
-  | 'doc'
-  | 'trace';
+// v0.7.0: NodeType is now string (was a hardcoded union).
+// Card type validation is done at runtime via manifest.schema.card_types.
+// This change allows custom domain types (character, chapter, world, arc, ...).
+export type NodeType = string;
 
 export type EdgeType =
   | 'depends_on'
@@ -341,6 +331,9 @@ export interface DistillConfig {
   max_undistilled_traces: number;
   require_confirmation: boolean;
   suggest_card_splits: boolean;
+  // v0.7.0: card types that trace cards can be merged into.
+  // Defaults to v0.6.4 list ['module','decision','task','feature'] when absent.
+  merge_target_types?: string[];
 }
 
 export interface InitScanCandidate {
@@ -419,6 +412,28 @@ export interface ManifestV03 extends ManifestBase {
   cli: CliConfig;
   embedding: EmbeddingConfig;
   serve: ServeConfig;
+  // v0.7.0: optional schema config for domain-specific card types.
+  // Absent in v0.6.x projects — resolveConfig() falls back to v0.6.4 defaults.
+  schema?: ManifestSchemaConfig;
+}
+
+// === v0.7.0 Domain Schema Types ===
+
+export interface ManifestSchemaConfig {
+  card_types?: string[];
+  type_dirs?: Record<string, string>;
+  foundational_types?: string[];
+  evidence_types?: string[];
+  default_type?: string;
+}
+
+export interface ResolvedConfig {
+  card_types: string[];
+  type_dirs: Record<string, string>;
+  foundational_types: string[];
+  evidence_types: string[];
+  default_type: string;
+  merge_target_types: string[];
 }
 
 // === v0.3 DB Row Types ===
