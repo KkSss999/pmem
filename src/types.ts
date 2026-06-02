@@ -434,6 +434,10 @@ export interface ResolvedConfig {
   evidence_types: string[];
   default_type: string;
   merge_target_types: string[];
+  /** Types that `pmem new` will accept. Narrower than `card_types` to exclude
+   *  internal compat types like 'integration' that exist for id_pattern but
+   *  whose directories are excluded from rebuild. */
+  creatable_types: string[];
 }
 
 // === v0.3 DB Row Types ===

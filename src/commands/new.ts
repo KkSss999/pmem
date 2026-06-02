@@ -5,10 +5,6 @@ import { resolveConfig } from '../core/manifest';
 
 const PMEM_DIR = '.pmem';
 
-// v0.7.0: types that exist for id_pattern / graph compat but should not
-// be created via `pmem new` (their directories are excluded from rebuild).
-const NON_CREATABLE_TYPES = ['integration'];
-
 export function newCommand(type: string, title: string): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -26,18 +22,11 @@ export function newCommand(type: string, title: string): void {
 
   const config = resolveConfig(manifest);
 
-  // Validate type against manifest-declared (or v0.6.4 fallback) card_types
-  if (!config.card_types.includes(type)) {
+  // Validate type against manifest-declared creatable_types.
+  // Old projects: v0.6.4 VALID_TYPES (6). Custom projects: card_types minus internals.
+  if (!config.creatable_types.includes(type)) {
     console.log(`Error: Invalid card type "${type}".`);
-    console.log(`Valid types: ${config.card_types.join(', ')}`);
-    process.exit(2);
-  }
-
-  // v0.7.0: reject types that exist for id_pattern compat but cannot be
-  // indexed (e.g. 'integration' — its directory is excluded from rebuild).
-  if (NON_CREATABLE_TYPES.includes(type)) {
-    console.log(`Error: Card type "${type}" cannot be created via \`pmem new\`.`);
-    console.log('This type exists for internal compatibility. Create cards of other types.');
+    console.log(`Valid types: ${config.creatable_types.join(', ')}`);
     process.exit(2);
   }
 
