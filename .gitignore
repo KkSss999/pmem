@@ -3,3 +3,7 @@ e2e-*/
 integ-*/
 session-*/
 v064-*/
+.pmem/pmem.db
+.pmem/pmem.db-*
+.pmem/.lock
+.pmem/indexes/

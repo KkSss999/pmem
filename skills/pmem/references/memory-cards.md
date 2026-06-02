@@ -4,6 +4,8 @@ Memory cards are Markdown files with YAML frontmatter. They live under `.pmem/` 
 
 ## Card Types
 
+The default `software` preset uses these common card types:
+
 | Type | Directory | Purpose |
 |------|-----------|---------|
 | `module` | `.pmem/modules/` | Code module description and ownership |
@@ -13,7 +15,9 @@ Memory cards are Markdown files with YAML frontmatter. They live under `.pmem/` 
 | `risk` | `.pmem/risks/` | Identified risks and mitigations |
 | `trace` | `.pmem/traces/` | Work session traces |
 
-## Module Card (most important)
+v0.7.0 supports domain presets and custom schemas. A `novel` project can use `character`, `chapter`, `world`, and `arc`; a `research` project can use `source`, `claim`, `note`, and `experiment`. Check `.pmem/manifest.yml` → `schema.card_types`, `schema.type_dirs`, and `schema.creatable_types` for the project's valid types.
+
+## Software Module Card
 
 ```yaml
 ---
@@ -37,6 +41,45 @@ Handles user authentication and token management.
 ```
 
 The `source_files` field is critical — it links code files to memory. When `src/auth/index.ts` changes, pmem knows to flag `module.auth` as potentially stale.
+
+## Novel Character Card
+
+```yaml
+---
+id: character.protagonist
+type: character
+status: active
+tags: [main-cast]
+aliases: [hero]
+source_files: [draft/characters/protagonist.md]
+---
+# Protagonist
+
+## Role
+Primary viewpoint character.
+
+## Motivation
+Wants to recover a lost family archive.
+```
+
+## Research Source Card
+
+```yaml
+---
+id: source.smith_2024_survey
+type: source
+status: active
+tags: [memory, agents]
+source_files: [papers/smith-2024.pdf]
+---
+# Smith 2024 Survey
+
+## Summary
+Survey of persistent memory approaches for AI agents.
+
+## Evidence
+Supports claims about cross-session continuity.
+```
 
 ## Decision Card
 

@@ -12,6 +12,7 @@ pmem --version
 ```bash
 pmem install --skills --claude    # for Claude Code
 pmem install --skills --codex     # for Codex
+pmem install --skills --gemini    # for Gemini
 pmem install --skills --all       # for all detected agents
 ```
 
@@ -27,6 +28,16 @@ pmem init your-project --guided \
   --next "Set up project structure"
 pmem rebuild
 ```
+
+Domain presets (v0.7.0):
+
+```bash
+pmem init your-project --domain software   # default; modules/features/tasks
+pmem init your-novel --domain novel        # characters/chapters/world/arc
+pmem init your-research --domain research  # sources/claims/notes/experiments
+```
+
+Use `software` for codebases, `novel` for writing projects, and `research` for literature reviews or evidence-driven notes. Novel and research projects disable `pmem discover` by default to avoid code-scanner noise.
 
 Or with a JSON answers file:
 
@@ -74,6 +85,16 @@ Main application entry point.
 CARD
 
 echo "export const app = { name: 'my-app' };" > src/index.ts
+pmem rebuild
+```
+
+For non-software projects, use the preset card types:
+
+```bash
+pmem new character "Main Protagonist"
+pmem new chapter "Opening Scene"
+pmem new source "Smith 2024 Survey"
+pmem new claim "Memory Improves Agent Continuity"
 pmem rebuild
 ```
 

@@ -88,6 +88,7 @@ export interface ManifestProject {
   name: string;
   language?: string;
   status?: string;
+  domain?: string;
 }
 
 export interface ManifestSourceOfTruth {
@@ -404,6 +405,11 @@ export interface IndexesConfigV03 {
   legacy_json: LegacyJsonConfig;
 }
 
+export interface ManifestChangeDetectionConfig {
+  mtime_scan_dirs?: string[];
+  skip_dirs?: string[];
+}
+
 export interface ManifestV03 extends ManifestBase {
   pmem: ManifestBase['pmem'] & { schema_version: '0.3'; protocol_version: '0.3' };
   runtime: RuntimeConfig;
@@ -415,6 +421,8 @@ export interface ManifestV03 extends ManifestBase {
   // v0.7.0: optional schema config for domain-specific card types.
   // Absent in v0.6.x projects — resolveConfig() falls back to v0.6.4 defaults.
   schema?: ManifestSchemaConfig;
+  change_detection?: ManifestChangeDetectionConfig;
+  discover?: { enabled: boolean };
 }
 
 // === v0.7.0 Domain Schema Types ===
@@ -425,6 +433,7 @@ export interface ManifestSchemaConfig {
   foundational_types?: string[];
   evidence_types?: string[];
   default_type?: string;
+  creatable_types?: string[];
 }
 
 export interface ResolvedConfig {

@@ -44,6 +44,13 @@ This creates a `.pmem/` directory with:
 
 `pmem init --guided` lets you answer 3 questions interactively to populate the project info.
 
+By default, `pmem init` uses the `software` preset. You can initialize with a different domain preset using the `--domain` flag:
+
+```bash
+pmem init your-novel --domain novel
+```
+Available presets: `software` (default), `novel`, and `research`. Specifying a preset initializes folders corresponding to the domain and registers preset schemas inside the manifest.
+
 ## 3. Create Your First Memory Card
 
 A memory card is a Markdown file with YAML frontmatter. The most important type is `module` — it connects source files to memory:
@@ -365,6 +372,37 @@ This can happen if the SQLite file was interrupted during a write:
 mv .pmem/pmem.db .pmem/pmem.db.bak
 pmem rebuild --full
 ```
+
+## 12. Universal Preset Domains and Custom Schemas
+
+Starting with v0.7.0, `pmem` is domain-neutral, supporting custom card types, custom directories, and domain-specific behaviors.
+
+### Domain Presets
+You can set a preset when initializing:
+- `pmem init --domain software` (default): Configures `modules/`, `features/`, `decisions/`, `tasks/`, `risks/`, `traces/`.
+- `pmem init --domain novel`: Configures `characters/`, `chapters/`, `world/`, `arc/`, `decisions/`, `traces/`. Automatically disables autodiscovery to prevent scanning noise in creative directories.
+- `pmem init --domain research`: Configures `sources/`, `claims/`, `notes/`, `experiments/`, `decisions/`, `traces/`. Automatically disables autodiscovery.
+
+### Customizing Schema & Discovery in `manifest.yml`
+You can customize card validation and structure directly in your `.pmem/manifest.yml` file under the `schema` key:
+- `schema.card_types`: List of all valid card types allowed in the project.
+- `schema.type_dirs`: Map of card types to directory paths (e.g., `chapter: chapters`).
+- `schema.creatable_types`: Types that `pmem new` can instantiate.
+- `schema.foundational_types`: Core types returned as foundational cards during recall.
+- `schema.evidence_types`: Card types representing evidence (used for `pmem ask` and graph tracing).
+- `schema.default_type`: Fallback type when none is specified.
+
+To toggle relationship autodiscovery, configure `discover.enabled`:
+```yaml
+discover:
+  enabled: false
+```
+
+### Recall Output (`active_foundation`)
+In `pmem recall --format json`, the field `active_foundation` returns foundational cards based on `schema.foundational_types`. For legacy compatibility, the `active_modules` field is also populated with the same list of cards.
+
+### Zero-Migration Compatibility
+v0.6.x legacy projects do not need any migration or changes. If a project does not contain a `schema` block in its manifest, `pmem` will automatically fallback to the legacy `software` defaults without modifying or rewriting the manifest file.
 
 ## Next Steps
 

@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rebuildCommand = rebuildCommand;
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const fs_1 = require("../core/fs");
 const manifest_1 = require("../core/manifest");
 const db_1 = require("../core/db");
@@ -75,16 +76,43 @@ function rebuildCommand(options = {}) {
         // empty with no restoration possible. We move the snapshot/clear/
         // restore into the doRebuild closure so all writes are atomic.
     }
-    // Scan all .md files under .pmem/, excluding non-card files
-    const cardFiles = (0, fs_1.listFiles)(pmemPath, /\.md$/).filter(f => {
-        const rel = path.relative(pmemPath, f);
-        return !['index.md', 'state.md', 'next.md'].includes(rel) &&
-            !rel.startsWith('skills/') &&
-            !rel.startsWith('integrations/') &&
-            !rel.startsWith('summaries/') &&
-            !rel.startsWith('indexes/') &&
-            !rel.startsWith('backups/');
-    });
+    // Collect card files. If manifest defines card_globs, collect files covered by them.
+    // Otherwise, fallback to scanning all .md files under .pmem/.
+    let cardFiles;
+    const cardGlobs = manifest.source_of_truth?.card_globs;
+    if (cardGlobs && Array.isArray(cardGlobs)) {
+        const filesSet = new Set();
+        for (const cardGlob of cardGlobs) {
+            const globSuffixIndex = cardGlob.indexOf('/**/');
+            const baseDir = globSuffixIndex >= 0
+                ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
+                : path.join(cwd, path.dirname(cardGlob));
+            if (fs.existsSync(baseDir)) {
+                collectMdFiles(baseDir, filesSet);
+            }
+        }
+        // Also include candidates directory if it exists
+        const candidatesDir = path.join(pmemPath, 'candidates');
+        if (fs.existsSync(candidatesDir)) {
+            collectMdFiles(candidatesDir, filesSet);
+        }
+        cardFiles = Array.from(filesSet).filter(f => {
+            const rel = path.relative(pmemPath, f);
+            return !['index.md', 'state.md', 'next.md'].includes(rel);
+        });
+    }
+    else {
+        // Scan all .md files under .pmem/, excluding non-card files
+        cardFiles = (0, fs_1.listFiles)(pmemPath, /\.md$/).filter(f => {
+            const rel = path.relative(pmemPath, f);
+            return !['index.md', 'state.md', 'next.md'].includes(rel) &&
+                !rel.startsWith('skills/') &&
+                !rel.startsWith('integrations/') &&
+                !rel.startsWith('summaries/') &&
+                !rel.startsWith('indexes/') &&
+                !rel.startsWith('backups/');
+        });
+    }
     const nodes = [];
     const edges = [];
     let processed = 0;
@@ -348,5 +376,19 @@ function resolveUpdatedAt(fmUpdated, absPath) {
     if (mtime !== null)
         return new Date(mtime).toISOString();
     return new Date().toISOString();
+}
+function collectMdFiles(dir, results) {
+    if (!fs.existsSync(dir))
+        return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            collectMdFiles(fullPath, results);
+        }
+        else if (entry.name.endsWith('.md')) {
+            results.add(fullPath);
+        }
+    }
 }
 //# sourceMappingURL=rebuild.js.map

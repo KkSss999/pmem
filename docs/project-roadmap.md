@@ -22,6 +22,7 @@ CLI：`pmem`
 | v0.5 | Productization Beta | README、npm package、E2E、错误 UX、发布清单，上线 npm Beta |
 | v0.6 | Agent-native Workflow Polish | 非交互 init、友好错误、空结果引导、Claude Code slash commands |
 | v0.6.1 | Actionable Update Suggestions | `update --suggest` 去重、分级、compact 摘要、verify 语义对齐 |
+| v0.7.0 | Universal Agent Memory | 将 pmem 扩展为面向任何 domain 的通用 Agent 记忆运行时，支持自定义卡片类型 |
 
 ---
 
@@ -409,6 +410,54 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 - **v0.6.4:** ✅ 已发布（Polish & Wrap v0.6 Track）
   - 设计决策：`docs/v0.6.4 pre-design.md`
   - 根因报告：`docs/handover-v0.6.4.md`
+- **v0.7.0:** ✅ 已完成（Universal Agent Memory）
+  - 设计决策：`docs/v0.7.0 pre-design.md`
+
+---
+
+## v0.7.0 — Universal Agent Memory ✅ 已完成
+
+**主题：** 将 pmem 从"软件项目专用"扩展为"任意 agent 项目的本地记忆运行时"。支持自定义卡片类型，内置软件、小说、研究 presets，解决通用 recall/status 摩擦点。
+
+| 功能 | 说明 |
+|------|------|
+| Universal Presets | `pmem init --domain software|novel|research` 加载预设卡片类型与目录映射 |
+| Custom card types | 支持 manifest 声明任意卡片类型、目录映射及 token/section 限制，去除 VALID_TYPES 硬编码限制 |
+| Dynamic id_pattern | `{types}` 动态渲染，支持自定义卡片前缀正则校验 |
+| Generic Recall | JSON 增加 `active_foundation` 字段（根据预设 foundational_types 反馈），兼容保留 `active_modules` |
+| Generic Status | 消除对 `src/lib/app/tests` 硬编码扫描；读取 `change_detection.skip_dirs` / `mtime_scan_dirs` 及自定义卡片目录 |
+| Discover Disabled | 针对非软件 presets 默认关闭 `pmem discover`，支持 `discover.enabled: false` 配置与早停 exit 0 |
+| Skills & Ignores | 统一升级 `skills/task.md` 代替 `code-task.md`；去除了 AGENTS / CLAUDE 等模板中的软件术语绑定 |
+
+---
+
+## 当前状态
+
+- **v0.1:** ✅ 完成（10 个命令实现并测试）
+- **v0.2:** ✅ 完成（文件模式可信）
+  - 设计决策：`docs/v0.2 pre-design.md`
+  - 架构规划：`docs/v0.2 pre-roadmap.md`
+- **v0.3:** ✅ 完成（SQLite runtime）
+  - 设计决策：`docs/v0.3 pre-design.md`
+- **v0.4:** ✅ 完成（Agent workflow runtime）
+  - 设计决策：`docs/v0.4 pre-design.md`
+  - handover：`docs/handover-v0.4.md`
+- **v0.5:** ✅ 完成并上线 npm（Productization Beta）
+  - 设计决策：`docs/v0.5 pre-design.md`
+  - 发布清单：`docs/release-checklist-v0.5.md`
+- **v0.6:** ✅ 完成并上线 npm（Agent-native Workflow Polish）
+  - 设计决策：`docs/v0.6 pre-design.md`
+- **v0.6.1:** ✅ 已发布（Actionable Update Suggestions）
+  - 设计决策：`docs/v0.6.1 pre-design.md`
+  - 发布状态：`v0.6.1` 已完成 CI 并上线 npm
+- **v0.6.2:** ✅ 已发布（Real-User Friction Fixes）
+  - 设计决策：`docs/v0.6.2 pre-design.md`
+- **v0.6.3:** ✅ 已发布（Relationship Auto-Discovery）
+- **v0.6.4:** ✅ 已发布（Polish & Wrap v0.6 Track）
+  - 设计决策：`docs/v0.6.4 pre-design.md`
+  - 根因报告：`docs/handover-v0.6.4.md`
+- **v0.7.0:** ✅ 已完成（Universal Agent Memory）
+  - 设计决策：`docs/v0.7.0 pre-design.md`
 
 ---
 
@@ -416,14 +465,6 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 
 以下问题留待后续版本讨论：
 
-- **v0.7.0 通用化方向（候选）**：把 pmem 从"软件项目专用"扩到"任意 agent 项目"
-  - `pmem new` 类型解锁（去除 VALID_TYPES 硬编码，从 manifest 读）
-  - `id_pattern` 占位符支持（`{types}` 渲染项目自定义 type 前缀）
-  - `recall.foundational_types` 替代硬编码 `c.type === 'module'` 过滤
-  - `recall --format json` 返回 cards 列表（当前 `active_modules` 永远空）
-  - status 目录级模糊匹配去误报（高 noise 修复）
-  - `init --type-preset` 加载小说 / 调研 / 写作预设
-  - 详细阻力清单：`temp/novel-test/FRICTION_REPORT.md`
 - MCP Server vs HTTP API 的选择
 - 多项目 / workspace 支持
 - 记忆共享与协作机制

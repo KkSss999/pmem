@@ -3,6 +3,7 @@ import { readFile, fileExists } from '../core/fs';
 import { openDatabase, createSchema } from '../core/db';
 import { formatOutput } from '../core/format';
 import type { RecallResult, CliFormat, CardRow } from '../types';
+import { loadManifest, resolveConfig } from '../core/manifest';
 
 const PMEM_DIR = '.pmem';
 
@@ -49,11 +50,16 @@ export function recallCommand(budget: number = 2000, format: CliFormat = 'compac
     ? extractField(nextContent, '## Recommended Next Step')
     : 'No next step recorded.';
 
+  const manifest = loadManifest(pmemPath);
+  const config = manifest ? resolveConfig(manifest) : { foundational_types: ['module'] };
+  const foundationalTypes = config.foundational_types;
+
   // Build result
   const result: RecallResult & {
     dirty_flags_count: number;
     recent_updates: Array<{ action: string; summary: string | null; created_at: string }>;
     active_modules: string[];
+    active_foundation: string[];
   } = {
     project: projectName || 'Unknown',
     stage: projectStage || undefined,
@@ -64,6 +70,7 @@ export function recallCommand(budget: number = 2000, format: CliFormat = 'compac
     dirty_flags_count: 0,
     recent_updates: [],
     active_modules: [],
+    active_foundation: [],
   };
 
   // Query SQLite for richer project info
@@ -91,15 +98,16 @@ export function recallCommand(budget: number = 2000, format: CliFormat = 'compac
           "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
         ).all() as CardRow[];
 
-    // Modules for recommendations
-    const modules = activeCards.filter(c => c.type === 'module');
-    result.active_modules = modules.map(m => m.file_path);
+    // Foundational cards for recommendations
+    const foundationalCards = activeCards.filter(c => foundationalTypes.includes(c.type));
+    result.active_foundation = foundationalCards.map(c => c.file_path);
+    result.active_modules = result.active_foundation;
 
     // Build mustRead list
     result.mustRead.push(path.join('.pmem', 'state.md'));
     result.mustRead.push(path.join('.pmem', 'next.md'));
-    for (const mod of modules.slice(0, 5)) {
-      result.mustRead.push(mod.file_path);
+    for (const card of foundationalCards.slice(0, 5)) {
+      result.mustRead.push(card.file_path);
     }
 
     // Query unresolved dirty flags

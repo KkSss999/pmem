@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileExists, readFile } from '../fs';
+import { loadManifest } from '../manifest';
 import {
   openDatabase,
   createSchema,
@@ -58,6 +59,21 @@ export function discoverCommand(options: {
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
     process.exit(2);
+  }
+
+  const manifest = loadManifest(pmemPath);
+  const isDiscoverEnabled = manifest && (manifest as any).discover?.enabled === false ? false : true;
+
+  if (!isDiscoverEnabled) {
+    if (options.format === 'json') {
+      console.log(JSON.stringify({
+        enabled: false,
+        reason: 'discover disabled in this project'
+      }, null, 2));
+    } else {
+      console.log('discover disabled in this project');
+    }
+    return;
   }
 
   const dbPath = path.join(pmemPath, 'pmem.db');

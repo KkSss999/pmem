@@ -38,6 +38,7 @@ const path = __importStar(require("path"));
 const fs_1 = require("../core/fs");
 const db_1 = require("../core/db");
 const format_1 = require("../core/format");
+const manifest_1 = require("../core/manifest");
 const PMEM_DIR = '.pmem';
 function askCommand(query, format = 'compact') {
     const cwd = process.cwd();
@@ -241,10 +242,13 @@ function askCommand(query, format = 'compact') {
     for (const m of deduped.slice(0, 8)) {
         recommendedFiles.push(m.file);
     }
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    const config = manifest ? (0, manifest_1.resolveConfig)(manifest) : { evidence_types: ['decision', 'trace'] };
+    const evidenceTypes = config.evidence_types;
     const evidencePaths = [];
     for (const m of deduped) {
         const card = db.prepare("SELECT type, file_path FROM cards WHERE id = ? AND is_deleted = 0").get(m.id);
-        if (card && (card.type === 'decision' || card.type === 'trace')) {
+        if (card && evidenceTypes.includes(card.type)) {
             evidencePaths.push(card.file_path);
         }
     }

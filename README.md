@@ -62,6 +62,18 @@ pmem install --skills --gemini    # → ~/.gemini/skills/pmem/
 pmem install --skills --all       # → all detected agents
 ```
 
+Run the command for each agent you use. Each install copies the packaged
+`skills/pmem/` directory, including `SKILL.md` and the reference guides, into
+that agent's global skills folder.
+
+Verify the installed skill files:
+
+```bash
+test -f ~/.claude/skills/pmem/SKILL.md
+test -f ~/.codex/skills/pmem/SKILL.md
+test -f ~/.gemini/skills/pmem/SKILL.md
+```
+
 ## 5-Minute Quick Start
 
 Create project memory in a repository:
@@ -230,6 +242,49 @@ pmem verify
 
 `distill` consolidates trace cards into stable cards when enough evidence accumulates.
 
+### Domain Presets & Custom Schema
+
+Starting with v0.7.0, `pmem` is domain-neutral. You can initialize a project with a domain preset, customize valid card types, directories, and behavior.
+
+#### Domain Presets
+
+Initialize a project with a domain preset using `--domain <preset>`:
+```bash
+pmem init my-project --domain novel
+```
+
+Built-in presets:
+- **`software`** (default): For software engineering projects. Creates directories for `modules/`, `features/`, `decisions/`, etc. `discover` is enabled. Foundational types: `['module']`.
+- **`novel`**: For creative writing. Creates directories for `characters/`, `chapters/`, `world/`, `arc/`, `decisions/`, `traces/`. `discover` is disabled by default. Foundational types: `['character', 'chapter']`.
+- **`research`**: For literature reviews, research papers, and studies. Creates directories for `sources/`, `claims/`, `notes/`, `experiments/`, `decisions/`, `traces/`. `discover` is disabled by default. Foundational types: `['source', 'claim']`.
+
+#### Custom Schema Manifest Settings
+
+The manifest `schema` section controls validation and runtime behavior:
+- `schema.card_types`: Whitelist of valid card types.
+- `schema.type_dirs`: Key-value map of card types to directory paths (e.g., `character: characters`).
+- `schema.creatable_types`: Types that `pmem new` can instantiate.
+- `schema.foundational_types`: Core types returned as foundational cards during recall.
+- `schema.evidence_types`: Card types representing evidence (e.g., `decision`, `trace`) used for `pmem ask` and graph tracing.
+- `schema.default_type`: Fallback type when none is specified.
+
+#### Recall Output (`active_foundation`)
+
+When calling `pmem recall --format json` on non-software domains, the JSON output populates `active_foundation` with cards matching the `foundational_types` configuration. For legacy compatibility, the `active_modules` field is also populated with the same list.
+
+#### Discovery Configuration (`discover.enabled`)
+
+To toggle autodiscovery globally, configure `discover.enabled` in `manifest.yml`:
+```yaml
+discover:
+  enabled: false
+```
+When disabled, running `pmem discover` will print a disabled message and exit `0` immediately without scanning files.
+
+#### Backward Compatibility
+
+`pmem` v0.7.0 maintains strict zero-migration backward compatibility with v0.6.x legacy projects. If a project does not contain a `schema` block in its manifest, `pmem` will automatically fall back to the legacy `software` defaults without modifying or rewriting the manifest file.
+
 ## Agent Workflow
 
 At the start of an agent session:
@@ -270,7 +325,7 @@ Installed integration templates are available under:
 ## CLI Reference
 
 ```bash
-pmem init [project-name] [--guided]
+pmem init [project-name] [--guided] [--domain software|novel|research]
 
 pmem recall [--budget N] [--format compact|json|paths|pack]
 pmem ask <query> [--format compact|json|paths|pack]

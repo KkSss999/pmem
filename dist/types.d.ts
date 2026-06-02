@@ -60,6 +60,7 @@ export interface ManifestProject {
     name: string;
     language?: string;
     status?: string;
+    domain?: string;
 }
 export interface ManifestSourceOfTruth {
     type: 'markdown_cards';
@@ -324,6 +325,10 @@ export interface IndexesConfigV03 {
     primary: 'sqlite';
     legacy_json: LegacyJsonConfig;
 }
+export interface ManifestChangeDetectionConfig {
+    mtime_scan_dirs?: string[];
+    skip_dirs?: string[];
+}
 export interface ManifestV03 extends ManifestBase {
     pmem: ManifestBase['pmem'] & {
         schema_version: '0.3';
@@ -336,6 +341,10 @@ export interface ManifestV03 extends ManifestBase {
     embedding: EmbeddingConfig;
     serve: ServeConfig;
     schema?: ManifestSchemaConfig;
+    change_detection?: ManifestChangeDetectionConfig;
+    discover?: {
+        enabled: boolean;
+    };
 }
 export interface ManifestSchemaConfig {
     card_types?: string[];
@@ -343,6 +352,7 @@ export interface ManifestSchemaConfig {
     foundational_types?: string[];
     evidence_types?: string[];
     default_type?: string;
+    creatable_types?: string[];
 }
 export interface ResolvedConfig {
     card_types: string[];

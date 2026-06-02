@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.discoverCommand = discoverCommand;
 const path = __importStar(require("path"));
 const fs_1 = require("../fs");
+const manifest_1 = require("../manifest");
 const db_1 = require("../db");
 const patterns_1 = require("./patterns");
 const detect_1 = require("./detect");
@@ -50,6 +51,20 @@ function discoverCommand(options) {
     if (!(0, fs_1.fileExists)(pmemPath)) {
         console.log('No .pmem directory found. Run `pmem init` first.');
         process.exit(2);
+    }
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    const isDiscoverEnabled = manifest && manifest.discover?.enabled === false ? false : true;
+    if (!isDiscoverEnabled) {
+        if (options.format === 'json') {
+            console.log(JSON.stringify({
+                enabled: false,
+                reason: 'discover disabled in this project'
+            }, null, 2));
+        }
+        else {
+            console.log('discover disabled in this project');
+        }
+        return;
     }
     const dbPath = path.join(pmemPath, 'pmem.db');
     if (!(0, fs_1.fileExists)(dbPath)) {
