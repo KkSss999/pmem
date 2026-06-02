@@ -198,6 +198,43 @@ const manifest_1 = require("./manifest");
         ]);
     });
 });
+(0, node_test_1.describe)('creatable_types', () => {
+    (0, node_test_1.it)('old project (no schema) falls back to v0.6.4 VALID_TYPES (6 types)', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.deepStrictEqual(cfg.creatable_types, manifest_1.V064_DEFAULT_CREATABLE_TYPES);
+        node_assert_1.default.deepStrictEqual(manifest_1.V064_DEFAULT_CREATABLE_TYPES, [
+            'decision', 'module', 'task', 'feature', 'risk', 'trace',
+        ]);
+    });
+    (0, node_test_1.it)('old project rejects project/assumption/resource/integration (in id_pattern but not creatable)', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.ok(!cfg.creatable_types.includes('project'));
+        node_assert_1.default.ok(!cfg.creatable_types.includes('assumption'));
+        node_assert_1.default.ok(!cfg.creatable_types.includes('resource'));
+        node_assert_1.default.ok(!cfg.creatable_types.includes('integration'));
+    });
+    (0, node_test_1.it)('old project accepts module (still creatable)', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.ok(cfg.creatable_types.includes('module'));
+        node_assert_1.default.ok(cfg.creatable_types.includes('decision'));
+    });
+    (0, node_test_1.it)('custom schema: all declared card_types are creatable except integration', () => {
+        const manifest = (0, manifest_1.getDefaultManifest)('test-project');
+        manifest.schema = {
+            card_types: ['character', 'chapter', 'world', 'arc', 'decision', 'integration'],
+        };
+        const cfg = (0, manifest_1.resolveConfig)(manifest);
+        node_assert_1.default.ok(cfg.creatable_types.includes('character'));
+        node_assert_1.default.ok(cfg.creatable_types.includes('chapter'));
+        node_assert_1.default.ok(cfg.creatable_types.includes('world'));
+        node_assert_1.default.ok(cfg.creatable_types.includes('arc'));
+        node_assert_1.default.ok(cfg.creatable_types.includes('decision'));
+        node_assert_1.default.ok(!cfg.creatable_types.includes('integration'), 'integration always excluded');
+    });
+});
 (0, node_test_1.describe)('renderIdPattern', () => {
     (0, node_test_1.it)('returns pattern unchanged when no {types} placeholder', () => {
         const pattern = '^(project|module)\\.[a-z0-9._-]+$';

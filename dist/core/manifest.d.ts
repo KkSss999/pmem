@@ -1,6 +1,7 @@
 import { Manifest, ManifestV03, InitMode, ResolvedConfig } from '../types';
 export declare const V064_DEFAULT_TYPES: string[];
 export declare const V064_DEFAULT_MERGE_TYPES: string[];
+export declare const V064_DEFAULT_CREATABLE_TYPES: string[];
 /**
  * Compute a ResolvedConfig from a manifest object.
  *

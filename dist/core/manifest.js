@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.V064_DEFAULT_MERGE_TYPES = exports.V064_DEFAULT_TYPES = void 0;
+exports.V064_DEFAULT_CREATABLE_TYPES = exports.V064_DEFAULT_MERGE_TYPES = exports.V064_DEFAULT_TYPES = void 0;
 exports.resolveConfig = resolveConfig;
 exports.renderIdPattern = renderIdPattern;
 exports.getDefaultManifest = getDefaultManifest;
@@ -50,6 +50,11 @@ exports.V064_DEFAULT_TYPES = [
 ];
 // v0.7.0: v0.6.4 distill merge target types (hardcoded in distill.ts).
 exports.V064_DEFAULT_MERGE_TYPES = ['module', 'decision', 'task', 'feature'];
+// v0.7.0: v0.6.4 VALID_TYPES from new.ts — the exact 6 types `pmem new`
+// accepted before v0.7.0. Narrower than id_pattern (10 types) because
+// project/assumption/resource/integration exist for compat but are not
+// creatable (their directories may be excluded from rebuild).
+exports.V064_DEFAULT_CREATABLE_TYPES = ['decision', 'module', 'task', 'feature', 'risk', 'trace'];
 /**
  * Compute a ResolvedConfig from a manifest object.
  *
@@ -80,6 +85,13 @@ function resolveConfig(manifest) {
         evidence_types: schema?.evidence_types ?? ['decision', 'trace'],
         default_type: schema?.default_type ?? 'trace',
         merge_target_types: manifest.distill?.merge_target_types ?? [...exports.V064_DEFAULT_MERGE_TYPES],
+        // creatable_types: types accepted by `pmem new`.
+        // - Old projects (no schema.card_types): exactly v0.6.4 VALID_TYPES (6 types).
+        // - Custom projects: all declared card_types minus internal compat types
+        //   ('integration' — its directory is excluded from rebuild).
+        creatable_types: schema?.card_types
+            ? card_types.filter(t => t !== 'integration')
+            : [...exports.V064_DEFAULT_CREATABLE_TYPES],
     };
 }
 /**

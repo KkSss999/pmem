@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { getDefaultManifest, getDefaultManifestV03, resolveConfig, renderIdPattern, V064_DEFAULT_TYPES, V064_DEFAULT_MERGE_TYPES } from './manifest';
+import { getDefaultManifest, getDefaultManifestV03, resolveConfig, renderIdPattern, V064_DEFAULT_TYPES, V064_DEFAULT_MERGE_TYPES, V064_DEFAULT_CREATABLE_TYPES } from './manifest';
 
 describe('getDefaultManifest', () => {
   it('returns a ManifestV03 with schema_version 0.3', () => {
@@ -222,6 +222,47 @@ describe('resolveConfig', () => {
       'project', 'module', 'feature', 'task', 'decision',
       'trace', 'risk', 'assumption', 'resource', 'integration',
     ]);
+  });
+});
+
+describe('creatable_types', () => {
+  it('old project (no schema) falls back to v0.6.4 VALID_TYPES (6 types)', () => {
+    const manifest = getDefaultManifest('test-project');
+    const cfg = resolveConfig(manifest);
+    assert.deepStrictEqual(cfg.creatable_types, V064_DEFAULT_CREATABLE_TYPES);
+    assert.deepStrictEqual(V064_DEFAULT_CREATABLE_TYPES, [
+      'decision', 'module', 'task', 'feature', 'risk', 'trace',
+    ]);
+  });
+
+  it('old project rejects project/assumption/resource/integration (in id_pattern but not creatable)', () => {
+    const manifest = getDefaultManifest('test-project');
+    const cfg = resolveConfig(manifest);
+    assert.ok(!cfg.creatable_types.includes('project'));
+    assert.ok(!cfg.creatable_types.includes('assumption'));
+    assert.ok(!cfg.creatable_types.includes('resource'));
+    assert.ok(!cfg.creatable_types.includes('integration'));
+  });
+
+  it('old project accepts module (still creatable)', () => {
+    const manifest = getDefaultManifest('test-project');
+    const cfg = resolveConfig(manifest);
+    assert.ok(cfg.creatable_types.includes('module'));
+    assert.ok(cfg.creatable_types.includes('decision'));
+  });
+
+  it('custom schema: all declared card_types are creatable except integration', () => {
+    const manifest = getDefaultManifest('test-project');
+    (manifest as any).schema = {
+      card_types: ['character', 'chapter', 'world', 'arc', 'decision', 'integration'],
+    };
+    const cfg = resolveConfig(manifest);
+    assert.ok(cfg.creatable_types.includes('character'));
+    assert.ok(cfg.creatable_types.includes('chapter'));
+    assert.ok(cfg.creatable_types.includes('world'));
+    assert.ok(cfg.creatable_types.includes('arc'));
+    assert.ok(cfg.creatable_types.includes('decision'));
+    assert.ok(!cfg.creatable_types.includes('integration'), 'integration always excluded');
   });
 });
 
