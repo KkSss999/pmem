@@ -86,12 +86,15 @@ function resolveConfig(manifest) {
         default_type: schema?.default_type ?? 'trace',
         merge_target_types: manifest.distill?.merge_target_types ?? [...exports.V064_DEFAULT_MERGE_TYPES],
         // creatable_types: types accepted by `pmem new`.
-        // - Old projects (no schema.card_types): exactly v0.6.4 VALID_TYPES (6 types).
-        // - Custom projects: all declared card_types minus internal compat types
-        //   ('integration' — its directory is excluded from rebuild).
-        creatable_types: schema?.card_types
-            ? card_types.filter(t => t !== 'integration')
-            : [...exports.V064_DEFAULT_CREATABLE_TYPES],
+        // - If schema.creatable_types is defined → use it.
+        // - Otherwise (compat fallback):
+        //   - If schema.card_types is defined → all card_types minus non-creatable utility types ('integration', 'project', 'assumption', 'resource')
+        //   - Otherwise → v0.6.4 default creatable types
+        creatable_types: schema?.creatable_types
+            ? schema.creatable_types
+            : (schema?.card_types
+                ? card_types.filter(t => t !== 'integration' && t !== 'project' && t !== 'assumption' && t !== 'resource')
+                : [...exports.V064_DEFAULT_CREATABLE_TYPES]),
     };
 }
 /**

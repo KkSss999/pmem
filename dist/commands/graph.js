@@ -38,6 +38,7 @@ exports.traceCommand = traceCommand;
 const path = __importStar(require("path"));
 const fs_1 = require("../core/fs");
 const db_1 = require("../core/db");
+const manifest_1 = require("../core/manifest");
 const PMEM_DIR = '.pmem';
 function relatedCommand(id, options) {
     const cwd = process.cwd();
@@ -198,15 +199,19 @@ function traceCommand(id) {
     console.log(`Type: ${card.type}`);
     console.log(`Title: ${card.title}`);
     console.log(`File: ${card.file_path}`);
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    const config = manifest ? (0, manifest_1.resolveConfig)(manifest) : { evidence_types: ['decision', 'trace'] };
+    const evidenceTypes = config.evidence_types;
+    const placeholders = evidenceTypes.map(() => '?').join(',');
     // Find evidence: decision and trace type cards connected via edges
     const evidenceRows = db.prepare(`
     SELECT DISTINCT c.id, c.type, c.title, c.file_path
     FROM edges e
     JOIN cards c ON (c.id = e.from_id OR c.id = e.to_id) AND c.id != ?
     WHERE (e.from_id = ? OR e.to_id = ?)
-      AND (c.type = 'decision' OR c.type = 'trace')
+      AND c.type IN (${placeholders})
       AND c.is_deleted = 0
-  `).all(id, id, id);
+  `).all(id, id, id, ...evidenceTypes);
     if (evidenceRows.length > 0) {
         console.log('');
         console.log('Evidence Sources:');

@@ -1,12 +1,12 @@
 ---
 name: pmem
-description: Project memory for AI agents — recall context, ask questions, detect changes, update memory, verify consistency across sessions.
+description: Universal project memory for AI agents — initialize software, novel, or research memory; recall context; ask questions; detect changes; update cards; verify consistency across sessions.
 allowed-tools: Bash(pmem:*)
 ---
 
 # Project Memory with pmem
 
-`pmem` gives coding agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. v0.7.0 is domain-neutral: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
@@ -15,12 +15,18 @@ allowed-tools: Bash(pmem:*)
 pmem init my-project --guided --description "A backend service" --stage "Alpha" --next "Set up CI/CD"
 pmem rebuild
 
+# Or initialize a domain preset
+pmem init my-novel --domain novel
+pmem init lit-review --domain research
+
 # Restore context (do this at session start)
-pmem session start -a "Claude"
+pmem session start -a "<agent-name>"
 pmem recall --format compact --budget 2000
 
 # Find relevant memory
 pmem ask "auth module" --format compact
+pmem ask "main character motivation" --format compact
+pmem ask "source claim evidence" --format compact
 ```
 
 ## Core Workflow
@@ -30,7 +36,7 @@ Every session follows this loop:
 ```
 session start → recall (restore context) → ask (find specific memory)
     ↓
-edit code
+edit project files
     ↓
 status (detect changes) → mark-dirty --auto (flag affected cards)
     ↓
@@ -44,8 +50,16 @@ session end → verify (check consistency)
 ### Init & Setup
 
 ```bash
+# Default software preset
+pmem init my-project
+
 # Interactive guided setup (asks 3 questions)
 pmem init my-project --guided
+
+# Domain presets (v0.7.0)
+pmem init my-project --domain software
+pmem init my-novel --domain novel
+pmem init my-research --domain research
 
 # Non-interactive (for scripts and agents)
 pmem init my-project --guided \
@@ -61,6 +75,36 @@ pmem rebuild
 pmem rebuild --full          # full rebuild, clear all tables
 pmem rebuild --card module.core  # rebuild single card
 ```
+
+### Domain Presets & Custom Schemas (v0.7.0)
+
+Use presets when the project is not a conventional software codebase:
+
+| Preset | Foundational cards | Default discover |
+|--------|--------------------|------------------|
+| `software` | `module` | enabled |
+| `novel` | `character`, `chapter` | disabled |
+| `research` | `source`, `claim` | disabled |
+
+The project manifest can define:
+
+```yaml
+schema:
+  card_types: [character, chapter, world, arc, decision, trace]
+  type_dirs:
+    character: characters
+    chapter: chapters
+  foundational_types: [character, chapter]
+  evidence_types: [decision, trace]
+  creatable_types: [character, chapter, world, arc, decision, trace]
+  default_type: trace
+discover:
+  enabled: false
+```
+
+For `pmem recall --format json`, read `active_foundation`. `active_modules` remains as a backward-compatible alias with the same contents.
+
+Legacy v0.6.x projects do not need migration. When `schema` is absent, pmem falls back to the old software defaults without rewriting the manifest.
 
 ### Context Recovery
 
@@ -80,7 +124,7 @@ pmem trace decision.sqlite_runtime
 ### Relationship Discovery (v0.6.3+)
 
 ```bash
-# Auto-discover project relationships across 6 languages
+# Auto-discover software project relationships across 6 languages
 pmem discover --dry-run --format json     # preview without writing
 pmem discover --format json               # discover and write inferred edges
 
@@ -108,6 +152,8 @@ The discover command scans:
 
 The compact output lists actionable items first, then collapses informational ones to a count. Parse `summary.actionable` from JSON to drive your review loop.
 
+For `novel` and `research` presets, `discover.enabled` defaults to `false`. Running `pmem discover` exits 0 with a disabled message and does not scan files.
+
 ### Change Detection & Memory Update
 
 ```bash
@@ -121,7 +167,7 @@ pmem mark-dirty -r "Refactored auth module"
 
 # Get memory update suggestions
 pmem update --suggest --format json
-# NOTE: v0.6.2+ exits 0 regardless; check JSON summary.has_actionable for suggestions
+# NOTE: v0.6.2+ exits 0 regardless; check JSON summary.has_actionable or summary.blocking
 
 # Confirm and write changes
 pmem update --confirm -s "Updated auth module" -n "Add token refresh"
@@ -150,7 +196,7 @@ pmem migrate --to 0.3 --backup
 ### Sessions
 
 ```bash
-pmem session start -a "Claude"
+pmem session start -a "<agent-name>"
 pmem session end -s "Completed auth refactor"
 ```
 
@@ -163,6 +209,7 @@ pmem integration install claude-code
 # Install agent skills globally
 pmem install --skills --claude     # → ~/.claude/skills/pmem/
 pmem install --skills --codex      # → ~/.codex/skills/pmem/
+pmem install --skills --gemini     # → ~/.gemini/skills/pmem/
 pmem install --skills --all        # → all detected agents
 
 # Verify integration status
@@ -224,5 +271,6 @@ pmem verify
 * **First-time project setup** — [references/first-init.md](references/first-init.md)
 * **Session workflow in detail** — [references/session-workflow.md](references/session-workflow.md)
 * **Creating memory cards** — [references/memory-cards.md](references/memory-cards.md)
+* **Universal domains and schemas** — [references/universal-domains.md](references/universal-domains.md)
 * **Discovering project relationships** — run `pmem discover --dry-run --format json` to see inferred edges, then use `pmem update --confirm --accept-edges` to promote them
 * **Troubleshooting** — [references/troubleshooting.md](references/troubleshooting.md)

@@ -33,12 +33,76 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.DOMAIN_PRESETS = void 0;
 exports.initCommand = initCommand;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const readline = __importStar(require("readline"));
 const fs_1 = require("../core/fs");
 const manifest_1 = require("../core/manifest");
+exports.DOMAIN_PRESETS = {
+    software: {
+        domain: 'software',
+        card_types: [
+            'project', 'module', 'feature', 'task', 'decision',
+            'trace', 'risk', 'assumption', 'resource', 'integration'
+        ],
+        type_dirs: {
+            module: 'modules',
+            feature: 'features',
+            decision: 'decisions',
+            task: 'tasks',
+            trace: 'traces',
+            risk: 'risks',
+        },
+        foundational_types: ['module'],
+        evidence_types: ['decision', 'trace'],
+        default_type: 'trace',
+        creatable_types: ['decision', 'module', 'task', 'feature', 'risk', 'trace'],
+        max_tokens: { module: 1200, feature: 1000, decision: 1000, task: 800, trace: 1000 },
+        max_sections: { module: 8, feature: 8, decision: 6, task: 6 },
+    },
+    novel: {
+        domain: 'novel',
+        card_types: [
+            'project', 'character', 'chapter', 'world', 'arc', 'decision', 'trace'
+        ],
+        type_dirs: {
+            character: 'characters',
+            chapter: 'chapters',
+            world: 'world',
+            arc: 'arc',
+            decision: 'decisions',
+            trace: 'traces',
+        },
+        foundational_types: ['character', 'chapter'],
+        evidence_types: ['decision', 'trace'],
+        default_type: 'trace',
+        creatable_types: ['character', 'chapter', 'world', 'arc', 'decision', 'trace'],
+        max_tokens: { decision: 1000, trace: 1000, character: 1200, chapter: 1500, world: 1500, arc: 1000 },
+        max_sections: { decision: 6, character: 8, chapter: 8, world: 10 },
+    },
+    research: {
+        domain: 'research',
+        card_types: [
+            'project', 'source', 'claim', 'note', 'experiment', 'decision', 'trace'
+        ],
+        type_dirs: {
+            source: 'sources',
+            claim: 'claims',
+            note: 'notes',
+            experiment: 'experiments',
+            decision: 'decisions',
+            trace: 'traces',
+        },
+        foundational_types: ['source', 'claim'],
+        evidence_types: ['decision', 'trace'],
+        default_type: 'trace',
+        creatable_types: ['source', 'claim', 'note', 'experiment', 'decision', 'trace'],
+        max_tokens: { decision: 1000, trace: 1000, source: 1200, claim: 1000, note: 1000, experiment: 1200 },
+        max_sections: { decision: 6, source: 8, claim: 6, experiment: 8 },
+    },
+};
 const PMEM_DIR = '.pmem';
 const INDEX_MD = `# Project Memory Index
 
@@ -107,15 +171,14 @@ Use this when you need to understand the project.
 ## Token Rule
 Do not read all memory files unless explicitly requested.
 `;
-const CODE_TASK_SKILL = `# Skill: Code Task
+const TASK_SKILL = `# Skill: Task
 
-Use this before modifying code.
+Use this before modifying files or executing tasks.
 
 ## Required Reads
 - .pmem/index.md
 - .pmem/state.md
-- .pmem/modules related to the target code
-- .pmem/decisions related to the target module
+- Related memory cards (foundational cards or decision cards)
 
 ## Required Writes
 After task completion:
@@ -135,8 +198,8 @@ Use this after completing a task.
 - traces/YYYY-MM-DD-*.md when work completed
 
 ## Add Decision When
-- Architecture changed
-- Product direction changed
+- Architecture/Design changed
+- Project direction changed
 - Major tradeoff was made
 - A previous assumption was invalidated
 `;
@@ -157,7 +220,7 @@ Use this to consolidate traces into stable memory cards.
 5. Run \`pmem verify\` to check consistency.
 
 ## What Gets Distilled
-- Trace summaries are added to their related module/decision/task cards.
+- Trace summaries are added to their related foundational/decision cards.
 - Traces are marked as distilled in their frontmatter.
 - Original trace files are preserved for evidence.
 
@@ -180,7 +243,7 @@ pmem recall --format compact --budget 2000
 For specific work, ask pmem first:
 
 \`\`\`bash
-pmem ask "<task or module>" --format compact
+pmem ask "<task or memory card>" --format compact
 \`\`\`
 
 ## Read
@@ -188,14 +251,13 @@ pmem ask "<task or module>" --format compact
 Only read memory cards returned by pmem unless more context is needed.
 
 ## After Editing Code
-
 \`\`\`bash
 pmem status --format json
 pmem mark-dirty --auto
 pmem update --suggest --format json
 \`\`\`
 
-\`pmem update --suggest\` exits with code 1 when suggestions exist. Treat that as "action suggested", not as a hard failure.
+\`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
 
 ## Session End
 
@@ -421,6 +483,13 @@ async function initCommand(options) {
         console.log('To reinitialize, remove .pmem/ first.');
         return;
     }
+    const domain = options.domain || 'software';
+    const preset = exports.DOMAIN_PRESETS[domain];
+    if (!preset) {
+        console.error(`Error: Invalid domain "${domain}".`);
+        console.error(`Valid domains are: ${Object.keys(exports.DOMAIN_PRESETS).join(', ')}`);
+        process.exit(2);
+    }
     const name = options.projectName || path.basename(cwd);
     // Run project scan (used by both modes)
     const scan = scanProject();
@@ -520,35 +589,63 @@ async function initCommand(options) {
         }
     }
     // Create directory structure
-    const dirs = [
-        '.pmem/modules',
-        '.pmem/features',
-        '.pmem/decisions',
-        '.pmem/tasks',
-        '.pmem/traces',
+    const presetDirs = Object.values(preset.type_dirs).map(d => `.pmem/${d}`);
+    const dirs = Array.from(new Set([
+        ...presetDirs,
         '.pmem/summaries',
         '.pmem/skills',
         '.pmem/candidates',
-        '.pmem/risks',
         '.pmem/indexes',
         '.pmem/integrations/claude-code',
         '.pmem/integrations/cursor',
         '.pmem/integrations/codex',
-    ];
+    ]));
     console.log('Creating .pmem/ directory structure...');
     for (const dir of dirs) {
         (0, fs_1.ensureDir)(path.join(cwd, dir));
     }
     // Write manifest with appropriate init mode
+    const manifest = guidedInfo
+        ? (0, manifest_1.getDefaultManifest)(name, 'guided')
+        : (0, manifest_1.getDefaultManifest)(name, 'minimal');
+    // Customize manifest for domain preset
+    manifest.project.domain = domain;
+    manifest.schema = {
+        card_types: preset.card_types,
+        type_dirs: preset.type_dirs,
+        foundational_types: preset.foundational_types,
+        evidence_types: preset.evidence_types,
+        default_type: preset.default_type,
+        creatable_types: preset.creatable_types,
+    };
+    manifest.card_policy.id_pattern = '^({types})\\.[a-z0-9._-]+$';
+    manifest.source_of_truth.card_globs = Object.values(preset.type_dirs).map(dir => `.pmem/${dir}/**/*.md`);
+    if (preset.max_tokens) {
+        manifest.card_policy.max_tokens = preset.max_tokens;
+    }
+    if (preset.max_sections) {
+        manifest.card_policy.max_sections = preset.max_sections;
+    }
+    // Phase 4: discover default disable & domain-neutral ignores
+    manifest.discover = {
+        enabled: domain === 'software'
+    };
+    if (domain === 'software') {
+        manifest.auto_update.ignore_patterns = [
+            'node_modules/**', 'dist/**', 'build/**', '*.lock', '*.log',
+        ];
+    }
+    else {
+        manifest.auto_update.ignore_patterns = [
+            '*.lock', '*.log',
+        ];
+    }
+    (0, manifest_1.saveManifest)(pmemPath, manifest);
     if (guidedInfo) {
-        const manifest = (0, manifest_1.getDefaultManifest)(name, 'guided');
-        (0, manifest_1.saveManifest)(pmemPath, manifest);
         // Write richer guided memory files
         writeGuidedMemory(pmemPath, name, guidedInfo, scan);
     }
     else {
-        const manifest = (0, manifest_1.getDefaultManifest)(name, 'minimal');
-        (0, manifest_1.saveManifest)(pmemPath, manifest);
         // Write default template files
         const replacements = { PROJECT_NAME: name, PROJECT_STAGE: 'Initialized', CURRENT_FOCUS: 'Set up project memory.' };
         (0, fs_1.writeFile)(path.join(pmemPath, 'index.md'), replaceTemplate(INDEX_MD, replacements));
@@ -559,7 +656,7 @@ async function initCommand(options) {
     }
     // Write skills
     (0, fs_1.writeFile)(path.join(pmemPath, 'skills', 'recall.md'), RECALL_SKILL);
-    (0, fs_1.writeFile)(path.join(pmemPath, 'skills', 'code-task.md'), CODE_TASK_SKILL);
+    (0, fs_1.writeFile)(path.join(pmemPath, 'skills', 'task.md'), TASK_SKILL);
     (0, fs_1.writeFile)(path.join(pmemPath, 'skills', 'update.md'), UPDATE_SKILL);
     (0, fs_1.writeFile)(path.join(pmemPath, 'skills', 'distill.md'), DISTILL_SKILL);
     // Write integration templates with v0.6 Agent-native Workflow Polish instructions
@@ -575,7 +672,7 @@ pmem recall --format compact --budget 2000
 
 ## Before Focused Work
 \`\`\`bash
-pmem ask "<task or module>" --format compact
+pmem ask "<task or memory card>" --format compact
 \`\`\`
 
 ## During Work (after editing files)
@@ -585,7 +682,7 @@ pmem mark-dirty --auto
 pmem update --suggest --format json
 \`\`\`
 
-\`pmem update --suggest\` exits with code 1 when suggestions exist. That is a workflow signal, not a hard failure.
+\`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
 
 ## Session End
 \`\`\`bash
@@ -613,7 +710,7 @@ pmem verify
 In Cursor's AI chat: \`pmem session start -a "Cursor" && pmem recall --format compact --budget 2000\`
 
 ## Before Focused Work
-\`pmem ask "<task or module>" --format compact\`
+\`pmem ask "<task or memory card>" --format compact\`
 
 ## When Editing Code
 After each significant change: \`pmem status --format json && pmem mark-dirty --auto\`
@@ -621,7 +718,7 @@ After each significant change: \`pmem status --format json && pmem mark-dirty --
 ## Before Requesting Review
 \`pmem update --suggest --format json\`
 
-Exit code 1 from \`pmem update --suggest\` means suggestions exist, not that the command failed.
+\`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
 
 ## End of Session
 \`pmem update --confirm -s "<summary>" -n "<next>" && pmem session end -s "<summary>" && pmem verify\`
@@ -643,7 +740,7 @@ pmem recall --format compact --budget 2000
 3. Inspect changes: \`pmem status --format json\`
 4. Mark changes: \`pmem mark-dirty --auto\`
 5. Get suggestions: \`pmem update --suggest --format json\`
-6. Treat exit code 1 from suggest commands as "action suggested", not failure
+6. \`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
 7. Apply: \`pmem update --confirm -s "<what changed>" -n "<next step>"\`
 8. End session: \`pmem session end -s "<summary>" && pmem verify\`
 

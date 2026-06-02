@@ -14,13 +14,13 @@ pmem recall --format compact --budget 2000
 `pmem recall` output tells you:
 - Project name, stage, current focus
 - Recommended next step
-- Active modules to read
+- Active foundational cards to read (`active_foundation` in JSON)
 - Recent update history
 - Unresolved dirty flags count
 
 ## Before Focused Work
 
-Before working on a specific module or task:
+Before working on a specific module, character, source, task, or topic:
 
 ```bash
 pmem ask "<topic>" --format compact
@@ -51,7 +51,7 @@ Marks affected cards as potentially stale in the database.
 pmem update --suggest --format json
 ```
 
-Generates suggestions based on dirty flags and state freshness. **Exits with code 1 when suggestions exist** — this is a workflow signal, NOT a failure.
+Generates suggestions based on dirty flags and state freshness. v0.6.2+ exits with code `0` whether suggestions exist or not. Parse JSON fields such as `summary.has_actionable`, `summary.blocking`, or `summary.verify_blocking` instead of using exit code `1` as a workflow signal.
 
 ## Confirming Updates
 

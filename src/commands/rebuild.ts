@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
@@ -60,16 +61,42 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
     // restore into the doRebuild closure so all writes are atomic.
   }
 
-  // Scan all .md files under .pmem/, excluding non-card files
-  const cardFiles = listFiles(pmemPath, /\.md$/).filter(f => {
-    const rel = path.relative(pmemPath, f);
-    return !['index.md', 'state.md', 'next.md'].includes(rel) &&
-           !rel.startsWith('skills/') &&
-           !rel.startsWith('integrations/') &&
-           !rel.startsWith('summaries/') &&
-           !rel.startsWith('indexes/') &&
-           !rel.startsWith('backups/');
-  });
+  // Collect card files. If manifest defines card_globs, collect files covered by them.
+  // Otherwise, fallback to scanning all .md files under .pmem/.
+  let cardFiles: string[];
+  const cardGlobs = manifest.source_of_truth?.card_globs;
+  if (cardGlobs && Array.isArray(cardGlobs)) {
+    const filesSet = new Set<string>();
+    for (const cardGlob of cardGlobs) {
+      const globSuffixIndex = cardGlob.indexOf('/**/');
+      const baseDir = globSuffixIndex >= 0
+        ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
+        : path.join(cwd, path.dirname(cardGlob));
+      if (fs.existsSync(baseDir)) {
+        collectMdFiles(baseDir, filesSet);
+      }
+    }
+    // Also include candidates directory if it exists
+    const candidatesDir = path.join(pmemPath, 'candidates');
+    if (fs.existsSync(candidatesDir)) {
+      collectMdFiles(candidatesDir, filesSet);
+    }
+    cardFiles = Array.from(filesSet).filter(f => {
+      const rel = path.relative(pmemPath, f);
+      return !['index.md', 'state.md', 'next.md'].includes(rel);
+    });
+  } else {
+    // Scan all .md files under .pmem/, excluding non-card files
+    cardFiles = listFiles(pmemPath, /\.md$/).filter(f => {
+      const rel = path.relative(pmemPath, f);
+      return !['index.md', 'state.md', 'next.md'].includes(rel) &&
+             !rel.startsWith('skills/') &&
+             !rel.startsWith('integrations/') &&
+             !rel.startsWith('summaries/') &&
+             !rel.startsWith('indexes/') &&
+             !rel.startsWith('backups/');
+    });
+  }
 
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -383,4 +410,17 @@ function resolveUpdatedAt(fmUpdated: string | null | undefined, absPath: string)
   const mtime = getFileMtime(absPath);
   if (mtime !== null) return new Date(mtime).toISOString();
   return new Date().toISOString();
+}
+
+function collectMdFiles(dir: string, results: Set<string>): void {
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectMdFiles(fullPath, results);
+    } else if (entry.name.endsWith('.md')) {
+      results.add(fullPath);
+    }
+  }
 }

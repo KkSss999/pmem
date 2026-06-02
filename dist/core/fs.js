@@ -155,7 +155,18 @@ function acquireLock(lockPath, timeoutMs = 3000) {
 // NEW: Release file lock
 function releaseLock(lockPath) {
     try {
-        fs.rmdirSync(lockPath);
+        if (typeof fs.rmSync === 'function') {
+            fs.rmSync(lockPath, { recursive: true, force: true });
+        }
+        else {
+            try {
+                fs.unlinkSync(path.join(lockPath, 'pid'));
+            }
+            catch {
+                // ignore
+            }
+            fs.rmdirSync(lockPath);
+        }
     }
     catch {
         // ignore

@@ -39,6 +39,7 @@ const child_process_1 = require("child_process");
 const fs_1 = require("../core/fs");
 const db_1 = require("../core/db");
 const git_1 = require("../core/git");
+const manifest_1 = require("../core/manifest");
 const MATCH_PRIORITY = {
     exact: 3,
     directory: 2,
@@ -217,7 +218,20 @@ function detectChangesFrom() {
 }
 function getChangedFiles(cwd, since) {
     const changes = [];
-    const skipDirs = ['node_modules', '.git', '.pmem', 'dist', 'build', '.claude'];
+    const pmemPath = path.join(cwd, '.pmem');
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    const config = manifest ? (0, manifest_1.resolveConfig)(manifest) : null;
+    const userSkipDirs = manifest?.change_detection?.skip_dirs || [];
+    const systemSkips = [
+        'node_modules', '.git', 'dist', 'build', '.claude',
+        '.pmem/pmem.db', '.pmem/indexes', '.pmem/.lock',
+        '.pmem/skills', '.pmem/candidates', '.pmem/summaries',
+        '.pmem/.last-status'
+    ];
+    // Backward compatibility: if not a schema-based project, keep old behavior
+    const skipDirs = manifest && manifest.schema
+        ? Array.from(new Set([...userSkipDirs, ...systemSkips]))
+        : ['node_modules', '.git', '.pmem', 'dist', 'build', '.claude'];
     try {
         const source = detectChangesFrom();
         if (source === 'git') {
@@ -235,12 +249,23 @@ function getChangedFiles(cwd, since) {
     // Mtime-based fallback
     const lastStatusFile = path.join(cwd, '.pmem', '.last-status');
     const lastCheck = since ? new Date(since).getTime() : ((0, fs_1.getFileMtime)(lastStatusFile) || 0);
-    // Simple mtime scan of common source dirs
-    for (const dir of ['src', 'lib', 'app', 'tests']) {
+    const defaultScanDirs = ['src', 'lib', 'app', 'tests'];
+    const mtimeScanDirs = manifest?.change_detection?.mtime_scan_dirs || defaultScanDirs;
+    // 1. Scan default/custom source directories
+    for (const dir of mtimeScanDirs) {
         const dirPath = path.join(cwd, dir);
         if (!(0, fs_1.fileExists)(dirPath))
             continue;
         scanDirMtime(dirPath, cwd, lastCheck, skipDirs, changes);
+    }
+    // 2. Scan card directories under .pmem
+    if (config) {
+        for (const dir of Object.values(config.type_dirs)) {
+            const dirPath = path.join(cwd, '.pmem', dir);
+            if (!(0, fs_1.fileExists)(dirPath))
+                continue;
+            scanDirMtime(dirPath, cwd, lastCheck, skipDirs, changes);
+        }
     }
     // Update .last-status
     (0, fs_1.writeFile)(lastStatusFile, new Date().toISOString());
@@ -252,16 +277,16 @@ function scanDirMtime(dirPath, cwd, since, skipDirs, changes) {
         const entries = fs.readdirSync(dirPath, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = path.join(dirPath, entry.name);
+            const relPath = path.relative(cwd, fullPath);
+            if (skipDirs.some(d => relPath.startsWith(d + '/') || relPath === d))
+                continue;
             if (entry.isDirectory()) {
-                if (skipDirs.includes(entry.name))
-                    continue;
                 scanDirMtime(fullPath, cwd, since, skipDirs, changes);
             }
             else if (entry.isFile()) {
                 try {
                     const stat = fs.statSync(fullPath);
                     if (stat.mtimeMs > since) {
-                        const relPath = path.relative(cwd, fullPath);
                         changes.push({ path: relPath, status: 'M', relatedCards: [] });
                     }
                 }

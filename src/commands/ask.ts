@@ -3,6 +3,7 @@ import { fileExists } from '../core/fs';
 import { openDatabase, createSchema, hasFTS5 } from '../core/db';
 import { formatOutput } from '../core/format';
 import type { CliFormat, CardRow, EdgeRow } from '../types';
+import { loadManifest, resolveConfig } from '../core/manifest';
 
 const PMEM_DIR = '.pmem';
 
@@ -264,12 +265,16 @@ export function askCommand(query: string, format: CliFormat = 'compact'): void {
     recommendedFiles.push(m.file);
   }
 
+  const manifest = loadManifest(pmemPath);
+  const config = manifest ? resolveConfig(manifest) : { evidence_types: ['decision', 'trace'] };
+  const evidenceTypes = config.evidence_types;
+
   const evidencePaths: string[] = [];
   for (const m of deduped) {
     const card = db.prepare(
       "SELECT type, file_path FROM cards WHERE id = ? AND is_deleted = 0"
     ).get(m.id) as { type: string; file_path: string } | undefined;
-    if (card && (card.type === 'decision' || card.type === 'trace')) {
+    if (card && evidenceTypes.includes(card.type)) {
       evidencePaths.push(card.file_path);
     }
   }

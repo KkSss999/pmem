@@ -23,7 +23,7 @@ const program = new commander_1.Command();
 program
     .name('pmem')
     .description('Project Memory for AI Agents — graph-based project memory runtime')
-    .version('0.6.3');
+    .version('0.7.0');
 program
     .command('status')
     .description('Detect changed files and affected memory cards')
@@ -40,6 +40,7 @@ program
     .option('--stage <text>', 'Current project stage (non-interactive mode)')
     .option('--next <text>', 'Most important next step (non-interactive mode)')
     .option('--answers <path>', 'Path to JSON answers file for non-interactive init')
+    .option('--domain <type>', 'Domain preset for the project (software, novel, research)', 'software')
     .action((projectName, options) => {
     const opts = options || {};
     (0, init_1.initCommand)({
@@ -49,6 +50,7 @@ program
         stage: opts.stage,
         next: opts.next,
         answers: opts.answers,
+        domain: opts.domain,
     });
 });
 program

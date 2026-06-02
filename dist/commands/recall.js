@@ -38,6 +38,7 @@ const path = __importStar(require("path"));
 const fs_1 = require("../core/fs");
 const db_1 = require("../core/db");
 const format_1 = require("../core/format");
+const manifest_1 = require("../core/manifest");
 const PMEM_DIR = '.pmem';
 function recallCommand(budget = 2000, format = 'compact', since) {
     const cwd = process.cwd();
@@ -76,6 +77,9 @@ function recallCommand(budget = 2000, format = 'compact', since) {
     const nextStep = nextContent
         ? extractField(nextContent, '## Recommended Next Step')
         : 'No next step recorded.';
+    const manifest = (0, manifest_1.loadManifest)(pmemPath);
+    const config = manifest ? (0, manifest_1.resolveConfig)(manifest) : { foundational_types: ['module'] };
+    const foundationalTypes = config.foundational_types;
     // Build result
     const result = {
         project: projectName || 'Unknown',
@@ -87,6 +91,7 @@ function recallCommand(budget = 2000, format = 'compact', since) {
         dirty_flags_count: 0,
         recent_updates: [],
         active_modules: [],
+        active_foundation: [],
     };
     // Query SQLite for richer project info
     try {
@@ -106,14 +111,15 @@ function recallCommand(budget = 2000, format = 'compact', since) {
         const activeCards = sinceThreshold
             ? db.prepare("SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0 AND updated_at >= ?").all(sinceThreshold)
             : db.prepare("SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0").all();
-        // Modules for recommendations
-        const modules = activeCards.filter(c => c.type === 'module');
-        result.active_modules = modules.map(m => m.file_path);
+        // Foundational cards for recommendations
+        const foundationalCards = activeCards.filter(c => foundationalTypes.includes(c.type));
+        result.active_foundation = foundationalCards.map(c => c.file_path);
+        result.active_modules = result.active_foundation;
         // Build mustRead list
         result.mustRead.push(path.join('.pmem', 'state.md'));
         result.mustRead.push(path.join('.pmem', 'next.md'));
-        for (const mod of modules.slice(0, 5)) {
-            result.mustRead.push(mod.file_path);
+        for (const card of foundationalCards.slice(0, 5)) {
+            result.mustRead.push(card.file_path);
         }
         // Query unresolved dirty flags
         const dirtyFlagResult = db.prepare("SELECT COUNT(*) as count FROM dirty_flags WHERE resolved_at IS NULL").get();

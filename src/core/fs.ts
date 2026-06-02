@@ -104,7 +104,16 @@ export function acquireLock(lockPath: string, timeoutMs: number = 3000): boolean
 // NEW: Release file lock
 export function releaseLock(lockPath: string): void {
   try {
-    fs.rmdirSync(lockPath);
+    if (typeof fs.rmSync === 'function') {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+    } else {
+      try {
+        fs.unlinkSync(path.join(lockPath, 'pid'));
+      } catch {
+        // ignore
+      }
+      fs.rmdirSync(lockPath);
+    }
   } catch {
     // ignore
   }

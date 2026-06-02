@@ -2,6 +2,20 @@
 
 All notable changes to pmem are documented here.
 
+## 0.7.0 - Universal Agent Memory (presets, custom card types, and domain neutrality)
+
+### Added
+
+- **Universal Domain Presets**: Added `--domain <preset>` flag to `pmem init` supporting `software` (default), `novel` and `research` domains. Configures domain-specific directories (`characters/`, `chapters/`, `world/` for novels; `sources/`, `claims/`, `notes/` for research) and registers them under `schema` keys in the manifest.
+- **Resolved Schema Config**: Added `schema.card_types`, `schema.type_dirs`, `schema.foundational_types`, `schema.evidence_types`, `schema.default_type`, and `schema.creatable_types` fields to manifest. Resolves dynamically with legacy fallbacks for v0.6.x zero-migration compatibility.
+- **Domain-Neutral Recall Output**: `pmem recall --format json` now outputs `active_foundation` based on the configured `foundational_types`. Includes `active_modules` as a backward-compatible alias populated with the same files.
+- **Status Scan Generalization**: `pmem status` now dynamically resolves scan/skip directories from `change_detection.mtime_scan_dirs` and `change_detection.skip_dirs` instead of hardcoded software directory rules. Scans custom preset directories under `.pmem` and excludes database sidecars.
+- **Heuristics Generalization**: Refactored `pmem ask` and `pmem graph` to filter evidence card types dynamically based on `schema.evidence_types` (instead of hardcoded decision/trace checks). `pmem rebuild` scans custom folders dynamically based on `source_of_truth.card_globs`.
+- **Discover Default Disable**: Added `discover.enabled` manifest configuration. Disabled by default in `novel` and `research` projects. Running `pmem discover` on disabled projects outputs a disabled message, exits 0, and avoids scanning files.
+- **Ignore & Skills Generalization**: Added domain-neutral `skills/task.md` instead of `skills/code-task.md` and generalized integration templates to refer to generic "memory cards". Setup generic ignore patterns (like `*.lock`, `*.log`) for non-software domains.
+- **Cleaned Obsolete exit code 1 templates**: Updated `AGENTS.md` and integration templates to remove legacy references to `pmem update --suggest` exiting with 1, replacing them with exit 0 and JSON verification recommendations.
+- **SQLite sidecars Git Ignore**: Ignored SQLite sidecars (`.pmem/pmem.db-*`) inside `.gitignore`.
+
 ## 0.6.4 - Polish & Wrap v0.6 Track
 
 ### Added
