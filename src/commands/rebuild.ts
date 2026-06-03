@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -104,6 +104,14 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   let skipped = 0;
   let updated = 0;
 
+  // Pre-scan all card IDs for wikilink validation (so [[card-id]] refs
+  // resolve even when the target card hasn't been processed yet)
+  const validCardIds = new Set<string>();
+  for (const file of cardFiles) {
+    const parsed = parseCard(file);
+    if (parsed) validCardIds.add(parsed.frontmatter.id);
+  }
+
   // Wrap all per-card SQLite writes in a single transaction for performance
   const doRebuild = db.transaction(() => {
     if (isFull) {
@@ -163,7 +171,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
       });
 
       // Build legacy graph edges (always, for backward compat output)
-      collectLegacyEdges(fm, edges);
+      collectLegacyEdges(fm, parsed.bodyText, validCardIds, edges);
 
       // Compute content hashes
       const hashes = computeCardHashes(parsed.fullContent, parsed.frontmatterText, parsed.bodyText);
@@ -218,8 +226,9 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
 
       upsertCard(db, cardRow);
 
-      // Clear existing explicit relations before re-inserting (preserve inferred edges)
+      // Clear existing explicit and mention relations before re-inserting (preserve inferred edges)
       deleteExplicitCardEdges(db, fm.id);
+      deleteMentionEdges(db, fm.id);
       deleteCardAliases(db, fm.id);
       deleteCardTags(db, fm.id);
       deleteCardPaths(db, fm.id);
@@ -296,6 +305,24 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
           }
         }
       }
+
+      // Mention edges: [[card-id]] wikilinks in card body → references edges
+      const wikilinks = extractWikilinks(parsed.bodyText);
+      for (const target of wikilinks) {
+        // Only create edges for card IDs that actually exist
+        if (validCardIds.has(target) && target !== fm.id) {
+          const edgeRow: EdgeRow = {
+            from_id: fm.id,
+            to_id: target,
+            type: 'references',
+            source: 'mention',
+            confidence: 1.0,
+            created_at: now,
+            updated_at: now,
+          };
+          insertEdge(db, edgeRow);
+        }
+      }
     }
   });
 
@@ -336,8 +363,12 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
     : isSingleCard
       ? `Single card: ${options.card}`
       : 'Incremental rebuild';
+
+  // Count actual edges from the SQLite edges table (includes explicit + inferred + mention)
+  const dbEdgeCount = (db.prepare("SELECT COUNT(*) as cnt FROM edges").get() as { cnt: number }).cnt;
+
   console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
-  console.log(`Graph: ${nodes.length} nodes, ${edges.length} edges`);
+  console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
 
   closeDatabase();
 }
@@ -370,8 +401,24 @@ function extractTitle(bodyText: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+/**
+ * Extract [[card-id]] wikilink references from markdown body text.
+ * Matches standard pmem card ID patterns: type.name (e.g. [[character.zero]],
+ * [[module.auth]], [[decision.jwt_tokens]]).
+ * Returns deduplicated array of card IDs.
+ */
+export function extractWikilinks(bodyText: string): string[] {
+  const wikilinkPattern = /\[\[([a-z][a-z0-9._-]+)\]\]/g;
+  const ids = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = wikilinkPattern.exec(bodyText)) !== null) {
+    ids.add(match[1]);
+  }
+  return Array.from(ids);
+}
+
 /** Build legacy GraphEdge entries from a card's frontmatter (for backward-compat graph.json). */
-function collectLegacyEdges(fm: CardFrontmatter, edges: GraphEdge[]): void {
+function collectLegacyEdges(fm: CardFrontmatter, bodyText: string, validCardIds: Set<string>, edges: GraphEdge[]): void {
   if (fm.depends_on) {
     for (const target of fm.depends_on) {
       edges.push({ from: fm.id, to: target, type: 'depends_on' });
@@ -388,6 +435,13 @@ function collectLegacyEdges(fm: CardFrontmatter, edges: GraphEdge[]): void {
       if (target.startsWith('module.')) {
         edges.push({ from: fm.id, to: target, type: 'next_step_of', derived: true });
       }
+    }
+  }
+  // Wikilink edges: [[card-id]] in body → references
+  const wikilinks = extractWikilinks(bodyText);
+  for (const target of wikilinks) {
+    if (validCardIds.has(target) && target !== fm.id) {
+      edges.push({ from: fm.id, to: target, type: 'references', derived: false });
     }
   }
 }

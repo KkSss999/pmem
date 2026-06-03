@@ -1,5 +1,5 @@
 export type NodeType = string;
-export type EdgeType = 'depends_on' | 'blocks' | 'implements' | 'constrains' | 'decided_by' | 'derived_from' | 'related_to' | 'supersedes' | 'conflicts_with' | 'next_step_of';
+export type EdgeType = 'depends_on' | 'blocks' | 'implements' | 'constrains' | 'decided_by' | 'derived_from' | 'related_to' | 'references' | 'supersedes' | 'conflicts_with' | 'next_step_of';
 export type NodeStatus = 'active' | 'designing' | 'implementing' | 'completed' | 'archived' | 'blocked';
 export type CardPriority = 'high' | 'medium' | 'low';
 export interface CardFrontmatter {

@@ -47,6 +47,7 @@ exports.setSchemaVersion = setSchemaVersion;
 exports.upsertCard = upsertCard;
 exports.deleteCardEdges = deleteCardEdges;
 exports.deleteExplicitCardEdges = deleteExplicitCardEdges;
+exports.deleteMentionEdges = deleteMentionEdges;
 exports.insertEdge = insertEdge;
 exports.deleteCardAliases = deleteCardAliases;
 exports.insertAlias = insertAlias;
@@ -256,6 +257,9 @@ function deleteCardEdges(db, cardId) {
 }
 function deleteExplicitCardEdges(db, cardId) {
     db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'explicit'").run(cardId);
+}
+function deleteMentionEdges(db, cardId) {
+    db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'mention'").run(cardId);
 }
 function insertEdge(db, edge) {
     db.prepare(`

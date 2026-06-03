@@ -13,6 +13,7 @@ export type EdgeType =
   | 'decided_by'
   | 'derived_from'
   | 'related_to'
+  | 'references'
   | 'supersedes'
   | 'conflicts_with'
   | 'next_step_of';
