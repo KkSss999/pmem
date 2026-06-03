@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rebuildCommand = rebuildCommand;
+exports.extractWikilinks = extractWikilinks;
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 const fs_1 = require("../core/fs");
@@ -118,6 +119,14 @@ function rebuildCommand(options = {}) {
     let processed = 0;
     let skipped = 0;
     let updated = 0;
+    // Pre-scan all card IDs for wikilink validation (so [[card-id]] refs
+    // resolve even when the target card hasn't been processed yet)
+    const validCardIds = new Set();
+    for (const file of cardFiles) {
+        const parsed = parseCard(file);
+        if (parsed)
+            validCardIds.add(parsed.frontmatter.id);
+    }
     // Wrap all per-card SQLite writes in a single transaction for performance
     const doRebuild = db.transaction(() => {
         if (isFull) {
@@ -155,7 +164,7 @@ function rebuildCommand(options = {}) {
                 aliases: fm.aliases,
             });
             // Build legacy graph edges (always, for backward compat output)
-            collectLegacyEdges(fm, edges);
+            collectLegacyEdges(fm, parsed.bodyText, validCardIds, edges);
             // Compute content hashes
             const hashes = (0, hash_1.computeCardHashes)(parsed.fullContent, parsed.frontmatterText, parsed.bodyText);
             // In --changed mode, skip cards whose hashes match what's in SQLite
@@ -201,8 +210,9 @@ function rebuildCommand(options = {}) {
                 is_candidate: isCandidate,
             };
             (0, db_1.upsertCard)(db, cardRow);
-            // Clear existing explicit relations before re-inserting (preserve inferred edges)
+            // Clear existing explicit and mention relations before re-inserting (preserve inferred edges)
             (0, db_1.deleteExplicitCardEdges)(db, fm.id);
+            (0, db_1.deleteMentionEdges)(db, fm.id);
             (0, db_1.deleteCardAliases)(db, fm.id);
             (0, db_1.deleteCardTags)(db, fm.id);
             (0, db_1.deleteCardPaths)(db, fm.id);
@@ -272,6 +282,23 @@ function rebuildCommand(options = {}) {
                     }
                 }
             }
+            // Mention edges: [[card-id]] wikilinks in card body → references edges
+            const wikilinks = extractWikilinks(parsed.bodyText);
+            for (const target of wikilinks) {
+                // Only create edges for card IDs that actually exist
+                if (validCardIds.has(target) && target !== fm.id) {
+                    const edgeRow = {
+                        from_id: fm.id,
+                        to_id: target,
+                        type: 'references',
+                        source: 'mention',
+                        confidence: 1.0,
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    (0, db_1.insertEdge)(db, edgeRow);
+                }
+            }
         }
     });
     // Execute all SQLite writes in a single transaction
@@ -306,8 +333,10 @@ function rebuildCommand(options = {}) {
         : isSingleCard
             ? `Single card: ${options.card}`
             : 'Incremental rebuild';
+    // Count actual edges from the SQLite edges table (includes explicit + inferred + mention)
+    const dbEdgeCount = db.prepare("SELECT COUNT(*) as cnt FROM edges").get().cnt;
     console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
-    console.log(`Graph: ${nodes.length} nodes, ${edges.length} edges`);
+    console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
     (0, db_1.closeDatabase)();
 }
 /**
@@ -335,8 +364,23 @@ function extractTitle(bodyText) {
     const match = bodyText.match(/^#\s+(.+)$/m);
     return match ? match[1].trim() : null;
 }
+/**
+ * Extract [[card-id]] wikilink references from markdown body text.
+ * Matches standard pmem card ID patterns: type.name (e.g. [[character.zero]],
+ * [[module.auth]], [[decision.jwt_tokens]]).
+ * Returns deduplicated array of card IDs.
+ */
+function extractWikilinks(bodyText) {
+    const wikilinkPattern = /\[\[([a-z][a-z0-9._-]+)\]\]/g;
+    const ids = new Set();
+    let match;
+    while ((match = wikilinkPattern.exec(bodyText)) !== null) {
+        ids.add(match[1]);
+    }
+    return Array.from(ids);
+}
 /** Build legacy GraphEdge entries from a card's frontmatter (for backward-compat graph.json). */
-function collectLegacyEdges(fm, edges) {
+function collectLegacyEdges(fm, bodyText, validCardIds, edges) {
     if (fm.depends_on) {
         for (const target of fm.depends_on) {
             edges.push({ from: fm.id, to: target, type: 'depends_on' });
@@ -353,6 +397,13 @@ function collectLegacyEdges(fm, edges) {
             if (target.startsWith('module.')) {
                 edges.push({ from: fm.id, to: target, type: 'next_step_of', derived: true });
             }
+        }
+    }
+    // Wikilink edges: [[card-id]] in body → references
+    const wikilinks = extractWikilinks(bodyText);
+    for (const target of wikilinks) {
+        if (validCardIds.has(target) && target !== fm.id) {
+            edges.push({ from: fm.id, to: target, type: 'references', derived: false });
         }
     }
 }

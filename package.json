@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai",
-  "version": "0.7.0",
+  "version": "0.7.0-a",
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/index.js",
   "bin": {

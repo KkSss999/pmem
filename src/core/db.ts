@@ -194,6 +194,10 @@ export function deleteExplicitCardEdges(db: Database.Database, cardId: string): 
   db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'explicit'").run(cardId);
 }
 
+export function deleteMentionEdges(db: Database.Database, cardId: string): void {
+  db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'mention'").run(cardId);
+}
+
 export function insertEdge(db: Database.Database, edge: import('../types').EdgeRow): void {
   db.prepare(`
     INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at)

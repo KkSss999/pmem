@@ -11,6 +11,7 @@ export declare function setSchemaVersion(db: Database.Database, version: string)
 export declare function upsertCard(db: Database.Database, card: import('../types').CardRow): void;
 export declare function deleteCardEdges(db: Database.Database, cardId: string): void;
 export declare function deleteExplicitCardEdges(db: Database.Database, cardId: string): void;
+export declare function deleteMentionEdges(db: Database.Database, cardId: string): void;
 export declare function insertEdge(db: Database.Database, edge: import('../types').EdgeRow): void;
 export declare function deleteCardAliases(db: Database.Database, cardId: string): void;
 export declare function insertAlias(db: Database.Database, cardId: string, alias: string, language?: string): void;
