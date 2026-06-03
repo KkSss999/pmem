@@ -120,10 +120,27 @@ depends_on: [module.auth]
 Add TOTP-based 2FA to the auth flow.
 ```
 
+## Cross-Referencing Cards in Body Text
+
+Use `[[card-id]]` wikilinks in card body markdown to create relationships. This is the primary way to declare inter-card links in non-software domains (novel, research) where `pmem discover` is disabled, and it also works in software projects.
+
+```markdown
+## Key Characters
+
+- Protagonist: [[character.protagonist]]
+- Mentor: [[character.mentor]]
+- First appears in: [[chapter.intro]]
+- Core motivation revealed in: [[arc.main_quest]]
+```
+
+On `pmem rebuild`, these create `type='references'` edges with `source='mention'` and `confidence=1.0`. Only links to actual existing card IDs create edges — typos or references to non-existent cards are silently ignored.
+
+For frontmatter-declared relationships, continue using `depends_on:` and `related_to:` in YAML frontmatter.
+
 ## After Creating or Editing Cards
 
 ```bash
 pmem rebuild
 ```
 
-This re-parses all `.md` cards and updates the SQLite index.
+This re-parses all `.md` cards and updates the SQLite index — including scanning card bodies for `[[card-id]]` wikilinks.

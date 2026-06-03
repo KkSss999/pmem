@@ -2,6 +2,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const commander_1 = require("commander");
+const fs_1 = require("fs");
+const path_1 = require("path");
 const init_1 = require("./commands/init");
 const rebuild_1 = require("./commands/rebuild");
 const recall_1 = require("./commands/recall");
@@ -20,10 +22,12 @@ const doctor_1 = require("./commands/doctor");
 const rename_1 = require("./commands/rename");
 const new_1 = require("./commands/new");
 const program = new commander_1.Command();
+// Read version dynamically from package.json (single source of truth)
+const pkg = JSON.parse((0, fs_1.readFileSync)((0, path_1.resolve)(__dirname, '..', 'package.json'), 'utf-8'));
 program
     .name('pmem')
     .description('Project Memory for AI Agents — graph-based project memory runtime')
-    .version('0.7.0');
+    .version(pkg.version);
 program
     .command('status')
     .description('Detect changed files and affected memory cards')

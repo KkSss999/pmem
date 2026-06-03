@@ -154,6 +154,52 @@ The compact output lists actionable items first, then collapses informational on
 
 For `novel` and `research` presets, `discover.enabled` defaults to `false`. Running `pmem discover` exits 0 with a disabled message and does not scan files.
 
+### Cross-Reference with [[card-id]] Wikilinks (v0.7.0-a)
+
+**This is the primary relationship-authoring mechanism for non-software domains** (novel, research, custom schemas) where `pmem discover` is disabled. It also adds value for software projects.
+
+**In card body markdown**, wrap any existing card ID in double brackets to create a cross-reference:
+
+```markdown
+## Opening Scene
+
+The story begins with [[character.protagonist]] arriving at [[world.eastern_kingdom]].
+
+She encounters [[character.mentor]], who reveals [[arc.main_quest]].
+```
+
+On every `pmem rebuild`, pmem scans all card bodies for `[[card-id]]` patterns, resolves them against the cards table, and inserts edges with `source='mention'`, `type='references'`, `confidence=1.0`. These edges appear in `pmem related`, `pmem trace`, and `pmem ask` graph expansion, just like frontmatter-declared edges.
+
+Key behaviors:
+- **Case-sensitive**: matches the actual card ID (pmem IDs are lowercase per `id_pattern`)
+- **Self-reference filtered**: `[[my-own-id]]` inside a card's own body is ignored
+- **Valid targets only**: only creates edges for IDs that actually exist in the cards table — typos are silently skipped
+- **Idempotent**: running rebuild twice produces identical edges
+- **Works across all domains**: software, novel, research, and custom schemas
+
+```bash
+# Check mention edges for a card
+pmem related character.protagonist --source mention --format json
+
+# All edges (explicit + inferred + mention)
+pmem related character.protagonist --format json
+```
+
+### Per-Card-Type Relation Thresholds (v0.7.0-a)
+
+`warn_when_related_count_gt` (default 12) can be overridden per card type in `.pmem/manifest.yml`:
+
+```yaml
+card_policy:
+  warn_when_related_count_gt: 12
+  warn_when_related_count_gt_by_type:
+    character: 25
+    chapter: 30
+    world: 15
+```
+
+Agents should customize these thresholds based on the project domain. Novel characters and chapters naturally have more cross-references than software modules.
+
 ### Change Detection & Memory Update
 
 ```bash
