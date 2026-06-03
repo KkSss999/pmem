@@ -15,6 +15,7 @@ export interface DomainPreset {
   creatable_types: string[];
   max_tokens?: Record<string, number>;
   max_sections?: Record<string, number>;
+  warn_when_related_count_gt_by_type?: Record<string, number>;
 }
 
 export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
@@ -642,6 +643,9 @@ export async function initCommand(options: {
   }
   if (preset.max_sections) {
     manifest.card_policy.max_sections = preset.max_sections;
+  }
+  if (preset.warn_when_related_count_gt_by_type) {
+    manifest.card_policy.warn_when_related_count_gt_by_type = preset.warn_when_related_count_gt_by_type;
   }
 
   // Phase 4: discover default disable & domain-neutral ignores

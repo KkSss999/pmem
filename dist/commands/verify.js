@@ -234,11 +234,14 @@ function verifyCommand(options) {
                 // 6c. Relation count threshold
                 for (const card of cards) {
                     const { count: relatedEdgeCount } = db.prepare('SELECT COUNT(*) as count FROM edges WHERE from_id = ? OR to_id = ?').get(card.id, card.id);
-                    if (relatedEdgeCount > policy.warn_when_related_count_gt) {
+                    // Use per-card-type threshold if defined, otherwise fall back to global
+                    const threshold = policy.warn_when_related_count_gt_by_type?.[card.type]
+                        ?? policy.warn_when_related_count_gt;
+                    if (relatedEdgeCount > threshold) {
                         issues.push({
                             severity: 'warning',
                             type: 'too_many_relations',
-                            message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${policy.warn_when_related_count_gt}).`,
+                            message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${threshold} for type "${card.type}").`,
                             fix: 'Review whether all relations are necessary.',
                         });
                     }

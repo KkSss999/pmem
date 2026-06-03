@@ -301,6 +301,8 @@ export interface CardPolicy {
   max_tokens: Record<string, number>;
   max_sections: Record<string, number>;
   warn_when_related_count_gt: number;
+  /** Per-card-type overrides for relation count warning threshold. Falls back to warn_when_related_count_gt when type is not listed. */
+  warn_when_related_count_gt_by_type?: Record<string, number>;
 }
 
 export interface ConcurrencyLockConfig {

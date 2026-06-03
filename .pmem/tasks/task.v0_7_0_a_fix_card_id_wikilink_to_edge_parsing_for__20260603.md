@@ -2,9 +2,10 @@
 id: task.v0_7_0_a_fix_card_id_wikilink_to_edge_parsing_for__20260603
 type: task
 title: "v0.7.0-a: Fix [[card-id]] wikilink-to-edge parsing for non-software domains"
-status: active
-tags: [bugfix, graph, wikilink, v0.7.0-a, discover-gap]
+status: completed
+tags: [bugfix, graph, wikilink, v0.7.0-a, discover-gap, resolved]
 created: "2026-06-03"
+updated: "2026-06-04T00:00:00Z"
 source_files:
   - src/commands/rebuild.ts
   - src/core/db.ts
