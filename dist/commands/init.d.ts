@@ -8,6 +8,7 @@ export interface DomainPreset {
     creatable_types: string[];
     max_tokens?: Record<string, number>;
     max_sections?: Record<string, number>;
+    warn_when_related_count_gt_by_type?: Record<string, number>;
 }
 export declare const DOMAIN_PRESETS: Record<string, DomainPreset>;
 export declare function initCommand(options: {

@@ -64,6 +64,7 @@ function rebuildCommand(options = {}) {
     // Number of active sessions preserved by the --full snapshot+restore
     // (set inside doRebuild transaction, read after).
     let preservedSessions = 0;
+    let preservedEdges = 0;
     if (isFull) {
         // v0.6.4 polish 5: preserve active sessions across `rebuild --full`.
         // `clearAllTables` wipes the sessions table, but sessions are runtime
@@ -119,6 +120,7 @@ function rebuildCommand(options = {}) {
     let processed = 0;
     let skipped = 0;
     let updated = 0;
+    let snappedEdges = [];
     // Pre-scan all card IDs for wikilink validation (so [[card-id]] refs
     // resolve even when the target card hasn't been processed yet)
     const validCardIds = new Set();
@@ -134,6 +136,9 @@ function rebuildCommand(options = {}) {
                 .prepare("SELECT id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty FROM sessions WHERE ended_at IS NULL")
                 .all();
             preservedSessions = activeSessions.length;
+            const allEdges = db
+                .prepare("SELECT from_id, to_id, type, source, confidence, created_at, updated_at FROM edges")
+                .all();
             (0, db_1.clearAllTables)(db);
             if (activeSessions.length > 0) {
                 const restore = db.prepare("INSERT INTO sessions (id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
@@ -141,6 +146,8 @@ function rebuildCommand(options = {}) {
                     restore.run(s.id, s.agent_name, s.started_at, s.ended_at, s.task_summary, s.base_index_hash, s.status, s.dirty);
                 }
             }
+            // Store snapped edges for later restoration (after rebuild loop)
+            snappedEdges = allEdges;
         }
         for (const file of cardFiles) {
             const parsed = parseCard(file);
@@ -303,6 +310,32 @@ function rebuildCommand(options = {}) {
     });
     // Execute all SQLite writes in a single transaction
     doRebuild();
+    // v0.7.0-a: restore manually inserted edges that were not re-created
+    // by the rebuild loop (preserved across --full rebuilds)
+    if (isFull && snappedEdges.length > 0) {
+        const restoreEdgeTx = db.transaction(() => {
+            // Build set of current edge keys: "from_id|to_id|type|source"
+            const currentKeys = new Set();
+            const currentEdges = db.prepare("SELECT from_id, to_id, type, source FROM edges").all();
+            for (const e of currentEdges) {
+                currentKeys.add(`${e.from_id}|${e.to_id}|${e.type}|${e.source}`);
+            }
+            const restoreStmt = db.prepare("INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            let restoredCount = 0;
+            const now = new Date().toISOString();
+            for (const e of snappedEdges) {
+                const key = `${e.from_id}|${e.to_id}|${e.type}|${e.source}`;
+                if (!currentKeys.has(key)) {
+                    restoreStmt.run(e.from_id, e.to_id, e.type, e.source, e.confidence, e.created_at ?? now, e.updated_at ?? now);
+                    restoredCount++;
+                }
+            }
+            if (restoredCount > 0) {
+                preservedEdges = restoredCount;
+            }
+        });
+        restoreEdgeTx();
+    }
     // Create FTS5 virtual table for full-text search (outside transaction)
     (0, db_1.createFTS5)(db);
     // Write legacy graph.json for backward compatibility
@@ -326,10 +359,14 @@ function rebuildCommand(options = {}) {
     (0, fs_1.ensureDir)(indexesDir);
     (0, fs_1.writeJson)(path.join(indexesDir, 'graph.json'), graphIndex);
     // Output summary
+    const preservedParts = [];
+    if (preservedSessions > 0)
+        preservedParts.push(`${preservedSessions} session${preservedSessions === 1 ? '' : 's'}`);
+    if (preservedEdges > 0)
+        preservedParts.push(`${preservedEdges} edge${preservedEdges === 1 ? '' : 's'}`);
+    const preservedLabel = preservedParts.length > 0 ? ` (preserved ${preservedParts.join(', ')})` : '';
     const modeLabel = isFull
-        ? preservedSessions > 0
-            ? `Full rebuild (preserved ${preservedSessions} session${preservedSessions === 1 ? '' : 's'})`
-            : 'Full rebuild'
+        ? `Full rebuild${preservedLabel}`
         : isSingleCard
             ? `Single card: ${options.card}`
             : 'Incremental rebuild';
