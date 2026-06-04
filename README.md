@@ -240,6 +240,12 @@ pmem distill --suggest
 pmem verify
 ```
 
+Alternatively, you can run the one-command sync and update shortcut (v0.7.1):
+
+```bash
+pmem sync -s "<summary>" -n "<next step>"
+```
+
 `distill` consolidates trace cards into stable cards when enough evidence accumulates.
 
 ### Domain Presets & Custom Schema
@@ -303,15 +309,19 @@ pmem ask "<task or module>" --format compact
 After editing files:
 
 ```bash
+# Recommended shortcut:
+pmem sync -s "<what changed>" -n "<next step>"
+
+# Or manual update flow:
 pmem status --format json
 pmem mark-dirty --auto
 pmem update --suggest --format json
+pmem update --confirm -s "<what changed>" -n "<next step>"
 ```
 
 At session end:
 
 ```bash
-pmem update --confirm -s "<what changed>" -n "<next step>"
 pmem session end -s "<task summary>"
 pmem verify
 ```

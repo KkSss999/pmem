@@ -1,6 +1,6 @@
 # Project State
 
-## Overall Status: v0.7.0 Release Readiness finalized and validated; awaiting CTO final release approval.
+## Overall Status: v0.7.1 completed and validated; awaiting final release approval.
 
 ## Modules
 | Module | Status | Last Updated |
@@ -12,7 +12,7 @@
 - task.v0_7_0_phase_2_domain_presets_20260602
 
 ## Recent Changes
-- Updated program version and template versions to `0.7.0`.
-- Synchronized version metadata in `package-lock.json`.
-- Completed all v0.7.0 README and usage documentation.
-- Verified all regression tests and E2E install tests pass successfully.
+- Updated program version and template versions to `0.7.1`.
+- Implemented `pmem sync` shortcut command, `pmem verify --fix-stale` auto-fix option, and flexible token policy checking.
+- Updated project README and agent skills documentation to cover v0.7.1 features.
+- Verified all unit, integration, and E2E sync-flow tests pass successfully.

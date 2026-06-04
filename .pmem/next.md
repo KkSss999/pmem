@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Recommended Next Step
-Commit and submit development report
+Submit pull request to merge v0.7.1 changes into main
 
 ## Why
-Confirmed during update.
+Milestone v0.7.1 completed and verified.
 
 ## Needed Context
 Run `pmem recall` for full context.

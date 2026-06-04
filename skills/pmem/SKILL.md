@@ -38,11 +38,10 @@ session start → recall (restore context) → ask (find specific memory)
     ↓
 edit project files
     ↓
-status (detect changes) → mark-dirty --auto (flag affected cards)
+pmem sync -s "<msg>" -n "<next>"  (one-step shortcut)
+  - Or manual: status → mark-dirty --auto → update --suggest → update --confirm
     ↓
-update --suggest (get recommendations) → update --confirm (write memory)
-    ↓
-session end → verify (check consistency)
+session end → verify (check consistency, use --fix-stale / --fix if needed)
 ```
 
 ## Commands
@@ -217,6 +216,9 @@ pmem update --suggest --format json
 
 # Confirm and write changes
 pmem update --confirm -s "Updated auth module" -n "Add token refresh"
+
+# OR use the shortcut to sync changes in a single command (v0.7.1)
+pmem sync -s "Updated auth module" -n "Add token refresh"
 ```
 
 ### Maintenance
@@ -224,7 +226,15 @@ pmem update --confirm -s "Updated auth module" -n "Add token refresh"
 ```bash
 # Check consistency
 pmem verify
-pmem verify --fix       # auto-fix stale indexes and missing DB
+pmem verify --fix         # auto-fix stale indexes and missing DB
+pmem verify --fix-stale   # auto-fix stale mtime warnings by updating card verified timestamps
+pmem verify --relaxed     # temporarily double token limits for verification
+
+# Create a new card template
+pmem new decision "Choice of library"
+
+# Batch replace text in card bodies
+pmem rename --find "old-lib" --replace "new-lib" --write
 
 # Consolidate traces into stable cards
 pmem distill --suggest
