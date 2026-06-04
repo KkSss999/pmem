@@ -325,29 +325,33 @@ Installed integration templates are available under:
 ## CLI Reference
 
 ```bash
-pmem init [project-name] [--guided] [--domain software|novel|research]
+pmem init [project-name] [--guided] [--description <text>] [--stage <text>] [--next <text>] [--answers <path>] [--domain software|novel|research]
 
-pmem recall [--budget N] [--format compact|json|paths|pack]
+pmem recall [--budget N] [--format compact|json|paths|pack] [--since <duration>]
 pmem ask <query> [--format compact|json|paths|pack]
-pmem discover [--dry-run] [--format compact|json] [--min-confidence 0.5]
+pmem discover [--dry-run] [--format compact|json] [--min-confidence <n>]
               [--lang auto|nodejs,python,rust,go,cpp,java]
-              [--pattern-file custom.json]
-pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|all]
+              [--pattern-file <path>]
+pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|mention|all]
 pmem trace <id>
 
 pmem status [--since <timestamp>] [--format compact|json]
 pmem mark-dirty [-r <reason>] [--auto]
-pmem update [--auto|--suggest|--apply-suggestion <id>|--confirm|--force] \
-  [-s <summary>] [-n <next>] [--format compact|json]
-  [--accept-edges <ids>] [--reject-edges <ids>]
+pmem update [--auto] [--suggest] [--apply-suggestion <id>] [--confirm] [--force]
+            [-s <summary>] [-n <next>] [--format compact|json] [--include-history]
+            [--accept-edges <ids>] [--reject-edges <ids>]
 
-pmem distill [--suggest|--apply-suggestion <id>|--confirm|--suggest-splits]
-pmem rebuild [--changed|--full|--card <id>]
-pmem verify [--fix]
-pmem migrate --to 0.3 [--dry-run] [--backup]
+pmem distill [--suggest] [--confirm] [--apply-suggestion <id>] [--suggest-splits]
+pmem rebuild [--changed] [--full] [--card <id>]
+pmem verify [--fix] [--fix-locks] [--relaxed]
+pmem doctor [--format compact|json]
+pmem new <type> <title>
+pmem rename --find <pattern> --replace <replacement> [--write]
+pmem migrate [--to <version>] [--dry-run] [--backup]
 pmem session start [-a <agent-name>]
 pmem session end [-s <summary>]
 pmem integration list|install <framework>|verify
+pmem install [--skills] [--claude] [--codex] [--gemini] [--all]
 ```
 
 ## Exit Codes

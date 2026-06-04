@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Recommended Next Step
-Tag v0.7.0 and publish after final approval
+Commit and push clean branch
 
 ## Why
 Confirmed during update.
