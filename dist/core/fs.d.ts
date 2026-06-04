@@ -26,4 +26,9 @@ export declare function getLockInfo(lockPath: string, staleAfterMs?: number): {
 export declare function readJson<T>(filePath: string): T | null;
 export declare function writeJson(filePath: string, data: unknown): void;
 export declare function getFileMtime(filePath: string): number | null;
+/**
+ * Checks if a relative file path matches a target path (exact or sub-directory).
+ * Used for precise path matching based on project root.
+ */
+export declare function isPathMatch(filePath: string, targetPath: string): boolean;
 //# sourceMappingURL=fs.d.ts.map

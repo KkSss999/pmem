@@ -63,10 +63,11 @@ function checkStaleMemory(pmemPath) {
         const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all();
         for (const card of cards) {
             const sourceFiles = db.prepare("SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'").all(card.id);
-            const cardUpdated = card.updated_at || card.last_verified_at;
-            if (!cardUpdated)
+            const t1 = card.updated_at ? new Date(card.updated_at).getTime() : 0;
+            const t2 = card.last_verified_at ? new Date(card.last_verified_at).getTime() : 0;
+            const cardUpdatedMs = Math.max(t1, t2);
+            if (cardUpdatedMs === 0)
                 continue;
-            const cardUpdatedMs = new Date(cardUpdated).getTime();
             for (const sourceFile of sourceFiles) {
                 const absPath = path.join(cwd, sourceFile.path);
                 if (!(0, fs_2.fileExists)(absPath))

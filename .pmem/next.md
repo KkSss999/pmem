@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Recommended Next Step
-Commit and push clean branch
+Commit and submit development report
 
 ## Why
 Confirmed during update.

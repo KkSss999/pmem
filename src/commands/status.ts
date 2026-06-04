@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { fileExists, readFile, writeFile, getFileMtime } from '../core/fs';
+import { fileExists, readFile, writeFile, getFileMtime, isPathMatch } from '../core/fs';
 import { openDatabase, createSchema, closeDatabase } from '../core/db';
 import { parseGitStatusPorcelain } from '../core/git';
 import type { CliFormat } from '../types';
@@ -16,12 +16,12 @@ interface AffectedCard {
   via_card?: string;
 }
 
-interface RelatedCardRef {
+export interface RelatedCardRef {
   card_id: string;
   match_type: string;
 }
 
-interface FileChange {
+export interface FileChange {
   path: string;
   status: string;
   relatedCards: RelatedCardRef[];
@@ -84,19 +84,23 @@ export function statusCommand(options: { since?: string; format?: string }): voi
   const affectedCards = new Map<string, AffectedCard>();
 
   // === Pass 1: Exact path matching (per file) ===
-  for (const change of changes) {
-    if (!db) continue;
+  if (db) {
     try {
-      const rows = db.prepare(
-        "SELECT card_id, path FROM paths WHERE ? LIKE '%' || path || '%'"
-      ).all(change.path) as Array<{ card_id: string; path: string }>;
-      for (const row of rows) {
-        change.relatedCards.push({ card_id: row.card_id, match_type: 'exact' });
-        upsertAffectedCard(affectedCards, {
-          card_id: row.card_id,
-          match_type: 'exact',
-          matched_file: change.path,
-        });
+      const allPaths = db.prepare(
+        "SELECT card_id, path FROM paths"
+      ).all() as Array<{ card_id: string; path: string }>;
+
+      for (const change of changes) {
+        for (const p of allPaths) {
+          if (isPathMatch(change.path, p.path)) {
+            change.relatedCards.push({ card_id: p.card_id, match_type: 'exact' });
+            upsertAffectedCard(affectedCards, {
+              card_id: p.card_id,
+              match_type: 'exact',
+              matched_file: change.path,
+            });
+          }
+        }
       }
     } catch { /* ignore query errors */ }
   }
@@ -218,7 +222,7 @@ function detectChangesFrom(): string {
   }
 }
 
-function getChangedFiles(cwd: string, since?: string): FileChange[] {
+export function getChangedFiles(cwd: string, since?: string): FileChange[] {
   const changes: FileChange[] = [];
   const pmemPath = path.join(cwd, '.pmem');
   const manifest = loadManifest(pmemPath);

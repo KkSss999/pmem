@@ -51,6 +51,7 @@ exports.getLockInfo = getLockInfo;
 exports.readJson = readJson;
 exports.writeJson = writeJson;
 exports.getFileMtime = getFileMtime;
+exports.isPathMatch = isPathMatch;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 function ensureDir(dirPath) {
@@ -257,5 +258,14 @@ function getFileMtime(filePath) {
     catch {
         return null;
     }
+}
+/**
+ * Checks if a relative file path matches a target path (exact or sub-directory).
+ * Used for precise path matching based on project root.
+ */
+function isPathMatch(filePath, targetPath) {
+    const f = filePath.replace(/\/$/, '');
+    const t = targetPath.replace(/\/$/, '');
+    return f === t || f.startsWith(t + '/');
 }
 //# sourceMappingURL=fs.js.map

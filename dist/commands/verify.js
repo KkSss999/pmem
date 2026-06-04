@@ -41,6 +41,7 @@ const db_1 = require("../core/db");
 const hash_1 = require("../core/hash");
 const consistency_1 = require("../core/consistency");
 const rebuild_1 = require("./rebuild");
+const yaml_1 = require("../core/yaml");
 const PMEM_DIR = '.pmem';
 function verifyCommand(options) {
     const cwd = process.cwd();
@@ -213,21 +214,48 @@ function verifyCommand(options) {
                     }
                 }
                 // 6b. Token count limits — read files and estimate tokens
-                const relaxedMultiplier = options.relaxed ? 2 : 1;
                 for (const card of cards) {
                     const filePath = path.join(cwd, card.file_path);
                     const content = (0, fs_1.readFile)(filePath);
                     if (content) {
                         const estimatedTokens = (0, hash_1.tokenCount)(content);
                         const maxForType = policy.max_tokens[card.type];
-                        const effectiveMax = maxForType ? maxForType * relaxedMultiplier : undefined;
-                        if (effectiveMax && estimatedTokens > effectiveMax) {
-                            issues.push({
-                                severity: 'warning',
-                                type: 'card_too_large',
-                                message: `Card "${card.id}" is ~${estimatedTokens} tokens (max for ${card.type}: ${maxForType}${options.relaxed ? ', relaxed: ' + effectiveMax : ''}).`,
-                                fix: `Edit .pmem/manifest.yml → card_policy → max_tokens → ${card.type} to raise the limit.\n       Or run: pmem verify --relaxed (temporarily doubles all limits).\n       Or run: pmem distill --suggest-splits (check if this card can be split).`,
-                            });
+                        if (maxForType && estimatedTokens > maxForType) {
+                            // Check if relaxed locally (frontmatter or manifest list)
+                            const isLocalRelaxed = (() => {
+                                const parsed = (0, yaml_1.parseFrontmatter)(content);
+                                if (parsed?.data) {
+                                    if (parsed.data.relaxed === true || parsed.data.token_policy === 'relaxed') {
+                                        return true;
+                                    }
+                                }
+                                const relaxedCards = policy.relaxed_cards;
+                                if (Array.isArray(relaxedCards) && relaxedCards.includes(card.id)) {
+                                    return true;
+                                }
+                                return false;
+                            })();
+                            const isRelaxed = !!(options.relaxed || isLocalRelaxed);
+                            if (isRelaxed) {
+                                issues.push({
+                                    severity: 'info',
+                                    type: 'card_too_large_relaxed',
+                                    message: `Card "${card.id}" (~${estimatedTokens} tokens) exceeds the normal limit of ${maxForType} tokens for type "${card.type}". (Relaxed/suppressed warning).`,
+                                    fix: `To restore normal limits, remove '--relaxed' option, delete 'relaxed: true'/'token_policy: relaxed' from card frontmatter, or remove the card ID from 'relaxed_cards' in .pmem/manifest.yml.`,
+                                    card_id: card.id,
+                                });
+                            }
+                            else {
+                                issues.push({
+                                    severity: 'warning',
+                                    type: 'card_too_large',
+                                    message: `Card "${card.id}" is ~${estimatedTokens} tokens, exceeding the max configured limit of ${maxForType} tokens for card type "${card.type}" by ${estimatedTokens - maxForType} tokens.`,
+                                    fix: `Consider splitting this card, or raise the limit in .pmem/manifest.yml (card_policy -> max_tokens -> ${card.type}).\n` +
+                                        `       To suppress this warning locally, add 'token_policy: relaxed' or 'relaxed: true' to the card's frontmatter, or add the card ID to 'relaxed_cards' in .pmem/manifest.yml.\n` +
+                                        `       To temporarily relax all limits, run: pmem verify --relaxed`,
+                                    card_id: card.id,
+                                });
+                            }
                         }
                     }
                 }
@@ -256,6 +284,7 @@ function verifyCommand(options) {
                     type: ci.type,
                     message: ci.message,
                     fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem rebuild',
+                    card_id: ci.card_id,
                 });
             }
         }
@@ -281,6 +310,7 @@ function verifyCommand(options) {
     // Build result
     const errors = issues.filter(i => i.severity === 'error');
     const warnings = issues.filter(i => i.severity === 'warning');
+    const infos = issues.filter(i => i.severity === 'info');
     const passed = errors.length === 0;
     const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 5);
     const result = { passed, score, issues };
@@ -288,24 +318,57 @@ function verifyCommand(options) {
     if (passed && warnings.length === 0) {
         console.log(`✓ Memory verification passed.`);
         console.log(`  Score: ${score}/100`);
+        if (infos.length > 0) {
+            console.log('');
+            console.log('Informational Notes:');
+            for (const issue of infos) {
+                console.log(`ℹ [${issue.type}] ${issue.message}`);
+            }
+        }
         return;
     }
     console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
     console.log(`Score: ${score}/100`);
     console.log('');
     for (const issue of issues) {
-        const icon = issue.severity === 'error' ? '✗' : '⚠';
+        let icon = 'ℹ';
+        if (issue.severity === 'error')
+            icon = '✗';
+        else if (issue.severity === 'warning')
+            icon = '⚠';
         console.log(`${icon} [${issue.type}] ${issue.message}`);
         console.log(`  Fix: ${issue.fix}`);
         console.log('');
     }
-    // Auto-fix if requested (--fix or --fix-locks)
-    if (options.fix) {
+    // Auto-fix if requested (--fix, --fix-stale, or --fix-locks)
+    if (options.fix || options.fixStale) {
+        let rebuildStale = false;
+        const staleIssues = issues.filter(i => i.type === 'stale_memory');
+        if (staleIssues.length > 0 && db) {
+            console.log(`Auto-fixing ${staleIssues.length} stale memory card(s)...`);
+            for (const issue of staleIssues) {
+                if (issue.card_id) {
+                    const card = db.prepare('SELECT file_path FROM cards WHERE id = ?').get(issue.card_id);
+                    if (card) {
+                        const cardFilePath = path.join(cwd, card.file_path);
+                        if ((0, fs_1.fileExists)(cardFilePath)) {
+                            updateFrontmatterTimestamp(cardFilePath, 'last_verified');
+                            console.log(`  Updated last_verified timestamp for card: ${issue.card_id}`);
+                            rebuildStale = true;
+                        }
+                    }
+                }
+            }
+        }
         const fixableIssue = issues.find(i => i.type === 'stale_index' ||
             i.type === 'missing_database' ||
             i.type === 'missing_card_file' ||
             i.type === 'orphan_edges');
-        if (fixableIssue) {
+        if (rebuildStale) {
+            console.log('Rebuilding indexes for updated cards...');
+            (0, rebuild_1.rebuildCommand)({ changed: true });
+        }
+        else if (fixableIssue) {
             console.log('Auto-fixing: rebuilding indexes...');
             (0, rebuild_1.rebuildCommand)();
         }
@@ -319,5 +382,27 @@ function verifyCommand(options) {
     if (hasErrors)
         process.exit(2);
     process.exit(0);
+}
+function updateFrontmatterTimestamp(filePath, field) {
+    const content = (0, fs_1.readFile)(filePath);
+    if (!content)
+        return;
+    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!match)
+        return;
+    const frontmatterText = match[1];
+    const nowStr = new Date().toISOString();
+    let newFmText = frontmatterText;
+    const regex = new RegExp(`^${field}:.*$`, 'm');
+    if (regex.test(frontmatterText)) {
+        newFmText = frontmatterText.replace(regex, `${field}: "${nowStr}"`);
+    }
+    else {
+        // Trim end and add new field
+        newFmText = frontmatterText.trimEnd() + `\n${field}: "${nowStr}"`;
+    }
+    const newContent = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${newFmText}\n---`);
+    const fs = require('fs');
+    fs.writeFileSync(filePath, newContent, 'utf8');
 }
 //# sourceMappingURL=verify.js.map

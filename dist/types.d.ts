@@ -161,10 +161,11 @@ export interface AskResult {
     evidencePaths: string[];
 }
 export interface VerifyIssue {
-    severity: 'error' | 'warning';
+    severity: 'error' | 'warning' | 'info';
     type: string;
     message: string;
     fix: string;
+    card_id?: string;
 }
 export interface VerifyResult {
     passed: boolean;

@@ -24,7 +24,8 @@
     "test:e2e:v061-suggest": "bash scripts/e2e-v061-suggest.sh",
     "test:e2e:v063-discover": "bash scripts/e2e-v063-discover.sh",
     "test:e2e:v07-novel": "bash scripts/e2e-v07-novel.sh",
-    "test:e2e:v07-research": "bash scripts/e2e-v07-research.sh"
+    "test:e2e:v07-research": "bash scripts/e2e-v07-research.sh",
+    "test:e2e:v07-sync-flow": "bash scripts/e2e-v07-sync-flow.sh"
   },
   "keywords": [
     "agent",

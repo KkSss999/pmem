@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
+import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir, isPathMatch } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
 import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../core/db';
@@ -105,14 +105,17 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean } = {
         const activeSession = getActiveSession(db);
         const dirtyCards: string[] = [];
 
+        const allPaths = db.prepare(
+          "SELECT card_id, path FROM paths"
+        ).all() as Array<{ card_id: string; path: string }>;
+
         for (const filePath of changedFiles) {
-          const rows = db.prepare(
-            "SELECT card_id FROM paths WHERE ? LIKE '%' || path || '%'"
-          ).all(filePath) as Array<{ card_id: string }>;
-          for (const row of rows) {
-            if (!dirtyCards.includes(row.card_id)) {
-              insertDirtyFlag(db, 'card', row.card_id, 'file_changed: ' + filePath, activeSession?.id);
-              dirtyCards.push(row.card_id);
+          for (const p of allPaths) {
+            if (isPathMatch(filePath, p.path)) {
+              if (!dirtyCards.includes(p.card_id)) {
+                insertDirtyFlag(db, 'card', p.card_id, 'file_changed: ' + filePath, activeSession?.id);
+                dirtyCards.push(p.card_id);
+              }
             }
           }
         }

@@ -116,12 +116,14 @@ function markDirtyCommand(reason, options = {}) {
                 const changedFiles = (0, git_1.parseGitStatusPorcelain)(output).map(change => change.path);
                 const activeSession = (0, db_1.getActiveSession)(db);
                 const dirtyCards = [];
+                const allPaths = db.prepare("SELECT card_id, path FROM paths").all();
                 for (const filePath of changedFiles) {
-                    const rows = db.prepare("SELECT card_id FROM paths WHERE ? LIKE '%' || path || '%'").all(filePath);
-                    for (const row of rows) {
-                        if (!dirtyCards.includes(row.card_id)) {
-                            (0, db_1.insertDirtyFlag)(db, 'card', row.card_id, 'file_changed: ' + filePath, activeSession?.id);
-                            dirtyCards.push(row.card_id);
+                    for (const p of allPaths) {
+                        if ((0, fs_1.isPathMatch)(filePath, p.path)) {
+                            if (!dirtyCards.includes(p.card_id)) {
+                                (0, db_1.insertDirtyFlag)(db, 'card', p.card_id, 'file_changed: ' + filePath, activeSession?.id);
+                                dirtyCards.push(p.card_id);
+                            }
                         }
                     }
                 }
