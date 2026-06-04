@@ -33,7 +33,7 @@ This finds relevant cards by:
 4. Graph neighbor expansion (cards related to matched ones)
 5. Keyword fallback (FTS5 full-text or LIKE)
 
-## After Editing Code
+## After Editing Code (Manual Flow)
 
 ```bash
 pmem status --format json
@@ -61,6 +61,16 @@ pmem update --confirm -s "<summary of changes>" -n "<next step>"
 
 Writes the confirmed changes and updates state/next files.
 
+### Shortcut: One-Command Sync (v0.7.1)
+
+Instead of running status, mark-dirty, update --suggest, and update --confirm individually, you can use the sync shortcut:
+
+```bash
+pmem sync -s "<summary of changes>" -n "<next step>"
+```
+
+This runs change detection, automatically marks affected cards as dirty, commits updates, and rebuilds the indexes inside an atomic transaction.
+
 ## Session End
 
 ```bash
@@ -69,7 +79,7 @@ pmem verify
 ```
 
 - `session end` summarizes the session's actions and affected cards
-- `verify` checks consistency: manifest, database, card hashes, edges, stale memory
+- `verify` checks consistency: manifest, database, card hashes, edges, stale memory. Run `pmem verify --fix` or `pmem verify --fix-stale` to automatically fix stale mtime warnings and restore a 100/100 score.
 
 ## Cross-Session Recall
 

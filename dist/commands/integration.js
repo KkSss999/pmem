@@ -59,17 +59,15 @@ pmem ask "<task or module>" --format compact
 ## After Editing Code
 
 \`\`\`bash
-pmem status --format json
-pmem mark-dirty --auto
-pmem update --suggest --format json
-\`\`\`
+# Recommended: sync changes in one command
+pmem sync -s "<what changed>" -n "<next step>"
 
-\`pmem update --suggest\` outputs JSON with \`summary.has_actionable\` for agent decision-making.
+# Or manual: pmem status --format json && pmem mark-dirty --auto && pmem update --suggest
+\`\`\`
 
 ## Session End
 
 \`\`\`bash
-pmem update --confirm -s "<what changed>" -n "<next step>"
 pmem session end -s "<task summary>"
 pmem verify
 \`\`\`
@@ -103,7 +101,8 @@ Use this before working on a specific module or task to load relevant decisions 
 `;
 const SLASH_UPDATE = `Detect code changes and update project memory.
 
-Runs the full update workflow:
+Runs the full update workflow (or run \`pmem sync -s "<summary>" -n "<next>"\` directly).
+Manual flow:
 1. \`pmem status --format json\` to detect changed files
 2. \`pmem mark-dirty --auto\` to mark affected cards
 3. \`pmem update --suggest --format json\` to get suggestions
@@ -129,7 +128,7 @@ Before working:
 - Run \`pmem ask "<task>"\` if the task is specific
 
 After working:
-- Run \`pmem update --auto\`
+- Run \`pmem sync -s "<what changed>" -n "<next step>"\` (or use manual status/dirty/update flow)
 - Run \`pmem verify\`
 
 Periodically:
@@ -140,7 +139,7 @@ const CODEX_AGENTS_TEMPLATE = `# Codex Instructions
 This project uses pmem.
 
 Before work: run \`pmem recall --budget 2000\`.
-After work: run \`pmem update\`.
+After work: run \`pmem sync -s "<summary>" -n "<next>"\` or \`pmem update\`.
 
 ## Commands
 
@@ -148,6 +147,7 @@ To invoke pmem from Codex, run the following commands:
 
 - \`pmem recall --format compact --budget 2000\` — recall project memory context
 - \`pmem ask "<query>" --format compact\` — search for a specific topic
+- \`pmem sync -s "<summary>" -n "<next>"\` — sync and update memory in one command
 - \`pmem update --auto\` — detect changes and update memory
 - \`pmem distill --suggest\` — consolidate work traces into stable memory cards
 `;
@@ -375,7 +375,7 @@ function installIntegration(pmemPath, manifest, framework) {
     console.log(`✓ Integration "${framework}" installed.`);
     console.log(`  Template: .pmem/integrations/${framework}/`);
 }
-const CURRENT_TEMPLATE_VERSION = '0.7.0';
+const CURRENT_TEMPLATE_VERSION = '0.7.1';
 function verifyIntegrations(pmemPath, manifest) {
     if (!manifest)
         return;

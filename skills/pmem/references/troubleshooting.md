@@ -48,7 +48,21 @@ Initialize git if needed: `git init`
 pmem update --suggest
 pmem update --confirm -s "<summary>" -n "<next step>"
 pmem verify
+
+# OR use the sync shortcut:
+pmem sync -s "<summary>" -n "<next step>"
 ```
+
+## Stale memory verification warnings (Verify Score: 0/100)
+
+If `pmem verify` complains that cards are stale due to code/manifest changes, run:
+
+```bash
+pmem verify --fix
+# Or specifically fix stale card mtime stamps:
+pmem verify --fix-stale
+```
+This automatically updates their `last_verified` metadata and clears the stale warnings.
 
 ## Run a full diagnostic
 

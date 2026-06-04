@@ -9,7 +9,7 @@ updated: "2026-06-02T19:52:43.628Z"
 source_files: [package.json, CHANGELOG.md, README.md, docs/usage.md]
 depends_on: []
 related_to: []
-last_verified: "2026-06-04T22:03:36.793Z"
+last_verified: "2026-06-04T22:08:24.970Z"
 ---
 # v0.7.0 release readiness validation
 

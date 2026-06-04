@@ -14,7 +14,7 @@ related_to:
   - feature.v0_7_0_universal_agent_memory_20260602
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
-last_verified: "2026-06-04T22:03:36.793Z"
+last_verified: "2026-06-04T22:08:24.969Z"
 ---
 # Post v0.7 Optimization Roadmap
 

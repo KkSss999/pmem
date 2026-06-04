@@ -2,18 +2,18 @@
 
 ## Project
 Name: pmem
-Stage: v0.7.0 Release Readiness finalized and validated; awaiting CTO final release approval.
+Stage: v0.7.1 completed and validated; awaiting final release approval.
 Status: active
 
 ## Summary
-pmem is a local project-memory CLI for AI agents, now dogfooding its own memory system while developing v0.7.0 universal agent memory.
+pmem is a local project-memory CLI for AI agents, now dogfooding its own memory system for v0.7.1 development.
 
 ## Detected Stack
 - Node.js
 - TypeScript
 
 ## Current Focus
-Prepare and verify pmem v0.7.0 release metadata, documentation, registry status, and regression testing.
+Prepare and verify pmem v0.7.1 release metadata, documentation, and regression testing.
 
 ## Read First
 - .pmem/state.md
@@ -37,5 +37,5 @@ Use:
 
 ## Notes
 - This project intentionally dogfoods pmem to manage pmem's own development memory.
-- The npm latest package was checked during initialization and was `pmem-ai@0.6.3`; the repository baseline is v0.6.4 and current work targets v0.7.0.
+- The npm latest package was checked during initialization and was `pmem-ai@0.6.3`; the repository baseline is v0.6.4 and current work targets v0.7.1.
 - The working tree already contained uncommitted Phase 2 domain-preset changes before this memory initialization.
