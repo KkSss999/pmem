@@ -15,6 +15,7 @@ depends_on:
 related_to:
   - trace.v0_7_0_phase_2_review_round_1_20260602
   - decision.v0_7_0_zero_migration_compatibility_20260602
+last_verified: "2026-06-04T22:03:36.791Z"
 ---
 # v0.7.0 Phase 2 Review Round 2
 

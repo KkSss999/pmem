@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.statusCommand = statusCommand;
+exports.getChangedFiles = getChangedFiles;
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const fs_1 = require("../core/fs");
@@ -88,18 +89,20 @@ function statusCommand(options) {
     }
     const affectedCards = new Map();
     // === Pass 1: Exact path matching (per file) ===
-    for (const change of changes) {
-        if (!db)
-            continue;
+    if (db) {
         try {
-            const rows = db.prepare("SELECT card_id, path FROM paths WHERE ? LIKE '%' || path || '%'").all(change.path);
-            for (const row of rows) {
-                change.relatedCards.push({ card_id: row.card_id, match_type: 'exact' });
-                upsertAffectedCard(affectedCards, {
-                    card_id: row.card_id,
-                    match_type: 'exact',
-                    matched_file: change.path,
-                });
+            const allPaths = db.prepare("SELECT card_id, path FROM paths").all();
+            for (const change of changes) {
+                for (const p of allPaths) {
+                    if ((0, fs_1.isPathMatch)(change.path, p.path)) {
+                        change.relatedCards.push({ card_id: p.card_id, match_type: 'exact' });
+                        upsertAffectedCard(affectedCards, {
+                            card_id: p.card_id,
+                            match_type: 'exact',
+                            matched_file: change.path,
+                        });
+                    }
+                }
             }
         }
         catch { /* ignore query errors */ }

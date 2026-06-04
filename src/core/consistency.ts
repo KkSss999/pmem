@@ -38,10 +38,10 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
         "SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'"
       ).all(card.id) as Array<{ path: string }>;
 
-      const cardUpdated = card.updated_at || card.last_verified_at;
-      if (!cardUpdated) continue;
-
-      const cardUpdatedMs = new Date(cardUpdated).getTime();
+      const t1 = card.updated_at ? new Date(card.updated_at).getTime() : 0;
+      const t2 = card.last_verified_at ? new Date(card.last_verified_at).getTime() : 0;
+      const cardUpdatedMs = Math.max(t1, t2);
+      if (cardUpdatedMs === 0) continue;
 
       for (const sourceFile of sourceFiles) {
         const absPath = path.join(cwd, sourceFile.path);

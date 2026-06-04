@@ -20,6 +20,7 @@ import { installCommand } from './commands/install';
 import { doctorCommand } from './commands/doctor';
 import { renameCommand } from './commands/rename';
 import { newCommand } from './commands/new';
+import { syncCommand } from './commands/sync';
 
 const program = new Command();
 
@@ -122,6 +123,15 @@ program
   });
 
 program
+  .command('sync')
+  .description('One-click sync: scan status, auto mark dirty, and run confirm update')
+  .option('-s, --summary <text>', 'Summary of changes')
+  .option('-n, --next <text>', 'Next step description')
+  .action((options) => {
+    syncCommand({ summary: options.summary, next: options.next });
+  });
+
+program
   .command('mark-dirty')
   .description('Mark memory as potentially stale')
   .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
@@ -167,9 +177,10 @@ program
   .description('Check memory consistency and freshness')
   .option('--fix', 'Auto-fix issues where possible')
   .option('--fix-locks', 'Clean stale lock at .pmem/.lock')
+  .option('--fix-stale', 'Auto-fix stale memory warning by updating verification timestamps')
   .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
   .action((options) => {
-    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, relaxed: options.relaxed });
+    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, relaxed: options.relaxed });
   });
 
 program

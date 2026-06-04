@@ -17,6 +17,7 @@ depends_on:
 related_to:
   - trace.v0_7_0_phase_2_acceptance_20260602
   - decision.dogfood_pmem_for_pmem_development_20260602
+last_verified: "2026-06-04T22:03:36.792Z"
 ---
 # v0.7.0 Phase 3 and 4 Review Round 1
 

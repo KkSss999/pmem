@@ -23,6 +23,7 @@ CLI：`pmem`
 | v0.6 | Agent-native Workflow Polish | 非交互 init、友好错误、空结果引导、Claude Code slash commands |
 | v0.6.1 | Actionable Update Suggestions | `update --suggest` 去重、分级、compact 摘要、verify 语义对齐 |
 | v0.7.0 | Universal Agent Memory | 将 pmem 扩展为面向任何 domain 的通用 Agent 记忆运行时，支持自定义卡片类型 |
+| v0.7.1 | Agent UX & Precision Tuning | 优化脏标记精确路径匹配、引入一键 verify 自动修复和快捷同步指令，改进大型卡片限制警告 |
 
 ---
 
@@ -458,6 +459,20 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
   - 根因报告：`docs/handover-v0.6.4.md`
 - **v0.7.0:** ✅ 已完成（Universal Agent Memory）
   - 设计决策：`docs/v0.7.0 pre-design.md`
+- **v0.7.1:** ✅ 已完成（Agent UX & Precision Tuning）
+
+---
+
+## v0.7.1 — Agent UX & Precision Tuning (Friction Fixes) [Completed]
+
+**主题：** 针对 AI Agent 在实际编码、文档微调、大卡片警告及脏标记流程中暴露出来的具体摩擦点，进行精确化打磨与流程优化。
+
+| 功能 | 说明 |
+|------|------|
+| 精确路径匹配 | 优化 `pmem status` 中的路径后缀匹配逻辑，改为基准项目根目录的精确相对路径匹配，杜绝误报脏标记 |
+| 快捷同步指令 | 引入极简一键同步指令，如 `pmem sync`，合并 status/dirty/suggest/confirm 为单次调用 |
+| Verify 自动修复 | 增强 `pmem verify --fix`，支持一键消除无实质性改动的 stale_memory 警告，自动刷新 last_verified 时间戳 |
+| 弹性卡片限制 | 优化卡片 Token 超限警告，提升用户可配置性或支持动态检查放宽（如 verify 时默认对某些类型弹性化处理） |
 
 ---
 

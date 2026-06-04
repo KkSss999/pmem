@@ -211,3 +211,14 @@ export function getFileMtime(filePath: string): number | null {
     return null;
   }
 }
+
+/**
+ * Checks if a relative file path matches a target path (exact or sub-directory).
+ * Used for precise path matching based on project root.
+ */
+export function isPathMatch(filePath: string, targetPath: string): boolean {
+  const f = filePath.replace(/\/$/, '');
+  const t = targetPath.replace(/\/$/, '');
+  return f === t || f.startsWith(t + '/');
+}
+

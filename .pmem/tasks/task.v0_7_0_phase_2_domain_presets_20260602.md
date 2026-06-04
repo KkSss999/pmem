@@ -19,6 +19,7 @@ depends_on:
 related_to:
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
+last_verified: "2026-06-04T22:03:36.791Z"
 ---
 # v0.7.0 Phase 2 Domain Presets
 

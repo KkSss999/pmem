@@ -21,6 +21,7 @@ const install_1 = require("./commands/install");
 const doctor_1 = require("./commands/doctor");
 const rename_1 = require("./commands/rename");
 const new_1 = require("./commands/new");
+const sync_1 = require("./commands/sync");
 const program = new commander_1.Command();
 // Read version dynamically from package.json (single source of truth)
 const pkg = JSON.parse((0, fs_1.readFileSync)((0, path_1.resolve)(__dirname, '..', 'package.json'), 'utf-8'));
@@ -112,6 +113,14 @@ program
     (0, update_1.updateCommand)(options);
 });
 program
+    .command('sync')
+    .description('One-click sync: scan status, auto mark dirty, and run confirm update')
+    .option('-s, --summary <text>', 'Summary of changes')
+    .option('-n, --next <text>', 'Next step description')
+    .action((options) => {
+    (0, sync_1.syncCommand)({ summary: options.summary, next: options.next });
+});
+program
     .command('mark-dirty')
     .description('Mark memory as potentially stale')
     .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
@@ -154,9 +163,10 @@ program
     .description('Check memory consistency and freshness')
     .option('--fix', 'Auto-fix issues where possible')
     .option('--fix-locks', 'Clean stale lock at .pmem/.lock')
+    .option('--fix-stale', 'Auto-fix stale memory warning by updating verification timestamps')
     .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
     .action((options) => {
-    (0, verify_1.verifyCommand)({ fix: options.fix, fixLocks: options.fixLocks, relaxed: options.relaxed });
+    (0, verify_1.verifyCommand)({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, relaxed: options.relaxed });
 });
 program
     .command('doctor')
