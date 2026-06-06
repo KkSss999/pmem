@@ -1,10 +1,10 @@
 # Next Steps
 
 ## Recommended Next Step
-Submit pull request to merge v0.7.1 changes into main
+Begin v0.7.5 P1: scaffold pmem serve subcommand and minimum-viable Sigma.js frontend in dist/web/
 
 ## Why
-Milestone v0.7.1 completed and verified.
+Confirmed during update.
 
 ## Needed Context
 Run `pmem recall` for full context.
