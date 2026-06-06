@@ -9,6 +9,7 @@ source_files: []
 depends_on: []
 related_to:
   - feature.v0_7_5_graph_visualization_20260606
+  - decision.pmem_rt_v1_thin_mcp_adapter_20260606
 ---
 # MCP / pmem-rt Explicitly Deferred to Post-v0.7.5
 
