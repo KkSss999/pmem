@@ -10,8 +10,10 @@ export declare function updateCommand(options: {
     includeHistory?: boolean;
     acceptEdges?: string;
     rejectEdges?: string;
+    refreshVerified?: string;
 }): void;
 export declare function markDirtyCommand(reason: string, options?: {
     auto?: boolean;
+    cardIds?: string[];
 }): void;
 //# sourceMappingURL=update.d.ts.map
