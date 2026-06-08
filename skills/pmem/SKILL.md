@@ -209,6 +209,7 @@ pmem status --format compact   # human-readable, shows [git] or [mtime]
 # Mark affected cards as potentially stale
 pmem mark-dirty --auto
 pmem mark-dirty -r "Refactored auth module"
+pmem mark-dirty --card module.core --card decision.jwt -r "Manual frontmatter edit"
 
 # Get memory update suggestions
 pmem update --suggest --format json
@@ -216,6 +217,9 @@ pmem update --suggest --format json
 
 # Confirm and write changes
 pmem update --confirm -s "Updated auth module" -n "Add token refresh"
+
+# Refresh last_verified on specific cards without creating separate traces
+pmem update --confirm -s "Reviewed changes" --refresh-verified module.core,decision.jwt
 
 # OR use the shortcut to sync changes in a single command (v0.7.1)
 pmem sync -s "Updated auth module" -n "Add token refresh"
@@ -226,9 +230,13 @@ pmem sync -s "Updated auth module" -n "Add token refresh"
 ```bash
 # Check consistency
 pmem verify
-pmem verify --fix         # auto-fix stale indexes and missing DB
-pmem verify --fix-stale   # auto-fix stale mtime warnings by updating card verified timestamps
+pmem verify --fix         # repair structural issues (stale index, missing DB, orphan edges)
+pmem verify --fix-stale   # --fix + refresh stale_memory last_verified timestamps (one-shot cleanup)
 pmem verify --relaxed     # temporarily double token limits for verification
+
+# Record a release milestone
+pmem milestone v0.8.0 -m "Graph visualization closeout"
+pmem milestone v1.0.0 --tag v1.0.0-rc1
 
 # Create a new card template
 pmem new decision "Choice of library"

@@ -346,14 +346,18 @@ pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--so
 pmem trace <id>
 
 pmem status [--since <timestamp>] [--format compact|json]
-pmem mark-dirty [-r <reason>] [--auto]
+pmem mark-dirty [-r <reason>] [--auto] [--card <id...>]
 pmem update [--auto] [--suggest] [--apply-suggestion <id>] [--confirm] [--force]
             [-s <summary>] [-n <next>] [--format compact|json] [--include-history]
             [--accept-edges <ids>] [--reject-edges <ids>]
+            [--refresh-verified <ids>]
+pmem sync -s "<summary>" [-n "<next>"]
+
+pmem milestone <version> [-m <message>] [--tag <name>]
 
 pmem distill [--suggest] [--confirm] [--apply-suggestion <id>] [--suggest-splits]
 pmem rebuild [--changed] [--full] [--card <id>]
-pmem verify [--fix] [--fix-locks] [--relaxed]
+pmem verify [--fix] [--fix-stale] [--fix-locks] [--relaxed]
 pmem doctor [--format compact|json]
 pmem new <type> <title>
 pmem rename --find <pattern> --replace <replacement> [--write]
