@@ -373,15 +373,17 @@ ${next || 'Continue as planned.'}
             manifest.memory_status.dirty_since = null;
             (0, manifest_1.saveManifest)(pmemPath, manifest);
         }
-        // --refresh-verified: bump last_verified on specified cards
+        // --refresh-verified: bump last_verified on specified cards.
+        // MUST run BEFORE rebuildCommand() so the updated frontmatter
+        // is picked up by the rebuild and SQLite hashes stay in sync.
         if (refreshVerified) {
             const cardIds = refreshVerified.split(',').map(s => s.trim()).filter(Boolean);
-            const refreshed = [];
-            for (const cardId of cardIds) {
-                const refreshDbPath = path.join(pmemPath, 'pmem.db');
-                if ((0, fs_1.fileExists)(refreshDbPath)) {
-                    try {
-                        const refreshDb = (0, db_1.openDatabase)(pmemPath);
+            const refreshDbPath = path.join(pmemPath, 'pmem.db');
+            if ((0, fs_1.fileExists)(refreshDbPath) && cardIds.length > 0) {
+                try {
+                    const refreshDb = (0, db_1.openDatabase)(pmemPath); // open once
+                    const refreshed = [];
+                    for (const cardId of cardIds) {
                         const card = refreshDb.prepare('SELECT file_path FROM cards WHERE id = ?').get(cardId);
                         if (card) {
                             const cardFilePath = path.join(process.cwd(), card.file_path);
@@ -401,23 +403,23 @@ ${next || 'Continue as planned.'}
                                             newFmText = frontmatterText.trimEnd() + `\nlast_verified: "${nowStr}"`;
                                         }
                                         const newContent = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${newFmText}\n---`);
-                                        require('fs').writeFileSync(cardFilePath, newContent, 'utf8');
+                                        (0, fs_1.writeFile)(cardFilePath, newContent);
                                         refreshed.push(cardId);
                                     }
                                 }
                             }
                         }
                     }
-                    catch {
-                        // skip cards that can't be refreshed
+                    if (refreshed.length > 0) {
+                        console.log(`Refreshed last_verified for: ${refreshed.join(', ')}`);
                     }
                 }
-            }
-            if (refreshed.length > 0) {
-                console.log(`Refreshed last_verified for: ${refreshed.join(', ')}`);
+                catch {
+                    // skip cards that can't be refreshed
+                }
             }
         }
-        // Rebuild indexes
+        // Rebuild indexes — picks up frontmatter changes from --refresh-verified above
         console.log('Rebuilding indexes...');
         (0, rebuild_1.rebuildCommand)();
         console.log('\n✓ Memory updated.');
