@@ -340,9 +340,10 @@ function verifyCommand(options) {
         console.log(`  Fix: ${issue.fix}`);
         console.log('');
     }
-    // Auto-fix if requested (--fix, --fix-stale, or --fix-locks)
-    if (options.fix || options.fixStale) {
-        let rebuildStale = false;
+    // --fix-stale: refresh stale_memory cards by bumping last_verified timestamps.
+    // This is separate from --fix so agents can choose between "repair structural
+    // index state" and "also acknowledge that source-file changes are reviewed."
+    if (options.fixStale) {
         const staleIssues = issues.filter(i => i.type === 'stale_memory');
         if (staleIssues.length > 0 && db) {
             console.log(`Auto-fixing ${staleIssues.length} stale memory card(s)...`);
@@ -354,21 +355,31 @@ function verifyCommand(options) {
                         if ((0, fs_1.fileExists)(cardFilePath)) {
                             updateFrontmatterTimestamp(cardFilePath, 'last_verified');
                             console.log(`  Updated last_verified timestamp for card: ${issue.card_id}`);
-                            rebuildStale = true;
                         }
                     }
                 }
             }
+            console.log('Rebuilding indexes for updated cards...');
+            (0, rebuild_1.rebuildCommand)();
         }
+        // Also fix structural index issues (stale_index, etc.) when --fix-stale is used
         const fixableIssue = issues.find(i => i.type === 'stale_index' ||
             i.type === 'missing_database' ||
             i.type === 'missing_card_file' ||
             i.type === 'orphan_edges');
-        if (rebuildStale) {
-            console.log('Rebuilding indexes for updated cards...');
-            (0, rebuild_1.rebuildCommand)({ changed: true });
+        if (fixableIssue && staleIssues.length === 0) {
+            console.log('Auto-fixing: rebuilding indexes...');
+            (0, rebuild_1.rebuildCommand)();
         }
-        else if (fixableIssue) {
+    }
+    // --fix: repair structural index state only (stale_index, missing db, etc.)
+    // Does NOT touch stale_memory — use --fix-stale for that.
+    if (options.fix && !options.fixStale) {
+        const fixableIssue = issues.find(i => i.type === 'stale_index' ||
+            i.type === 'missing_database' ||
+            i.type === 'missing_card_file' ||
+            i.type === 'orphan_edges');
+        if (fixableIssue) {
             console.log('Auto-fixing: rebuilding indexes...');
             (0, rebuild_1.rebuildCommand)();
         }

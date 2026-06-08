@@ -44,6 +44,12 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
       if (cardUpdatedMs === 0) continue;
 
       for (const sourceFile of sourceFiles) {
+        // Skip .pmem/ self-references: pmem update --confirm rewrites
+        // manifest.yml / next.md / state.md / index.md, which would
+        // immediately trigger false-positive stale_memory on the next
+        // verify for any card whose source_files list .pmem/ entries.
+        if (sourceFile.path.startsWith('.pmem/') || sourceFile.path === '.pmem') continue;
+
         const absPath = path.join(cwd, sourceFile.path);
         if (!fileExists(absPath)) continue;
         try {

@@ -375,7 +375,7 @@ function installIntegration(pmemPath, manifest, framework) {
     console.log(`✓ Integration "${framework}" installed.`);
     console.log(`  Template: .pmem/integrations/${framework}/`);
 }
-const CURRENT_TEMPLATE_VERSION = '0.7.1';
+const CURRENT_TEMPLATE_VERSION = '0.7.1-a';
 function verifyIntegrations(pmemPath, manifest) {
     if (!manifest)
         return;

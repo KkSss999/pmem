@@ -21,6 +21,7 @@ import { doctorCommand } from './commands/doctor';
 import { renameCommand } from './commands/rename';
 import { newCommand } from './commands/new';
 import { syncCommand } from './commands/sync';
+import { milestoneCommand } from './commands/milestone';
 
 const program = new Command();
 
@@ -118,6 +119,7 @@ program
   .option('--include-history', 'Include historical dirty flags in suggestion output')
   .option('--accept-edges <ids>', 'Comma-separated edge IDs to accept (upgrade to explicit)')
   .option('--reject-edges <ids>', 'Comma-separated edge IDs to reject (delete)')
+  .option('--refresh-verified <ids>', 'Comma-separated card IDs to refresh last_verified timestamps')
   .action((options) => {
     updateCommand(options);
   });
@@ -132,12 +134,22 @@ program
   });
 
 program
+  .command('milestone <version>')
+  .description('Record a release milestone in project memory')
+  .option('-m, --message <text>', 'Description of the milestone')
+  .option('--tag <name>', 'Git tag name (default: v<version>)')
+  .action((version: string, options) => {
+    milestoneCommand(version, { message: options.message, tag: options.tag });
+  });
+
+program
   .command('mark-dirty')
   .description('Mark memory as potentially stale')
   .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
   .option('--auto', 'Auto-detect changed files and mark related cards dirty')
+  .option('--card <id...>', 'Mark specific cards as dirty (space-separated, repeatable)')
   .action((options) => {
-    markDirtyCommand(options.reason, { auto: options.auto });
+    markDirtyCommand(options.reason, { auto: options.auto, cardIds: options.card });
   });
 
 program

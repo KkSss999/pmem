@@ -334,9 +334,10 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     console.log('');
   }
 
-  // Auto-fix if requested (--fix, --fix-stale, or --fix-locks)
-  if (options.fix || options.fixStale) {
-    let rebuildStale = false;
+  // --fix-stale: refresh stale_memory cards by bumping last_verified timestamps.
+  // This is separate from --fix so agents can choose between "repair structural
+  // index state" and "also acknowledge that source-file changes are reviewed."
+  if (options.fixStale) {
     const staleIssues = issues.filter(i => i.type === 'stale_memory');
 
     if (staleIssues.length > 0 && db) {
@@ -349,13 +350,30 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
             if (fileExists(cardFilePath)) {
               updateFrontmatterTimestamp(cardFilePath, 'last_verified');
               console.log(`  Updated last_verified timestamp for card: ${issue.card_id}`);
-              rebuildStale = true;
             }
           }
         }
       }
+      console.log('Rebuilding indexes for updated cards...');
+      rebuildCommand();
     }
 
+    // Also fix structural index issues (stale_index, etc.) when --fix-stale is used
+    const fixableIssue = issues.find(i =>
+      i.type === 'stale_index' ||
+      i.type === 'missing_database' ||
+      i.type === 'missing_card_file' ||
+      i.type === 'orphan_edges'
+    );
+    if (fixableIssue && staleIssues.length === 0) {
+      console.log('Auto-fixing: rebuilding indexes...');
+      rebuildCommand();
+    }
+  }
+
+  // --fix: repair structural index state only (stale_index, missing db, etc.)
+  // Does NOT touch stale_memory — use --fix-stale for that.
+  if (options.fix && !options.fixStale) {
     const fixableIssue = issues.find(i =>
       i.type === 'stale_index' ||
       i.type === 'missing_database' ||
@@ -363,10 +381,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
       i.type === 'orphan_edges'
     );
 
-    if (rebuildStale) {
-      console.log('Rebuilding indexes for updated cards...');
-      rebuildCommand({ changed: true });
-    } else if (fixableIssue) {
+    if (fixableIssue) {
       console.log('Auto-fixing: rebuilding indexes...');
       rebuildCommand();
     }
