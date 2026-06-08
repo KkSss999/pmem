@@ -22,6 +22,7 @@ import { renameCommand } from './commands/rename';
 import { newCommand } from './commands/new';
 import { syncCommand } from './commands/sync';
 import { milestoneCommand } from './commands/milestone';
+import { mcpCommand } from './commands/mcp';
 
 const program = new Command();
 
@@ -302,6 +303,13 @@ program
   .option('--write', 'Apply changes (default is dry-run preview only)', false)
   .action((options) => {
     renameCommand({ find: options.find, replace: options.replace, write: options.write });
+  });
+
+program
+  .command('mcp')
+  .description('Start a read-only stdio MCP server for agent tool integration')
+  .action(async () => {
+    await mcpCommand();
   });
 
 program.parse();

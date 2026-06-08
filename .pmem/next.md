@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Recommended Next Step
-Begin v0.7.5 P1: scaffold pmem serve subcommand and minimum-viable Sigma.js frontend in dist/web/
+Merge to main, publish to npm
 
 ## Why
 Confirmed during update.

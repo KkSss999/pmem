@@ -280,6 +280,39 @@ pmem install --skills --all        # → all detected agents
 pmem integration verify
 ```
 
+### MCP Server (pmem-rt v1)
+
+Start a read-only stdio MCP server for agent tool integration:
+
+```bash
+pmem mcp
+```
+
+**Agent configuration example** (Claude Code `mcpServers`):
+
+```json
+{
+  "mcpServers": {
+    "pmem-rt": {
+      "command": "pmem",
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+**Available tools**:
+
+| Tool | Description |
+|------|-------------|
+| `pmem_recall` | Restore project memory context (stage, focus, next, active cards, updates) |
+| `pmem_ask` | Search memory with 6-step retrieval (ID → alias → tag → graph → FTS5 → LIKE) |
+| `pmem_related` | Query graph neighbors of a card (edges grouped by type with direction/confidence) |
+| `pmem_status` | Detect changed files and affected memory cards (git or mtime) |
+
+All card content carries `content_trust: "untrusted_project_data"`. Tools are read-only. See [docs/pmem-rt.md](../docs/pmem-rt.md) for the full integration guide.
+
 ## Exit Codes
 
 v0.6.2+: `0` = ok, `2` = runtime error. Exit code `1` is no longer used as a workflow signal.
