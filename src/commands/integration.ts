@@ -362,7 +362,7 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
   console.log(`  Template: .pmem/integrations/${framework}/`);
 }
 
-const CURRENT_TEMPLATE_VERSION = '0.7.1-a';
+const CURRENT_TEMPLATE_VERSION = '0.7.2';
 
 function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadManifest>): void {
   if (!manifest) return;

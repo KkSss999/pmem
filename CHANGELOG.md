@@ -2,6 +2,27 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.2 — pmem-rt v1 MCP Adapter + Dogfooding Usability Fixes
+
+### Added
+
+- **pmem-rt v1 MCP Server**: New `pmem mcp` command starts a read-only stdio MCP server (`src/mcp/server.ts`) with 4 tools: `pmem_recall`, `pmem_ask`, `pmem_related`, `pmem_status`. All card content carries `content_trust: "untrusted_project_data"`. Uses `@modelcontextprotocol/sdk` (pure ESM, loaded via dynamic import).
+- **Query layer** (`src/core/query/`): Extracted pure query functions (`recallQuery`, `askQuery`, `relatedQuery`, `statusQuery`) shared by CLI and MCP server. No console.log, no process.exit(), no Commander.js dependency.
+- **MCP security** (`src/mcp/security.ts`): `validatePathScope` (realpath + path.sep comparison to prevent symlink escape and prefix confusion), `enforceBudget` (token budget truncation), `addContentTrust` (marks all card objects).
+- **`pmem milestone <version>`**: Records release milestones as memory cards with auto git-tag detection and manifest type registration.
+- **`pmem update --confirm --refresh-verified <ids>`**: Bumps `last_verified` on specified cards during confirm, before rebuild.
+- **`pmem mark-dirty --card <id...>`**: Explicit per-card dirty marking, bypassing git diff.
+
+### Fixed
+
+- **Exclude `.pmem/**` from stale_memory check**: Prevent false-positive warnings from `pmem update --confirm` rewriting manifest.yml / next.md / state.md / index.md.
+- **Separate `--fix` and `--fix-stale` semantics**: `--fix` handles structural index issues only; `--fix-stale` additionally refreshes stale_memory `last_verified` timestamps.
+- **`docs/dogfooding.md`**: Documents self-referential stale patterns, cleanup cadence, and new command workflows.
+
+### Version
+
+Bumped from 0.7.1 → 0.7.2.
+
 ## 0.7.0 - Universal Agent Memory (presets, custom card types, and domain neutrality)
 
 ### Added

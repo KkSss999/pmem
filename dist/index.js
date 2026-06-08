@@ -23,6 +23,7 @@ const rename_1 = require("./commands/rename");
 const new_1 = require("./commands/new");
 const sync_1 = require("./commands/sync");
 const milestone_1 = require("./commands/milestone");
+const mcp_1 = require("./commands/mcp");
 const program = new commander_1.Command();
 // Read version dynamically from package.json (single source of truth)
 const pkg = JSON.parse((0, fs_1.readFileSync)((0, path_1.resolve)(__dirname, '..', 'package.json'), 'utf-8'));
@@ -274,6 +275,12 @@ program
     .option('--write', 'Apply changes (default is dry-run preview only)', false)
     .action((options) => {
     (0, rename_1.renameCommand)({ find: options.find, replace: options.replace, write: options.write });
+});
+program
+    .command('mcp')
+    .description('Start a read-only stdio MCP server for agent tool integration')
+    .action(async () => {
+    await (0, mcp_1.mcpCommand)();
 });
 program.parse();
 //# sourceMappingURL=index.js.map

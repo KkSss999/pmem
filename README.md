@@ -366,6 +366,7 @@ pmem session start [-a <agent-name>]
 pmem session end [-s <summary>]
 pmem integration list|install <framework>|verify
 pmem install [--skills] [--claude] [--codex] [--gemini] [--all]
+pmem mcp
 ```
 
 ## Exit Codes
@@ -382,6 +383,39 @@ As of v0.6.2, exit code `0` means the command ran successfully (results or not).
 Agents should parse structured JSON output (`--format json`) to decide next steps, rather than relying on exit codes.
 
 > **Breaking change from v0.6.1:** `pmem update --suggest` and `pmem distill --suggest` previously exited with code `1` when suggestions existed. Scripts that checked `$? -eq 1` must now parse JSON output instead.
+
+## pmem-rt — MCP Runtime for AI Agents (v0.7.2)
+
+pmem-rt is a read-only stdio MCP adapter that lets AI coding agents use pmem as a low-latency memory backend directly in their tool loop.
+
+### Quick Start
+
+```bash
+# In your project
+npm install pmem-ai
+npx pmem init --guided
+npx pmem rebuild
+
+# Configure your agent (e.g. Claude Code settings.json):
+# {
+#   "mcpServers": {
+#     "pmem": { "command": "npx", "args": ["pmem", "mcp"], "cwd": "/absolute/path/to/your-project" }
+#   }
+# }
+```
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `pmem_recall` | Restore project context: name, stage, focus, next, active cards, recent updates |
+| `pmem_ask` | 6-step search: ID → alias → tag → graph expansion → FTS5 → LIKE |
+| `pmem_related` | Graph neighbors of a card, grouped by edge type with direction/confidence |
+| `pmem_status` | Changed files → affected memory cards |
+
+All tools are read-only. Writes continue through the CLI (`pmem update --confirm`, `pmem sync`). Every card carries `content_trust: "untrusted_project_data"`.
+
+[Full integration guide →](docs/pmem-rt.md)
 
 ## Project Layout
 
