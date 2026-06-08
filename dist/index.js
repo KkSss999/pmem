@@ -22,6 +22,7 @@ const doctor_1 = require("./commands/doctor");
 const rename_1 = require("./commands/rename");
 const new_1 = require("./commands/new");
 const sync_1 = require("./commands/sync");
+const milestone_1 = require("./commands/milestone");
 const program = new commander_1.Command();
 // Read version dynamically from package.json (single source of truth)
 const pkg = JSON.parse((0, fs_1.readFileSync)((0, path_1.resolve)(__dirname, '..', 'package.json'), 'utf-8'));
@@ -109,6 +110,7 @@ program
     .option('--include-history', 'Include historical dirty flags in suggestion output')
     .option('--accept-edges <ids>', 'Comma-separated edge IDs to accept (upgrade to explicit)')
     .option('--reject-edges <ids>', 'Comma-separated edge IDs to reject (delete)')
+    .option('--refresh-verified <ids>', 'Comma-separated card IDs to refresh last_verified timestamps')
     .action((options) => {
     (0, update_1.updateCommand)(options);
 });
@@ -121,12 +123,21 @@ program
     (0, sync_1.syncCommand)({ summary: options.summary, next: options.next });
 });
 program
+    .command('milestone <version>')
+    .description('Record a release milestone in project memory')
+    .option('-m, --message <text>', 'Description of the milestone')
+    .option('--tag <name>', 'Git tag name (default: v<version>)')
+    .action((version, options) => {
+    (0, milestone_1.milestoneCommand)(version, { message: options.message, tag: options.tag });
+});
+program
     .command('mark-dirty')
     .description('Mark memory as potentially stale')
     .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
     .option('--auto', 'Auto-detect changed files and mark related cards dirty')
+    .option('--card <id...>', 'Mark specific cards as dirty (space-separated, repeatable)')
     .action((options) => {
-    (0, update_1.markDirtyCommand)(options.reason, { auto: options.auto });
+    (0, update_1.markDirtyCommand)(options.reason, { auto: options.auto, cardIds: options.card });
 });
 program
     .command('rebuild')

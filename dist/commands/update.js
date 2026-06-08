@@ -78,7 +78,7 @@ function updateCommand(options) {
     }
     // --confirm or --force: write changes
     if (options.confirm || options.force) {
-        confirmUpdate(pmemPath, options.summary, options.next);
+        confirmUpdate(pmemPath, options.summary, options.next, options.refreshVerified);
         return;
     }
     // no flag: show current dirty state
@@ -90,6 +90,44 @@ function markDirtyCommand(reason, options = {}) {
     if (!(0, fs_1.fileExists)(pmemPath)) {
         console.log('No .pmem directory found. Run `pmem init` first.');
         return;
+    }
+    // --card <id>: explicitly mark specific cards as dirty
+    if (options.cardIds && options.cardIds.length > 0) {
+        const dbPath = path.join(pmemPath, 'pmem.db');
+        if (!(0, fs_1.fileExists)(dbPath)) {
+            console.log('No SQLite database found. Run `pmem rebuild` first.');
+            process.exit(2);
+        }
+        try {
+            const db = (0, db_1.openDatabase)(pmemPath);
+            const activeSession = (0, db_1.getActiveSession)(db);
+            for (const cardId of options.cardIds) {
+                const card = db.prepare('SELECT id FROM cards WHERE id = ? AND is_deleted = 0').get(cardId);
+                if (card) {
+                    (0, db_1.insertDirtyFlag)(db, 'card', cardId, reason, activeSession?.id);
+                    console.log(`Marked card dirty: ${cardId}`);
+                }
+                else {
+                    console.log(`Card not found or deleted: ${cardId}`);
+                }
+            }
+            // Also mark project-level dirty
+            const manifest = (0, manifest_1.loadManifest)(pmemPath);
+            if (manifest) {
+                const timestamp = new Date().toISOString();
+                manifest.memory_status.dirty = true;
+                manifest.memory_status.dirty_reason = reason;
+                manifest.memory_status.dirty_since = timestamp;
+                (0, manifest_1.saveManifest)(pmemPath, manifest);
+                (0, db_1.insertDirtyFlag)(db, 'project', '.pmem', reason, activeSession?.id);
+            }
+            (0, db_1.closeDatabase)();
+            return;
+        }
+        catch (err) {
+            console.error('Could not mark cards as dirty:', err);
+            process.exit(2);
+        }
     }
     // --auto: detect changed files via git and mark related cards as dirty
     if (options.auto) {
@@ -251,7 +289,7 @@ function autoUpdate(pmemPath, manifest) {
         }
     }
 }
-function confirmUpdate(pmemPath, summary, next) {
+function confirmUpdate(pmemPath, summary, next, refreshVerified) {
     const lockPath = path.join(pmemPath, '.lock');
     if (!(0, fs_1.acquireLock)(lockPath)) {
         console.log('Failed to acquire pmem lock after 3s.');
@@ -334,6 +372,50 @@ ${next || 'Continue as planned.'}
             manifest.memory_status.dirty_reason = null;
             manifest.memory_status.dirty_since = null;
             (0, manifest_1.saveManifest)(pmemPath, manifest);
+        }
+        // --refresh-verified: bump last_verified on specified cards
+        if (refreshVerified) {
+            const cardIds = refreshVerified.split(',').map(s => s.trim()).filter(Boolean);
+            const refreshed = [];
+            for (const cardId of cardIds) {
+                const refreshDbPath = path.join(pmemPath, 'pmem.db');
+                if ((0, fs_1.fileExists)(refreshDbPath)) {
+                    try {
+                        const refreshDb = (0, db_1.openDatabase)(pmemPath);
+                        const card = refreshDb.prepare('SELECT file_path FROM cards WHERE id = ?').get(cardId);
+                        if (card) {
+                            const cardFilePath = path.join(process.cwd(), card.file_path);
+                            if ((0, fs_1.fileExists)(cardFilePath)) {
+                                const content = (0, fs_1.readFile)(cardFilePath);
+                                if (content) {
+                                    const match = content.match(/^---\n([\s\S]*?)\n---/);
+                                    if (match) {
+                                        const frontmatterText = match[1];
+                                        const nowStr = new Date().toISOString();
+                                        let newFmText = frontmatterText;
+                                        const regex = /^last_verified:.*$/m;
+                                        if (regex.test(frontmatterText)) {
+                                            newFmText = frontmatterText.replace(regex, `last_verified: "${nowStr}"`);
+                                        }
+                                        else {
+                                            newFmText = frontmatterText.trimEnd() + `\nlast_verified: "${nowStr}"`;
+                                        }
+                                        const newContent = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${newFmText}\n---`);
+                                        require('fs').writeFileSync(cardFilePath, newContent, 'utf8');
+                                        refreshed.push(cardId);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch {
+                        // skip cards that can't be refreshed
+                    }
+                }
+            }
+            if (refreshed.length > 0) {
+                console.log(`Refreshed last_verified for: ${refreshed.join(', ')}`);
+            }
         }
         // Rebuild indexes
         console.log('Rebuilding indexes...');
