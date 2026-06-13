@@ -48,6 +48,7 @@ exports.upsertCard = upsertCard;
 exports.deleteCardEdges = deleteCardEdges;
 exports.deleteExplicitCardEdges = deleteExplicitCardEdges;
 exports.deleteMentionEdges = deleteMentionEdges;
+exports.deleteInferredCardEdges = deleteInferredCardEdges;
 exports.insertEdge = insertEdge;
 exports.deleteCardAliases = deleteCardAliases;
 exports.insertAlias = insertAlias;
@@ -72,6 +73,7 @@ exports.getEdgesForCard = getEdgesForCard;
 exports.updateEdgeSource = updateEdgeSource;
 exports.deleteEdgesByIds = deleteEdgesByIds;
 exports.getOrphanEdges = getOrphanEdges;
+exports.deleteOrphanEdges = deleteOrphanEdges;
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const path = __importStar(require("path"));
 const fs_1 = require("./fs");
@@ -261,6 +263,19 @@ function deleteExplicitCardEdges(db, cardId) {
 function deleteMentionEdges(db, cardId) {
     db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'mention'").run(cardId);
 }
+/**
+ * v0.7.3 (issue #6): per-card inferred edge cleanup.
+ *
+ * Rebuilds need to re-derive inferred edges (e.g. task→module
+ * next_step_of) from the card's *current* frontmatter. Without this,
+ * an incremental rebuild that only re-processes one card would leave
+ * stale inferred edges in the DB that point to modules the card no
+ * longer references. Used by `rebuildCommand` for every re-processed
+ * card, in both full and incremental modes.
+ */
+function deleteInferredCardEdges(db, cardId) {
+    db.prepare("DELETE FROM edges WHERE from_id = ? AND source = 'inferred'").run(cardId);
+}
 function insertEdge(db, edge) {
     db.prepare(`
     INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at)
@@ -377,5 +392,20 @@ function getOrphanEdges(db) {
     LEFT JOIN cards c2 ON e.to_id = c2.id
     WHERE c1.id IS NULL OR c2.id IS NULL
   `).all();
+}
+/**
+ * v0.7.3 (issue #6): prune edges whose endpoints reference cards that
+ * no longer exist in the `cards` table. Returns the number of rows
+ * deleted. Called by `rebuildCommand --full` after the rebuild loop
+ * so that a deleted-card file can't leave behind edges that point to
+ * it. The matching `select` form lives in `getOrphanEdges` for ad-hoc
+ * inspection.
+ */
+function deleteOrphanEdges(db) {
+    return db.prepare(`
+    DELETE FROM edges
+    WHERE from_id NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
+       OR to_id   NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
+  `).run().changes;
 }
 //# sourceMappingURL=db.js.map
