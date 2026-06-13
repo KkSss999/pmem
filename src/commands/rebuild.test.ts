@@ -446,4 +446,40 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
       type: 'custom_link', source: 'manual',
     }], `manual edge should survive --full rebuild`);
   });
+
+  it('incremental (--changed) rebuild re-derives inferred next_step_of from current frontmatter', () => {
+    // The v0.7.3 fix (issue #6) added per-card `deleteInferredCardEdges`
+    // so that an *incremental* rebuild (no --full) also re-derives
+    // inferred task→module edges from the task's current `related`
+    // frontmatter.  Previously, only `--full` cleared stale inferred
+    // edges (and only by accident via `clearAllTables`), so editing a
+    // task's `related` and running `pmem rebuild` (default) would leave
+    // the old inferred edge in place.  This test exercises that path.
+    writeFile(path.join(testDir, '.pmem/modules/module.IM1.md'),
+      card('module.IM1', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.IM2.md'),
+      card('module.IM2', 'module'));
+    writeFile(path.join(testDir, '.pmem/tasks/task.inc.md'),
+      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM1\n'));
+
+    const r1 = pmem('rebuild --full', testDir);
+    assert.strictEqual(r1.code, 0, `seed rebuild failed: ${r1.stdout}`);
+
+    // Re-target: change related to module.IM2, then run an
+    // INCREMENTAL rebuild (no --full).  This is the path that
+    // exercises the per-card inferred cleanup.
+    fs.writeFileSync(path.join(testDir, '.pmem/tasks/task.inc.md'),
+      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM2\n'), 'utf8');
+
+    const r2 = pmem('rebuild', testDir);
+    assert.strictEqual(r2.code, 0, `incremental rebuild failed: ${r2.stdout}`);
+
+    const after = queryEdges(testDir,
+      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.inc' ORDER BY to_id, type");
+    const toIds = after.map(e => e.to_id);
+    assert.ok(!toIds.includes('module.IM1'),
+      `incremental rebuild should have dropped inferred T->IM1, got: ${JSON.stringify(after)}`);
+    assert.ok(toIds.includes('module.IM2'),
+      `incremental rebuild should have re-derived inferred T->IM2, got: ${JSON.stringify(after)}`);
+  });
 });
