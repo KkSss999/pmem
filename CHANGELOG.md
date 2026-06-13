@@ -2,6 +2,25 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.3 — `rebuild --full` Edge Cleanup (closes #6)
+
+### Fixed
+
+- **`pmem rebuild --full` left orphan + stale edges after card split/delete** (issue #6, three concrete bugs):
+  1. *Orphan inbound edges*: When a target card was deleted but other cards' frontmatter still named it (or the user had edited their own `related:` to `[]`), the explicit edges survived `--full`. `clearAllTables` ran but the v0.7.0-a snapshot+restore step then resurrected them. Now `--full` post-cleans any edge whose `from_id` or `to_id` no longer has a `cards` row, and the snapshot+restore step skips managed sources (`explicit`/`inferred`/`mention`) so they cannot be resurrected.
+  2. *Stale `depends_on` / `related`*: When a card's `depends_on` array was reduced (e.g. `[A, X, Y]` → `[X]`), the rebuild loop's per-card `deleteExplicitCardEdges` correctly removed the old rows, but the snapshot+restore step put them back. The smart snapshot+restore filter (see above) now refuses to re-insert managed-source edges, so the diff takes effect.
+  3. *Stale inferred `next_step_of`*: Same mechanism for `source='inferred'` task→module edges. In addition, the rebuild loop now also calls a new per-card `deleteInferredCardEdges` so *incremental* rebuilds re-derive inferred edges from the current `related` frontmatter — previously only `--full` cleared them, and only by accident via `clearAllTables`.
+- **Workaround SQL from the issue is no longer required.** All three manual `sqlite3` cleanup statements in the issue body become no-ops after `--full`.
+
+### Added
+
+- `deleteInferredCardEdges(db, cardId)` and `deleteOrphanEdges(db)` helpers in `src/core/db.ts`.
+- 3 new integration tests in `src/commands/rebuild.test.ts` covering all three bugs and a regression test that confirms manually-inserted (`source='manual'`) edges still round-trip through `--full`.
+
+### Version
+
+Bumped from 0.7.2 → 0.7.3.
+
 ## v0.7.2 — pmem-rt v1 MCP Adapter + Dogfooding Usability Fixes
 
 ### Added

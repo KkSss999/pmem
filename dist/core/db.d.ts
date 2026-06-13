@@ -12,6 +12,17 @@ export declare function upsertCard(db: Database.Database, card: import('../types
 export declare function deleteCardEdges(db: Database.Database, cardId: string): void;
 export declare function deleteExplicitCardEdges(db: Database.Database, cardId: string): void;
 export declare function deleteMentionEdges(db: Database.Database, cardId: string): void;
+/**
+ * v0.7.3 (issue #6): per-card inferred edge cleanup.
+ *
+ * Rebuilds need to re-derive inferred edges (e.g. task→module
+ * next_step_of) from the card's *current* frontmatter. Without this,
+ * an incremental rebuild that only re-processes one card would leave
+ * stale inferred edges in the DB that point to modules the card no
+ * longer references. Used by `rebuildCommand` for every re-processed
+ * card, in both full and incremental modes.
+ */
+export declare function deleteInferredCardEdges(db: Database.Database, cardId: string): void;
 export declare function insertEdge(db: Database.Database, edge: import('../types').EdgeRow): void;
 export declare function deleteCardAliases(db: Database.Database, cardId: string): void;
 export declare function insertAlias(db: Database.Database, cardId: string, alias: string, language?: string): void;
@@ -62,4 +73,13 @@ export declare function getEdgesForCard(db: Database.Database, cardId: string, s
 export declare function updateEdgeSource(db: Database.Database, edgeIds: number[], newSource: 'explicit' | 'inferred', newConfidence: number): number;
 export declare function deleteEdgesByIds(db: Database.Database, edgeIds: number[]): number;
 export declare function getOrphanEdges(db: Database.Database): EdgeRow[];
+/**
+ * v0.7.3 (issue #6): prune edges whose endpoints reference cards that
+ * no longer exist in the `cards` table. Returns the number of rows
+ * deleted. Called by `rebuildCommand --full` after the rebuild loop
+ * so that a deleted-card file can't leave behind edges that point to
+ * it. The matching `select` form lives in `getOrphanEdges` for ad-hoc
+ * inspection.
+ */
+export declare function deleteOrphanEdges(db: Database.Database): number;
 //# sourceMappingURL=db.d.ts.map
