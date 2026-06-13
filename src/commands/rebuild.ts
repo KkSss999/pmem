@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -258,9 +258,15 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
 
       upsertCard(db, cardRow);
 
-      // Clear existing explicit and mention relations before re-inserting (preserve inferred edges)
+      // Clear existing explicit, mention, and inferred relations before
+      // re-inserting from the current frontmatter. v0.7.3 (issue #6):
+      // inferred edges (e.g. task→module next_step_of) must also be
+      // re-derived per card — otherwise an incremental rebuild that
+      // re-targets a task's `related` to a different module would
+      // leave the stale inferred edge to the old module in place.
       deleteExplicitCardEdges(db, fm.id);
       deleteMentionEdges(db, fm.id);
+      deleteInferredCardEdges(db, fm.id);
       deleteCardAliases(db, fm.id);
       deleteCardTags(db, fm.id);
       deleteCardPaths(db, fm.id);
@@ -361,10 +367,40 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   // Execute all SQLite writes in a single transaction
   doRebuild();
 
-  // v0.7.0-a: restore manually inserted edges that were not re-created
-  // by the rebuild loop (preserved across --full rebuilds)
+  // v0.7.3 (issue #6): prune orphan edges after a --full rebuild.
+  // The rebuild loop inserts explicit edges (depends_on, related) from
+  // each card's current frontmatter without checking that the target
+  // card still has a file. If a target card was deleted but the
+  // declaring card's frontmatter still names it (or a card was just
+  // renamed and the caller hasn't yet propagated the rename), those
+  // edges would otherwise dangle and trip `pmem verify`'s
+  // orphan_edges / too_many_relations checks.
+  if (isFull) {
+    deleteOrphanEdges(db);
+  }
+
+  // v0.7.0-a (revised in v0.7.3, issue #6): restore edges that the
+  // rebuild loop did not and could not have re-derived. We now
+  // restrict restoration to:
+  //   - sources the rebuild loop does NOT manage (anything other than
+  //     'explicit', 'inferred', 'mention'). These are typically manual
+  //     SQL inserts that should survive a full rebuild.
+  //   - edges whose both endpoints still exist in the cards table.
+  //     Orphan edges (e.g. pointing to a deleted card) are NOT
+  //     restored, since they would just be pruned again by
+  //     `deleteOrphanEdges` and the user wants them gone.
+  // Without these filters, the snapshot+restore step would resurrect
+  // every `depends_on` / `related_to` / `next_step_of` edge that the
+  // user had just removed from a card's frontmatter — the original
+  // root cause of issue #6.
   if (isFull && snappedEdges.length > 0) {
     const restoreEdgeTx = db.transaction(() => {
+      // Build a set of currently-existing card IDs so the restore loop
+      // can skip edges whose endpoints no longer exist.
+      const existingCardIds = new Set<string>(
+        (db.prepare("SELECT id FROM cards WHERE is_deleted = 0").all() as Array<{ id: string }>).map(r => r.id)
+      );
+
       // Build set of current edge keys: "from_id|to_id|type|source"
       const currentKeys = new Set<string>();
       const currentEdges = db.prepare(
@@ -374,20 +410,30 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
         currentKeys.add(`${e.from_id}|${e.to_id}|${e.type}|${e.source}`);
       }
 
+      // Sources managed by the rebuild loop — restoring any of these
+      // would re-introduce the very stale edges we just deleted from
+      // the loop's deleteExplicitCardEdges/deleteMentionEdges/
+      // deleteInferredCardEdges pass.
+      const managedSources = new Set(['explicit', 'inferred', 'mention']);
+
       const restoreStmt = db.prepare(
         "INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
       );
       let restoredCount = 0;
       const now = new Date().toISOString();
       for (const e of snappedEdges) {
+        // Skip managed sources — they should be re-derived from
+        // current frontmatter, not resurrected from the snapshot.
+        if (managedSources.has(e.source)) continue;
+        // Skip orphan edges — both endpoints must still be cards.
+        if (!existingCardIds.has(e.from_id) || !existingCardIds.has(e.to_id)) continue;
         const key = `${e.from_id}|${e.to_id}|${e.type}|${e.source}`;
-        if (!currentKeys.has(key)) {
-          restoreStmt.run(
-            e.from_id, e.to_id, e.type, e.source, e.confidence,
-            e.created_at ?? now, e.updated_at ?? now
-          );
-          restoredCount++;
-        }
+        if (currentKeys.has(key)) continue;
+        restoreStmt.run(
+          e.from_id, e.to_id, e.type, e.source, e.confidence,
+          e.created_at ?? now, e.updated_at ?? now
+        );
+        restoredCount++;
       }
       if (restoredCount > 0) {
         preservedEdges = restoredCount;
