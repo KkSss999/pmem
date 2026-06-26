@@ -1,10 +1,11 @@
 ---
 id: decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
 type: decision
-title: "v0.7.5 Architecture: Sigma.js + Hybrid Markdown Pipeline"
-status: active
-tags: [v0.7.5, architecture, sigma-js, markdown, frontend]
+title: "Deferred Web UI Architecture: Sigma.js + Hybrid Markdown Pipeline"
+status: deferred
+tags: [architecture, sigma-js, markdown, frontend, web-ui, deferred]
 created: "2026-06-06"
+updated: "2026-06-26T12:25:00.000Z"
 token_policy: relaxed
 source_files:
   - src/core/db.ts
@@ -12,16 +13,21 @@ source_files:
   - src/core/fs.ts
 depends_on: []
 related_to:
+  - decision.project_rag_os_positioning_20260626
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_scope_read_only_single_project_localhost_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
-last_verified: "2026-06-26T11:35:51.954Z"
+last_verified: "2026-06-26T12:25:00.000Z"
 ---
-# v0.7.5 Architecture: Sigma.js + Hybrid Markdown Pipeline
+# Deferred Web UI Architecture: Sigma.js + Hybrid Markdown Pipeline
+
+## Current Status
+
+This architecture is preserved as a candidate for a future human-facing graph UI. It is not the active v0.7.5 architecture after the 2026-06-26 Project RAG OS repositioning.
 
 ## Decision
 
-The v0.7.5 web UI is built with two specific, non-default choices that the rest of the implementation must respect:
+If the deferred web UI is resumed, it should use two specific, non-default choices unless a new decision supersedes this card:
 
 1. **Graph rendering: Sigma.js (WebGL) + vanilla TypeScript, no React.** Bundle lands in `dist/web/`, shipped with the existing `pmem-ai` npm package via the `files` field.
 2. **Markdown rendering: a hybrid pipeline.**

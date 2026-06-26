@@ -1,11 +1,11 @@
 ---
 id: task.post_v0_7_optimization_roadmap_20260602
 type: task
-title: "Post v0.7 Optimization Roadmap"
+title: "Post v0.7 Project RAG OS Roadmap"
 status: active
-tags: [roadmap, optimization, token-economy, performance, intelligence, visualization]
+tags: [roadmap, optimization, recall, rag, project-rag-os, retrieval]
 created: "2026-06-02"
-updated: "2026-06-06T00:00:00.000Z"
+updated: "2026-06-26T12:15:00.000Z"
 token_policy: relaxed
 source_files:
   - README.md
@@ -19,15 +19,27 @@ related_to:
   - decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
+  - decision.project_rag_os_positioning_20260626
+  - decision.structure_first_hybrid_recall_20260626
+  - decision.sqlite_first_semantic_layer_20260626
+  - feature.v0_8_hybrid_recall_engine_20260626
+  - feature.v0_8_5_lightweight_semantic_layer_20260626
+  - feature.v0_9_contextual_rerank_retrieval_20260626
+  - feature.v1_0_project_rag_os_20260626
+  - task.rag_research_sprint_20260626
+  - risk.rag_scope_creep_heavy_vector_stack_20260626
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
-last_verified: "2026-06-26T11:53:06.856Z"
+  - module.recall_retrieval_runtime_20260626
+last_verified: "2026-06-26T12:15:00.000Z"
 ---
-# Post v0.7 Optimization Roadmap
+# Post v0.7 Project RAG OS Roadmap
 
 ## Context
 
-v0.7.0 turns pmem into universal agent memory for software, novel, research, and custom-schema projects. Next question: how cheaply, quickly, intelligently, and visibly can people and agents operate it?
+v0.7.0 turned pmem into universal agent memory for software, novel, research, and custom-schema projects. v0.7.5 has now shipped the Context Restoration line: thick traces, trace-aware recall, module/decision inference, next-step deduplication, and improved project-context restoration.
+
+The next product question is larger than optimization: pmem should become structured project memory plus high-quality RAG plus an agent-CRUD local knowledge OS. It should not collapse into either a project log or a vector database. The durable target is a structure-first, semantic-enhanced, evidence-traceable Project RAG OS.
 
 ## Optimization Themes
 
@@ -76,30 +88,31 @@ The next major product surface can be a local UI for humans to inspect project m
 - Recall preview by budget/mode and Markdown card detail view.
 - Buttons for `rebuild`, `verify`, `distill --suggest`, and edge review.
 
-## Suggested Version Path
+## Updated Version Path
 
-- v0.7.1: token economy, skill/docs polish, recall modes.
-- v0.7.2: smarter `update` and `distill`, still confirmation-first.
-- v0.7.5: **local visualization frontend / graph viewer** (re-scoped from v0.8.0 on 2026-06-06). Closeout target: "visualization fully ready" — `pmem serve` opens a browser showing the full graph, with read-only card detail, filters, search, status dashboard, and wikilink navigation. See `feature.v0_7_5_graph_visualization_20260606` and the four `decision.v0_7_5_*` cards for the locked design.
-- v0.8.x (post-v0.7.5): MCP / `pmem-rt` runtime direction. **Explicitly deferred** in v0.7.5. See `decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606`. The original positioning for `pmem-rt` is a stdio MCP server that user agents (Claude Code / Codex / Cursor) spawn as a sidecar process against their own project's `.pmem/`, exposing pmem as a low-latency memory backend in the agent's tool loop. This is a fresh design pass for the next milestone.
+- v0.7.5: **Context Restoration**. The milestone is published. It proves that pmem can write and restore project memory with thick traces, trace-aware recall, module/decision inference, and next-step cleanup before adding heavier retrieval machinery.
+- v0.8: **Hybrid Recall Engine**. Add SQLite FTS/BM25, field weighting, structured filters, graph expansion, recency scoring, module/decision boosts, task-aware ranking, must-read context packing, and "why recalled" explanations.
+- v0.8.5: **Lightweight Semantic Layer**. Add optional fuzzy semantic search only after the hybrid engine exists. Prefer Transformers.js + MiniLM-style embeddings + SQLite BLOB + linear cosine scan for single-project scale before considering Qdrant, Milvus, Vespa, turbovec, or sqlite-vec.
+- v0.9: **Rerank + Contextual Retrieval**. Add contextual chunks, query rewrite, small-to-big retrieval, candidate reranking, and citation/evidence scoring.
+- v1.0: **Project RAG OS**. Agent-facing memory CRUD becomes first-class: remember, forget, supersede, promote, distill, search, context, doctor memory, and verify.
 
-## v0.7.5 Sub-tasks (added 2026-06-06)
+## v0.8 Research Gate
 
-1. Add `pmem serve` subcommand in `src/commands/serve.ts`. Bind to `127.0.0.1`, default port TBD (current candidate: `7321`).
-2. Extract a `GraphService` wrapper in `src/server/` that re-exports `related` / `trace` / `ask` / `list_cards` / `get_card` query functions, so CLI commands and the HTTP server share the same data path.
-3. Add HTTP routes: `GET /api/graph`, `GET /api/cards/:id`, `GET /api/search?q=`, `GET /api/status`, `GET /api/health`.
-4. Add `dist/web/` static frontend: Sigma.js + vanilla TS, `marked` + `DOMPurify`, custom wikilink `marked` extension.
-5. E2E test: start `pmem serve`, hit `/api/cards/:id` with `curl`, assert structured JSON, open browser via headless test or manual smoke.
-6. Document the new subcommand in `README.md` and `skills/pmem/SKILL.md` (CLI skill only; **do not** touch MCP-related docs).
-7. `pmem verify` must pass; new cards must satisfy the existing schema.
+Before implementing v0.8, run `task.rag_research_sprint_20260626` and produce a concrete architecture decision for `feature.v0_8_hybrid_recall_engine_20260626`.
 
-## Forbidden in v0.7.5
+The research gate must answer:
 
-- Any `pmem mcp` subcommand.
-- Any `pmem install --mcp` flag.
-- A `pmem-rt` directory, package, or repository.
-- `@modelcontextprotocol/sdk` or any MCP-specific dependency in `package.json`.
-- Auto-registration of an MCP server entry in any agent config.
+- What candidate-generation stages run in v0.8?
+- How do BM25/FTS, exact IDs, source files, metadata filters, graph expansion, and recency combine?
+- Which ranking signals are deterministic and explainable?
+- Which signals are deferred to v0.8.5/v0.9?
+- What evaluation set proves recall improved?
+
+## Deferred Threads
+
+- The old v0.7.5 graph visualization card remains useful as a human-inspection idea, but it is no longer the immediate v0.7.5 milestone boundary after the 2026-06-26 repositioning.
+- MCP / `pmem-rt` is still a separate runtime direction and should not be silently absorbed into v0.8 retrieval work.
+- Heavy vector databases are not the default path for single-project pmem; they are scale options after the SQLite-first path has real evidence.
 
 ## Product Principle
 

@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Complete publishing and testing validation
+Run the RAG research sprint and produce the v0.8 Hybrid Recall Engine architecture decision.
 
 ## Why
 Confirmed during update.
