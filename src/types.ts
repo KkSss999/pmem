@@ -599,3 +599,34 @@ export interface DiscoverResult {
     actionable: number;
   };
 }
+
+// === v0.7.4 Agent UX Types ===
+
+export interface ContextCardInfo {
+  id: string;
+  title: string;
+  file_path: string;
+  summary?: string;
+  type: string;
+}
+
+export interface ContextQueryResult {
+  task: string;
+  project_stage?: string;
+  current_focus: string;
+  must_read: Array<{ path: string; reason: string }>;
+  relevant_memory: ContextCardInfo[];
+  changed_files: Array<{ path: string; status: string }>;
+  dirty_memory: string[];
+  warnings: string[];
+  recommended_next_action: string;
+}
+
+export interface PmemSessionData {
+  latest_task: string;
+  latest_context_query?: string;
+  latest_context_cards?: string[];
+  latest_agent?: string;
+  updated_at: string;
+}
+

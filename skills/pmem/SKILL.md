@@ -15,33 +15,25 @@ allowed-tools: Bash(pmem:*)
 pmem init my-project --guided --description "A backend service" --stage "Alpha" --next "Set up CI/CD"
 pmem rebuild
 
-# Or initialize a domain preset
-pmem init my-novel --domain novel
-pmem init lit-review --domain research
+# Start task: restore and aggregate context
+pmem context "implement v0.7.4 agent UX"
 
-# Restore context (do this at session start)
-pmem session start -a "<agent-name>"
-pmem recall --format compact --budget 2000
+# Modify files...
 
-# Find relevant memory
-pmem ask "auth module" --format compact
-pmem ask "main character motivation" --format compact
-pmem ask "source claim evidence" --format compact
+# End task: automatically capture trace and sync memory
+pmem capture --auto
 ```
 
 ## Core Workflow
 
-Every session follows this loop:
+Every session follows this simplified loop:
 
 ```
-session start → recall (restore context) → ask (find specific memory)
-    ↓
-edit project files
-    ↓
-pmem sync -s "<msg>" -n "<next>"  (one-step shortcut)
-  - Or manual: status → mark-dirty --auto → update --suggest → update --confirm
-    ↓
-session end → verify (check consistency, use --fix-stale / --fix if needed)
+  pmem context "<task>"  (start of session / restore task context)
+          ↓
+  edit project files
+          ↓
+  pmem capture --auto    (end of session / sync memory & save trace)
 ```
 
 ## Commands

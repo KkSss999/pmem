@@ -18,4 +18,8 @@ export declare function enforceBudget(result: any, maxTokens: number): any;
  * Does NOT modify, redact, or filter card content — purely additive.
  */
 export declare function addContentTrust(result: any): any;
+/**
+ * Validate MCP capture inputs for security constraints (lengths, boundaries).
+ */
+export declare function validateCaptureInputs(pmemPath: string, summary?: string, next?: string): void;
 //# sourceMappingURL=security.d.ts.map

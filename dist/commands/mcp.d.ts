@@ -5,5 +5,5 @@
  * MCP protocol transport channel. Any non-JSON output will cause protocol
  * errors. Use stderr for diagnostics if absolutely necessary.
  */
-export declare function mcpCommand(): Promise<void>;
+export declare function mcpCommand(writeMode?: 'readonly' | 'append-only'): Promise<void>;
 //# sourceMappingURL=mcp.d.ts.map

@@ -10,12 +10,13 @@ Coding agents lose project context quickly. A repository has source files, docs,
 
 `pmem` gives the project a small, explicit memory layer:
 
-- `pmem recall` restores the hot project context.
+- `pmem context "<task>"` restores and aggregates task-specific memory and file context.
+- `pmem capture --auto` automatically synchronizes modified files and memory status.
+- `pmem install --agent-rules` installs compact rules files (AGENTS.md, Cursor rules, etc.) to guide coding agents.
 - `pmem ask "<query>"` finds relevant memory cards.
 - `pmem discover` auto-discovers project relationships (tech stack, file deps, imports) across 6 languages.
-- `pmem status` maps changed files back to affected cards.
-- `pmem update --suggest` tells an agent what memory likely needs attention.
 - `pmem verify` checks that Markdown cards and runtime indexes still agree.
+
 
 The design is intentionally local and Git-friendly. Markdown cards remain the source of truth. SQLite is a rebuildable runtime index, not a separate knowledge base.
 
@@ -81,8 +82,8 @@ Create project memory in a repository:
 ```bash
 pmem init my-project
 pmem rebuild
-pmem recall --budget 2000
-pmem verify
+pmem context "Implement core setup"
+pmem capture --auto
 ```
 
 For a richer setup:
@@ -337,6 +338,9 @@ Installed integration templates are available under:
 ```bash
 pmem init [project-name] [--guided] [--description <text>] [--stage <text>] [--next <text>] [--answers <path>] [--domain software|novel|research]
 
+pmem context <task> [--budget N] [--format compact|json]
+pmem capture [--auto] [-s <summary>] [-n <next>] [--full] [--force]
+
 pmem recall [--budget N] [--format compact|json|paths|pack] [--since <duration>]
 pmem ask <query> [--format compact|json|paths|pack]
 pmem discover [--dry-run] [--format compact|json] [--min-confidence <n>]
@@ -365,8 +369,8 @@ pmem migrate [--to <version>] [--dry-run] [--backup]
 pmem session start [-a <agent-name>]
 pmem session end [-s <summary>]
 pmem integration list|install <framework>|verify
-pmem install [--skills] [--claude] [--codex] [--gemini] [--all]
-pmem mcp
+pmem install [--skills] [--agent-rules] [--claude] [--codex] [--gemini] [--cursor] [--cline] [--aider] [--windsurf] [--all]
+pmem mcp [--write readonly|append-only]
 ```
 
 ## Exit Codes
@@ -384,36 +388,34 @@ Agents should parse structured JSON output (`--format json`) to decide next step
 
 > **Breaking change from v0.6.1:** `pmem update --suggest` and `pmem distill --suggest` previously exited with code `1` when suggestions existed. Scripts that checked `$? -eq 1` must now parse JSON output instead.
 
-## pmem-rt — MCP Runtime for AI Agents (v0.7.2)
+## pmem-rt — MCP Runtime for AI Agents
 
-pmem-rt is a read-only stdio MCP adapter that lets AI coding agents use pmem as a low-latency memory backend directly in their tool loop.
+pmem-rt is a stdio MCP server that lets AI coding agents interact with pmem directly in their tool loop.
 
-### Quick Start
+Default mode is read-only:
 
 ```bash
-# In your project
-npm install pmem-ai
-npx pmem init --guided
-npx pmem rebuild
+pmem mcp
+```
 
-# Configure your agent (e.g. Claude Code settings.json):
-# {
-#   "mcpServers": {
-#     "pmem": { "command": "npx", "args": ["pmem", "mcp"], "cwd": "/absolute/path/to/your-project" }
-#   }
-# }
+Append-only capture mode:
+
+```bash
+pmem mcp --write=append-only
 ```
 
 ### MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `pmem_recall` | Restore project context: name, stage, focus, next, active cards, recent updates |
-| `pmem_ask` | 6-step search: ID → alias → tag → graph expansion → FTS5 → LIKE |
-| `pmem_related` | Graph neighbors of a card, grouped by edge type with direction/confidence |
-| `pmem_status` | Changed files → affected memory cards |
+| Tool           | Mode        | Description                                   |
+| -------------- | ----------- | --------------------------------------------- |
+| `pmem_recall`  | readonly    | Restore project context                       |
+| `pmem_ask`     | readonly    | Search memory cards                           |
+| `pmem_related` | readonly    | Query graph neighbors                         |
+| `pmem_status`  | readonly    | Detect changed files                          |
+| `pmem_context` | readonly    | Get task-aware context package                |
+| `pmem_capture` | append-only | Append trace and update managed next.md block |
 
-All tools are read-only. Writes continue through the CLI (`pmem update --confirm`, `pmem sync`). Every card carries `content_trust: "untrusted_project_data"`.
+All read-only tools are safe to execute and do not perform any side effects on the workspace. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain strictly blocked. Every card object returned carries `content_trust: "untrusted_project_data"`.
 
 [Full integration guide →](docs/pmem-rt.md)
 

@@ -11,7 +11,7 @@ import { parseFrontmatter } from '../core/yaml';
 
 const PMEM_DIR = '.pmem';
 
-export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixStale?: boolean; relaxed?: boolean }): void {
+export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixStale?: boolean; relaxed?: boolean; noExit?: boolean }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -392,9 +392,11 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   // we provide guidance here.
 
   const hasErrors = issues.some(i => i.severity === 'error');
-  const hasWarnings = issues.some(i => i.severity === 'warning');
-  // v0.6.2: warnings no longer trigger exit 1. Only errors exit non-zero.
-  if (hasErrors) process.exit(2);
+  if (hasErrors) {
+    if (options.noExit) return;
+    process.exit(2);
+  }
+  if (options.noExit) return;
   process.exit(0);
 }
 

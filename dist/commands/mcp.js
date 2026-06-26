@@ -45,7 +45,7 @@ const server_1 = require("../mcp/server");
  * MCP protocol transport channel. Any non-JSON output will cause protocol
  * errors. Use stderr for diagnostics if absolutely necessary.
  */
-async function mcpCommand() {
+async function mcpCommand(writeMode = 'readonly') {
     const cwd = process.cwd();
     const pmemPath = path.join(cwd, '.pmem');
     if (!(0, fs_1.fileExists)(pmemPath)) {
@@ -59,6 +59,6 @@ async function mcpCommand() {
     }
     // Security: validate path scope before starting
     (0, security_1.validatePathScope)(pmemPath);
-    await (0, server_1.startMcpServer)(pmemPath);
+    await (0, server_1.startMcpServer)(pmemPath, writeMode);
 }
 //# sourceMappingURL=mcp.js.map

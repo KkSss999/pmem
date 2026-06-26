@@ -124,3 +124,42 @@ export function addContentTrust(result: any): any {
   walk(result);
   return result;
 }
+
+/**
+ * Validate MCP capture inputs for security constraints (lengths, boundaries).
+ */
+export function validateCaptureInputs(pmemPath: string, summary?: string, next?: string): void {
+  // Validate path scope first
+  validatePathScope(pmemPath);
+
+  // Validate lengths to prevent denial of service (DoS)
+  if (summary && summary.length > 2000) {
+    throw new Error('Security: summary input exceeds max size of 2000 characters');
+  }
+  if (next && next.length > 2000) {
+    throw new Error('Security: next input exceeds max size of 2000 characters');
+  }
+
+  // Prevent control characters in inputs
+  const controlCharRegex = /[\x00-\x1F\x7F]/;
+  if (summary && controlCharRegex.test(summary)) {
+    throw new Error('Security: summary input contains invalid control characters');
+  }
+  if (next && controlCharRegex.test(next)) {
+    throw new Error('Security: next input contains invalid control characters');
+  }
+
+  // Prevent reserved comment markers to avoid markdown injection
+  const forbiddenMarkers = [
+    '<!-- pmem:next:start -->',
+    '<!-- pmem:next:end -->',
+    '<!-- pmem:rules:start -->',
+    '<!-- pmem:rules:end -->'
+  ];
+  for (const marker of forbiddenMarkers) {
+    if (summary?.includes(marker) || next?.includes(marker)) {
+      throw new Error('Security: capture input contains reserved pmem marker');
+    }
+  }
+}
+

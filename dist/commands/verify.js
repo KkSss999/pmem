@@ -388,10 +388,13 @@ function verifyCommand(options) {
     // but if a stale lock was found and not cleaned (e.g., --fix-locks not passed),
     // we provide guidance here.
     const hasErrors = issues.some(i => i.severity === 'error');
-    const hasWarnings = issues.some(i => i.severity === 'warning');
-    // v0.6.2: warnings no longer trigger exit 1. Only errors exit non-zero.
-    if (hasErrors)
+    if (hasErrors) {
+        if (options.noExit)
+            return;
         process.exit(2);
+    }
+    if (options.noExit)
+        return;
     process.exit(0);
 }
 function updateFrontmatterTimestamp(filePath, field) {
