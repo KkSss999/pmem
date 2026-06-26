@@ -40,6 +40,7 @@ const manifest_1 = require("../core/manifest");
 const rebuild_1 = require("./rebuild");
 const db_1 = require("../core/db");
 const status_1 = require("./status");
+const next_1 = require("../core/next");
 function syncCommand(options) {
     const cwd = process.cwd();
     const pmemPath = path.join(cwd, '.pmem');
@@ -102,7 +103,11 @@ function syncCommand(options) {
         // 3. Confirm update if summary is provided
         if (options.summary) {
             if (options.next) {
-                (0, fs_1.atomicWrite)(nextPath, `# Next Steps\n\n## Recommended Next Step\n${options.next}\n\n## Why\nConfirmed during sync.\n\n## Needed Context\nRun \`pmem recall\` for full context.\n`);
+                (0, next_1.writeManagedNext)(pmemPath, {
+                    nextStep: options.next,
+                    why: 'Confirmed during sync.',
+                    context: ['Run `pmem recall` for full context.']
+                });
             }
             const today = new Date().toISOString().split('T')[0];
             const traceDir = path.join(pmemPath, 'traces');

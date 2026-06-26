@@ -192,7 +192,7 @@ function getChangedFiles(pmemPath: string, cwd: string, since?: string): FileCha
   try {
     const source = detectChangesFrom();
     if (source === 'git') {
-      const output = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
+      const output = execSync('git status --porcelain -u', { cwd, encoding: 'utf-8', timeout: 5000 });
       for (const change of parseGitStatusPorcelain(output)) {
         if (skipDirs.some(d => change.path.startsWith(d + '/') || change.path === d)) continue;
         changes.push({ path: change.path, status: change.status || 'M', related_cards: [] });

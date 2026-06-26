@@ -20,6 +20,8 @@ import {
 } from '../core/db';
 import { getChangedFiles } from './status';
 
+import { writeManagedNext } from '../core/next';
+
 export function syncCommand(options: { summary?: string; next?: string }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
@@ -97,7 +99,11 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
     // 3. Confirm update if summary is provided
     if (options.summary) {
       if (options.next) {
-        atomicWrite(nextPath, `# Next Steps\n\n## Recommended Next Step\n${options.next}\n\n## Why\nConfirmed during sync.\n\n## Needed Context\nRun \`pmem recall\` for full context.\n`);
+        writeManagedNext(pmemPath, {
+          nextStep: options.next,
+          why: 'Confirmed during sync.',
+          context: ['Run `pmem recall` for full context.']
+        });
       }
 
       const today = new Date().toISOString().split('T')[0];

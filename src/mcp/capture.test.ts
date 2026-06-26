@@ -250,7 +250,7 @@ source_files: [src/index.ts]
 
       const nextContent = fs.readFileSync('.pmem/next.md', 'utf8');
       assert.ok(nextContent.includes('<!-- pmem:next:start -->'));
-      assert.ok(nextContent.includes('- Recommended next step: Write test assertions'));
+      assert.ok(nextContent.includes('## Recommended Next Step\nWrite test assertions'));
       assert.ok(nextContent.includes('<!-- pmem:next:end -->'));
 
       const traceContent = fs.readFileSync(result.tracePath, 'utf8');

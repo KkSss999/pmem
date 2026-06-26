@@ -101,7 +101,7 @@ function newCommand(type, title) {
         `created: "${created}"`,
         'source_files: []',
         'depends_on: []',
-        'related_to: []',
+        'related: []',
         '---',
         `# ${trimmedTitle}`,
         '',

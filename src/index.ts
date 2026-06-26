@@ -25,6 +25,8 @@ import { milestoneCommand } from './commands/milestone';
 import { mcpCommand } from './commands/mcp';
 import { contextCommand } from './commands/context';
 import { captureCommand } from './commands/capture';
+import { moduleInferCommand } from './commands/module';
+import { decisionInferCommand } from './commands/decision';
 
 
 const program = new Command();
@@ -102,8 +104,13 @@ program
   .option('-b, --budget <tokens>', 'Token budget for recall', '2000')
   .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
   .option('--since <duration>', 'Only show cards updated within duration (e.g. 7d, 24h, 1w)')
+  .option('--recent <count>', 'Number of recent traces to read', '5')
+  .option('--no-traces', 'Do not load recent traces')
   .action((options) => {
-    recallCommand(parseInt(options.budget, 10), options.format, options.since);
+    recallCommand(parseInt(options.budget, 10), options.format, options.since, {
+      recent: options.recent ? parseInt(options.recent, 10) : undefined,
+      noTraces: options.traces === false
+    });
   });
 
 program
@@ -357,6 +364,32 @@ program
       process.exit(2);
     }
     await mcpCommand(options.write);
+  });
+
+const moduleCmd = program
+  .command('module')
+  .description('Manage project modules');
+
+moduleCmd
+  .command('infer')
+  .description('Auto-infer software modules from codebase structure and files')
+  .option('--write', 'Write inferred modules directly to .pmem/modules/', false)
+  .option('--dry-run', 'Preview inferred modules without writing', false)
+  .action((options) => {
+    moduleInferCommand({ write: options.write, dryRun: options.dryRun });
+  });
+
+const decisionCmd = program
+  .command('decision')
+  .description('Manage project decisions');
+
+decisionCmd
+  .command('infer')
+  .description('Auto-infer project decisions from traces')
+  .option('--write', 'Write inferred decisions directly to .pmem/decisions/', false)
+  .option('--from-traces', 'Infer decisions from traces', true)
+  .action((options) => {
+    decisionInferCommand({ write: options.write, fromTraces: options.fromTraces });
   });
 
 program.parse();

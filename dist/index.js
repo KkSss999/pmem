@@ -26,6 +26,8 @@ const milestone_1 = require("./commands/milestone");
 const mcp_1 = require("./commands/mcp");
 const context_1 = require("./commands/context");
 const capture_1 = require("./commands/capture");
+const module_1 = require("./commands/module");
+const decision_1 = require("./commands/decision");
 const program = new commander_1.Command();
 // Read version dynamically from package.json (single source of truth)
 const pkg = JSON.parse((0, fs_1.readFileSync)((0, path_1.resolve)(__dirname, '..', 'package.json'), 'utf-8'));
@@ -93,8 +95,13 @@ program
     .option('-b, --budget <tokens>', 'Token budget for recall', '2000')
     .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
     .option('--since <duration>', 'Only show cards updated within duration (e.g. 7d, 24h, 1w)')
+    .option('--recent <count>', 'Number of recent traces to read', '5')
+    .option('--no-traces', 'Do not load recent traces')
     .action((options) => {
-    (0, recall_1.recallCommand)(parseInt(options.budget, 10), options.format, options.since);
+    (0, recall_1.recallCommand)(parseInt(options.budget, 10), options.format, options.since, {
+        recent: options.recent ? parseInt(options.recent, 10) : undefined,
+        noTraces: options.traces === false
+    });
 });
 program
     .command('ask <query>')
@@ -323,6 +330,28 @@ program
         process.exit(2);
     }
     await (0, mcp_1.mcpCommand)(options.write);
+});
+const moduleCmd = program
+    .command('module')
+    .description('Manage project modules');
+moduleCmd
+    .command('infer')
+    .description('Auto-infer software modules from codebase structure and files')
+    .option('--write', 'Write inferred modules directly to .pmem/modules/', false)
+    .option('--dry-run', 'Preview inferred modules without writing', false)
+    .action((options) => {
+    (0, module_1.moduleInferCommand)({ write: options.write, dryRun: options.dryRun });
+});
+const decisionCmd = program
+    .command('decision')
+    .description('Manage project decisions');
+decisionCmd
+    .command('infer')
+    .description('Auto-infer project decisions from traces')
+    .option('--write', 'Write inferred decisions directly to .pmem/decisions/', false)
+    .option('--from-traces', 'Infer decisions from traces', true)
+    .action((options) => {
+    (0, decision_1.decisionInferCommand)({ write: options.write, fromTraces: options.fromTraces });
 });
 program.parse();
 //# sourceMappingURL=index.js.map

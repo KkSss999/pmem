@@ -254,7 +254,7 @@ source_files: [src/index.ts]
             node_assert_1.default.ok(fs.existsSync(result.tracePath));
             const nextContent = fs.readFileSync('.pmem/next.md', 'utf8');
             node_assert_1.default.ok(nextContent.includes('<!-- pmem:next:start -->'));
-            node_assert_1.default.ok(nextContent.includes('- Recommended next step: Write test assertions'));
+            node_assert_1.default.ok(nextContent.includes('## Recommended Next Step\nWrite test assertions'));
             node_assert_1.default.ok(nextContent.includes('<!-- pmem:next:end -->'));
             const traceContent = fs.readFileSync(result.tracePath, 'utf8');
             node_assert_1.default.ok(traceContent.includes('diff_hash:'));

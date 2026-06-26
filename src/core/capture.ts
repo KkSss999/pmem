@@ -17,6 +17,8 @@ import {
 } from './db';
 import { statusQuery } from './query/status';
 import type { PmemSessionData } from '../types';
+import { buildTraceSummary } from './traceSummary';
+import { writeManagedNext } from './next';
 
 export interface CaptureOptions {
   auto?: boolean;
@@ -153,34 +155,34 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     }
   }
 
-  // 4. Resolve summary
-  let summary = options.summary;
-  if (!summary) {
-    // Try to get latest task from session.json
-    const sessionPath = path.join(pmemPath, 'session.json');
-    if (fileExists(sessionPath)) {
-      try {
-        const sessionContent = readFile(sessionPath);
-        if (sessionContent) {
-          const sessionData: PmemSessionData = JSON.parse(sessionContent);
-          if (sessionData.latest_task) {
-            summary = `Capture: ${sessionData.latest_task}`;
-          }
+  // 4. Resolve latest task
+  let latestTask: string | undefined;
+  const sessionPath = path.join(pmemPath, 'session.json');
+  if (fileExists(sessionPath)) {
+    try {
+      const sessionContent = readFile(sessionPath);
+      if (sessionContent) {
+        const sessionData: PmemSessionData = JSON.parse(sessionContent);
+        if (sessionData.latest_task) {
+          latestTask = sessionData.latest_task;
         }
-      } catch {
-        // Fallback if parsing fails
       }
+    } catch {
+      // Fallback if parsing fails
     }
   }
 
-  if (!summary) {
-    // Fallback: list changed files
-    const filePaths = changedFiles.map(f => f.path);
-    summary = `Automated capture: changed ${filePaths.join(', ')}`;
-  }
+  // 5. Build trace summary
+  const traceSummary = buildTraceSummary({
+    cwd,
+    pmemPath,
+    changedFiles,
+    userSummary: options.summary,
+    next: options.next,
+    latestTask
+  });
 
-  // 5. Resolve next
-  const next = options.next || 'Continue development.';
+  const next = traceSummary.next[0] || 'Continue development.';
 
   // 6. Create trace card
   const today = new Date().toISOString().split('T')[0];
@@ -199,26 +201,50 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     }
 
     const cardId = `trace.${today}-${traceNum}`;
+    const listItems = (arr: string[]) => arr.length > 0 ? arr.map(x => `- ${x}`).join('\n') : '- (none)';
+
     const traceContent = `---
 id: ${cardId}
 type: trace
 created: ${new Date().toISOString()}
-diff_hash: ${diffHash}
+updated: ${new Date().toISOString()}
+title: "${traceSummary.title.replace(/"/g, '\\"')}"
+summary: "${traceSummary.summary.replace(/"/g, '\\"')}"
+change_kind: "implementation"
+confidence: "${traceSummary.confidence}"
+source: "${options.summary ? 'capture_manual' : 'capture_auto'}"
+diff_hash: "${diffHash}"
+source_files:
+${changedFiles.map(f => `  - ${f.path}`).join('\n')}
+related:
+${traceSummary.affectedModules.map(m => `  - ${m}`).join('\n')}
 ---
 
-# Capture: ${summary}
+# Capture: ${traceSummary.title}
 
-## What changed
-
-${summary}
+## Summary
+${traceSummary.summary}
 
 ## Changed files
+${traceSummary.changedFiles.map(f => `- ${f.path} [${f.status}]${f.additions !== undefined ? ` (+${f.additions} -${f.deletions})` : ''}`).join('\n')}
 
-${changedFiles.map(f => `- ${f.path}`).join('\n')}
+## What changed
+${listItems(traceSummary.whatChanged)}
+
+## Why
+${listItems(traceSummary.why)}
+
+## Architecture notes
+${listItems(traceSummary.architectureNotes)}
+
+## Decisions
+${listItems(traceSummary.decisions)}
+
+## Affected modules
+${listItems(traceSummary.affectedModules)}
 
 ## Next
-
-- ${next}
+${listItems(traceSummary.next)}
 `;
 
     atomicWrite(traceFile, traceContent);
@@ -230,31 +256,14 @@ ${changedFiles.map(f => `- ${f.path}`).join('\n')}
   }
 
   // 7. Update .pmem/next.md in managed block
-  const nextPath = path.join(pmemPath, 'next.md');
-  const managedStart = '<!-- pmem:next:start -->';
-  const managedEnd = '<!-- pmem:next:end -->';
-  const managedContent = `${managedStart}\n- Recommended next step: ${next}\n${managedEnd}`;
-
   try {
-    if (fileExists(nextPath)) {
-      const currentNext = readFile(nextPath) || '';
-      const startIndex = currentNext.indexOf(managedStart);
-      const endIndex = currentNext.indexOf(managedEnd);
-
-      if (startIndex >= 0 && endIndex >= 0 && endIndex > startIndex) {
-        const updatedNext = currentNext.substring(0, startIndex) +
-          managedContent +
-          currentNext.substring(endIndex + managedEnd.length);
-        writeFile(nextPath, updatedNext);
-      } else {
-        // Managed block not found, append it
-        const spacer = currentNext.endsWith('\n') ? '' : '\n';
-        writeFile(nextPath, `${currentNext}${spacer}\n${managedContent}\n`);
-      }
-    } else {
-      // Create new file
-      writeFile(nextPath, `# Next Steps\n\n${managedContent}\n`);
-    }
+    const traceRelPath = path.relative(cwd, traceFile);
+    const contextList = [traceRelPath, ...traceSummary.affectedModules];
+    writeManagedNext(pmemPath, {
+      nextStep: next,
+      why: traceSummary.why[0] || 'Capture of latest changes.',
+      context: contextList
+    });
   } catch (err: any) {
     return {
       success: false,
@@ -329,7 +338,7 @@ ${changedFiles.map(f => `- ${f.path}`).join('\n')}
       // Log update to SQLite
       const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
       const traceCardId = `trace.${today}-${todayNum}`;
-      insertUpdateLog(db, 'confirm_update', summary, activeSession?.id, [traceCardId], true);
+      insertUpdateLog(db, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
 
       // Commit transaction
       db.prepare('COMMIT').run();
@@ -386,6 +395,15 @@ ${changedFiles.map(f => `- ${f.path}`).join('\n')}
       message: `Failed rebuild: ${err.message}`,
       tracePath: traceFile
     };
+  }
+
+  // Update state.md
+  try {
+    const { updateStateRecentChanges, updateStateModules } = require('./state');
+    updateStateRecentChanges(pmemPath, { title: traceSummary.title, summary: traceSummary.summary });
+    updateStateModules(pmemPath);
+  } catch (err: any) {
+    // Ignore state update errors
   }
 
   // 10. Run lightweight verify

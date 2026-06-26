@@ -34,6 +34,7 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
     ).all() as CardRow[];
 
     for (const card of cards) {
+      if (card.type === 'trace') continue;
       const sourceFiles = db.prepare(
         "SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'"
       ).all(card.id) as Array<{ path: string }>;

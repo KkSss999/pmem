@@ -202,7 +202,7 @@ function rebuildCommand(options = {}) {
                 status: fm.status ?? null,
                 priority: fm.priority ?? null,
                 file_path: relPath,
-                summary: null,
+                summary: extractCardSummary(fm, parsed.bodyText),
                 schema_version: fm.schema_version ?? null,
                 card_version: fm.version ?? 1,
                 created_at: null,
@@ -522,5 +522,45 @@ function collectMdFiles(dir, results) {
             results.add(fullPath);
         }
     }
+}
+function extractCardSummary(fm, bodyText) {
+    if (fm.summary)
+        return String(fm.summary);
+    const lines = bodyText.split('\n');
+    let inSection = false;
+    const summaryLines = [];
+    for (const line of lines) {
+        if (line.startsWith('## ')) {
+            const currentSection = line.substring(3).trim().toLowerCase();
+            if (currentSection === 'summary' || currentSection === 'purpose') {
+                inSection = true;
+            }
+            else {
+                inSection = false;
+            }
+        }
+        else if (inSection) {
+            summaryLines.push(line);
+        }
+    }
+    const extracted = summaryLines.join('\n').trim();
+    if (extracted) {
+        const clean = extracted.split('\n')
+            .map(x => x.trim().replace(/^[-*]\s*/, ''))
+            .filter(Boolean)[0];
+        if (clean)
+            return clean;
+    }
+    const bodyParagraphs = bodyText.split('\n\n')
+        .map(p => p.trim())
+        .filter(p => p && !p.startsWith('#') && !p.startsWith('<!--'));
+    if (bodyParagraphs.length > 0) {
+        const firstP = bodyParagraphs[0].replace(/[\r\n]+/g, ' ').trim();
+        if (firstP.length > 100) {
+            return firstP.slice(0, 97) + '...';
+        }
+        return firstP;
+    }
+    return null;
 }
 //# sourceMappingURL=rebuild.js.map
