@@ -16,7 +16,7 @@ depends_on: []
 related_to:
   - decision.v0_7_0_zero_migration_compatibility_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
-last_verified: "2026-06-04T22:03:36.790Z"
+last_verified: "2026-06-26T11:35:51.957Z"
 ---
 # Manifest Runtime
 
