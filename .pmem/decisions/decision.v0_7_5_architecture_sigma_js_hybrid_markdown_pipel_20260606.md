@@ -15,6 +15,7 @@ related_to:
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_scope_read_only_single_project_localhost_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
+last_verified: "2026-06-26T11:35:51.954Z"
 ---
 # v0.7.5 Architecture: Sigma.js + Hybrid Markdown Pipeline
 

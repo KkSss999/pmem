@@ -1,10 +1,12 @@
 # Next Steps
 
+<!-- pmem:next:start -->
 ## Recommended Next Step
-Commit changes and release v0.7.4
+Complete publishing and testing validation
 
 ## Why
 Confirmed during update.
 
 ## Needed Context
-Run `pmem recall` for full context.
+- Run `pmem recall` for full context.
+<!-- pmem:next:end -->
