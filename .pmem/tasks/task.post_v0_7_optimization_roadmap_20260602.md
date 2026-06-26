@@ -21,7 +21,7 @@ related_to:
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
-last_verified: "2026-06-26T11:35:51.959Z"
+last_verified: "2026-06-26T11:53:06.856Z"
 ---
 # Post v0.7 Optimization Roadmap
 
