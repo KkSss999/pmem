@@ -2,6 +2,21 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.4 — Agent UX Release (2026-06-26)
+
+### Added
+
+- **`pmem context` Command & `pmem_context` MCP Tool**: Consolidate recall, task-aware ask, and status queries into a single budget-aware context. Save active task to `.pmem/session.json`.
+- **`pmem capture --auto` Command & `pmem_capture` MCP Tool**: Automatically scan changed files, mark affected cards as dirty, write date-based traces, resolve dirty flags in database, and perform incremental rebuild.
+- **Controlled Write Mode (`--write=append-only`)**: Controlled MCP write boundary allowing trace cards generation and `next.md` managed block updates while strictly blocking direct edits to core cards.
+- **Agent Rules Installer**: `pmem install --agent-rules` generates unified, compact guidelines (under 30 lines) for AGENTS.md, CLAUDE.md, GEMINI.md, Codex instructions, Cursor rules, Cline rules, and optionally Aider/Windsurf conventions.
+- **Duplicate Prevention**: Exclude `.pmem/` updates from git diff hash calculations to prevent duplicate/empty captures.
+- **Safety boundaries**: Prevent path/directory traversal and control characters in capture inputs.
+
+### Fixed
+
+- Support running programmatic verify check without exiting Node process via `noExit` option.
+
 ## v0.7.3 — `rebuild --full` Edge Cleanup (closes #6)
 
 ### Fixed

@@ -93,7 +93,7 @@ auto_update:
     require_summary: true
     require_related_node: true
 card_policy:
-  id_pattern: ^({types})\.[a-z0-9._-]+$
+  id_pattern: ^({types}|milestone)\.[a-z0-9._-]+$
   max_tokens:
     module: 1200
     feature: 1000
@@ -132,6 +132,7 @@ schema:
     - assumption
     - resource
     - integration
+    - milestone
   type_dirs:
     module: modules
     feature: features
@@ -139,6 +140,7 @@ schema:
     task: tasks
     trace: traces
     risk: risks
+    milestone: traces
   foundational_types:
     - module
   evidence_types:

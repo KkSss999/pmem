@@ -85,8 +85,9 @@ if [ "$TRACES_COUNT" -ne 1 ]; then
   exit 1
 fi
 
-# Run verify --fix to auto-fix the stale warning (testing Task 3 in E2E)
-"${PMEM[@]}" verify --fix >/dev/null
+# Run verify --fix-stale to auto-fix the stale warning (testing Task 3 in E2E)
+"${PMEM[@]}" verify --fix-stale >/dev/null
+
 
 # 6. Run verify to ensure score is 100/100
 VERIFY_OUTPUT="$("${PMEM[@]}" verify)"

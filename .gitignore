@@ -7,3 +7,6 @@ v064-*/
 .pmem/pmem.db-*
 .pmem/.lock
 .pmem/indexes/
+node_modules/
+*.zip
+.DS_Store

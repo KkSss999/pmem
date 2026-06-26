@@ -23,6 +23,9 @@ import { newCommand } from './commands/new';
 import { syncCommand } from './commands/sync';
 import { milestoneCommand } from './commands/milestone';
 import { mcpCommand } from './commands/mcp';
+import { contextCommand } from './commands/context';
+import { captureCommand } from './commands/capture';
+
 
 const program = new Command();
 
@@ -42,6 +45,34 @@ program
   .action((options) => {
     statusCommand({ since: options.since, format: options.format });
   });
+
+program
+  .command('context <task>')
+  .description('Retrieve consolidated context for a given task')
+  .option('-b, --budget <tokens>', 'Token budget for context retrieval', '4000')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((task: string, options) => {
+    contextCommand(task, { budget: options.budget ? parseInt(options.budget, 10) : undefined, format: options.format });
+  });
+
+program
+  .command('capture')
+  .description('Capture memory updates after task completion')
+  .option('--auto', 'Auto-capture: detect changes and create a summary trace automatically')
+  .option('-s, --summary <text>', 'Summary of changes')
+  .option('-n, --next <text>', 'Recommended next step')
+  .option('--full', 'Force a full rebuild of the database index after capture', false)
+  .option('--force', 'Force capture write even if no files changed or diff hash is duplicate', false)
+  .action((options) => {
+    captureCommand({
+      auto: options.auto,
+      summary: options.summary,
+      next: options.next,
+      full: options.full,
+      force: options.force
+    });
+  });
+
 
 program
   .command('init [project-name]')
@@ -272,21 +303,32 @@ integration
 
 program
   .command('install')
-  .description('Install pmem skills to agent global directories')
+  .description('Install pmem skills or agent guidelines/rules')
   .option('--skills', 'Install skill files')
+  .option('--agent-rules', 'Install agent guidelines/rules files (AGENTS.md, etc.)')
   .option('--claude', 'Target Claude Code')
   .option('--codex', 'Target Codex')
   .option('--gemini', 'Target Gemini CLI')
+  .option('--cursor', 'Target Cursor (.cursor/rules/pmem.mdc)')
+  .option('--cline', 'Target Cline (.clinerules/pmem.md)')
+  .option('--aider', 'Target Aider (CONVENTIONS.md)')
+  .option('--windsurf', 'Target Windsurf (.windsurfrules)')
   .option('--all', 'Target all detected agents')
   .action((options) => {
     installCommand({
       skills: options.skills,
+      agentRules: options.agentRules,
       claude: options.claude,
       codex: options.codex,
       gemini: options.gemini,
+      cursor: options.cursor,
+      cline: options.cline,
+      aider: options.aider,
+      windsurf: options.windsurf,
       all: options.all,
     });
   });
+
 
 program
   .command('new <type> <title>')
@@ -307,9 +349,14 @@ program
 
 program
   .command('mcp')
-  .description('Start a read-only stdio MCP server for agent tool integration')
-  .action(async () => {
-    await mcpCommand();
+  .description('Start stdio MCP server for agent tool integration')
+  .option('--write <mode>', 'Write mode (readonly, append-only)', 'readonly')
+  .action(async (options) => {
+    if (options.write !== 'readonly' && options.write !== 'append-only') {
+      console.error('Error: --write must be either "readonly" or "append-only"');
+      process.exit(2);
+    }
+    await mcpCommand(options.write);
   });
 
 program.parse();

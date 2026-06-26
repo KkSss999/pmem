@@ -10,7 +10,7 @@ import { startMcpServer } from '../mcp/server';
  * MCP protocol transport channel. Any non-JSON output will cause protocol
  * errors. Use stderr for diagnostics if absolutely necessary.
  */
-export async function mcpCommand(): Promise<void> {
+export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readonly'): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
 
@@ -28,5 +28,6 @@ export async function mcpCommand(): Promise<void> {
   // Security: validate path scope before starting
   validatePathScope(pmemPath);
 
-  await startMcpServer(pmemPath);
+  await startMcpServer(pmemPath, writeMode);
 }
+

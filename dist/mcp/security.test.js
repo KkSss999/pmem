@@ -265,27 +265,190 @@ status: active
     });
     // ── Test 5: Source file content not leaked ──
     (0, node_test_1.describe)('source file safety', () => {
-        (0, node_test_1.it)('relatedQuery results do not contain source file content', () => {
-            const pmemDir = path.join(process.cwd(), '.pmem');
+        let safeDir;
+        (0, node_test_1.before)(() => {
+            safeDir = path.join(TEMP_ROOT, 'sourcefile-test');
+            const pmemDir = path.join(safeDir, '.pmem');
+            fs.mkdirSync(pmemDir, { recursive: true });
+            fs.mkdirSync(path.join(pmemDir, 'modules'), { recursive: true });
+            // Create a real source file with code-like content
+            const srcDir = path.join(safeDir, 'src');
+            fs.mkdirSync(srcDir, { recursive: true });
+            fs.writeFileSync(path.join(srcDir, 'index.ts'), `#!/usr/bin/env node
+import { something } from './lib';
+export function main() { console.log('hello'); }
+`);
+            fs.writeFileSync(path.join(pmemDir, 'manifest.yml'), `pmem:
+  schema_version: '0.3'
+  protocol_version: '0.3'
+  created_by: 0.3.0
+  last_migrated_by: null
+project:
+  name: sourcefile-test
+  language: en
+  status: active
+  domain: software
+memory_status:
+  completeness: partial
+  initialized_mode: minimal
+  dirty: false
+  dirty_since: null
+  dirty_reason: null
+source_of_truth:
+  type: markdown_cards
+  path: .pmem
+  card_globs:
+    - .pmem/modules/**/*.md
+runtime:
+  mode: sqlite
+  db_path: .pmem/pmem.db
+  markdown_source: true
+indexes:
+  primary: sqlite
+  legacy_json:
+    enabled: false
+    retained: true
+    path: .pmem/indexes
+rebuild:
+  strategy: content_hash
+  hash:
+    file_hash: true
+    frontmatter_hash: true
+    body_hash: true
+concurrency:
+  mode: file-basic
+  atomic_write: true
+  lock:
+    enabled: true
+    path: .pmem/.lock
+    timeout: 3s
+    stale_after: 60s
+    on_timeout: abort
+  optimistic_lock:
+    enabled: false
+    note: ''
+card_policy:
+  id_pattern: ^(module)\\\\.[a-z0-9._-]+$
+  max_tokens:
+    module: 1000
+  max_sections:
+    module: 8
+  warn_when_related_count_gt: 12
+cli:
+  default_format: compact
+  supported_formats:
+    - compact
+    - json
+    - paths
+    - pack
+  default_budget: 1600
+embedding:
+  enabled: false
+  provider: none
+  model: null
+  dimension: null
+  store: sqlite
+  index: none
+serve:
+  enabled: false
+  mode: none
+  experimental:
+    mcp: false
+    rest: false
+auto_update:
+  enabled: true
+  on_code_change: mark_dirty
+  on_doc_change: mark_dirty
+  on_memory_change: rebuild_indexes
+  on_session_end: prompt
+  on_git_commit: suggest_trace
+  min_trace_interval: 30m
+  max_auto_traces_per_day: 5
+  ignore_patterns: []
+  trace_policy:
+    require_meaningful_change: true
+    require_summary: true
+    require_related_node: true
+distill:
+  enabled: true
+  cadence: weekly
+  max_undistilled_traces: 20
+  require_confirmation: true
+  suggest_card_splits: true
+freshness:
+  default_ttl: 14d
+  stale_on_related_code_change: true
+  require_last_verified: true
+integrations:
+  active: []
+migrations:
+  applied: []
+schema:
+  card_types: [module, feature, decision, task, trace, risk]
+  type_dirs:
+    module: modules
+  foundational_types: [module]
+  evidence_types: [decision, trace]
+  default_type: trace
+`);
+            fs.writeFileSync(path.join(pmemDir, 'index.md'), `# Project Memory Index
+## Project
+Name: sourcefile-test
+Stage: Alpha
+Status: active
+## Current Focus
+Testing source file safety
+`);
+            fs.writeFileSync(path.join(pmemDir, 'state.md'), `# State
+## Overall Status
+active
+`);
+            fs.writeFileSync(path.join(pmemDir, 'next.md'), `# Next Steps
+## Recommended Next Step
+Run tests
+`);
+            // Create a card that references the real source file
+            fs.writeFileSync(path.join(pmemDir, 'modules', 'module.core.md'), `---
+id: module.core
+type: module
+status: active
+source_files: [src/index.ts]
+---
+# Core Module
+
+Core entry point.
+`);
+            // Build the database
+            const { execSync } = require('child_process');
             try {
-                const result = (0, related_1.relatedQuery)(pmemDir, 'module.cli_runtime_20260602');
-                const json = JSON.stringify(result);
-                // Should not contain source code content
-                node_assert_1.default.ok(!json.includes('import {'), 'Should not contain source code imports');
-                node_assert_1.default.ok(!json.includes('export function'), 'Should not contain source code exports');
+                execSync(`node "${PMEM_BIN}" rebuild --full`, { cwd: safeDir, stdio: 'ignore', timeout: 10_000 });
             }
-            catch (e) {
-                // Card may not exist — skip
-                if (!e.message.includes('not found'))
-                    throw e;
+            catch { /* ignore */ }
+        });
+        (0, node_test_1.after)(() => {
+            try {
+                fs.rmSync(path.join(TEMP_ROOT, 'sourcefile-test'), { recursive: true, force: true });
             }
+            catch { }
+        });
+        (0, node_test_1.it)('relatedQuery results do not contain source file content', () => {
+            const pmemDir = path.join(safeDir, '.pmem');
+            const result = (0, related_1.relatedQuery)(pmemDir, 'module.core');
+            const json = JSON.stringify(result);
+            // Should not contain source code content
+            node_assert_1.default.ok(!json.includes('import {'), 'Should not contain source code imports');
+            node_assert_1.default.ok(!json.includes('export function'), 'Should not contain source code exports');
+            node_assert_1.default.ok(!json.includes("console.log('hello')"), 'Should not contain source code strings');
         });
         (0, node_test_1.it)('askQuery results contain file paths, not file content', () => {
-            const pmemDir = path.join(process.cwd(), '.pmem');
-            const result = (0, ask_1.askQuery)(pmemDir, 'cli');
+            const pmemDir = path.join(safeDir, '.pmem');
+            const result = (0, ask_1.askQuery)(pmemDir, 'core');
             const json = JSON.stringify(result);
-            // Should contain file paths but no source code
+            // Should not leak source code content
             node_assert_1.default.ok(!json.includes('#!/usr/bin/env node'), 'Should not contain source code');
+            node_assert_1.default.ok(!json.includes("console.log"), 'Should not contain source code strings');
+            // Should reference the card's own file path (not source file content)
+            node_assert_1.default.ok(json.includes('module.core.md'), 'Should contain card file path');
         });
     });
     // ── Test 6: Output budget enforcement ──

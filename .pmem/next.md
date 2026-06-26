@@ -1,7 +1,7 @@
 # Next Steps
 
 ## Recommended Next Step
-Merge to main, publish to npm
+Commit changes and release v0.7.4
 
 ## Why
 Confirmed during update.

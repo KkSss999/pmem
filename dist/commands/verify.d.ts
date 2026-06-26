@@ -3,5 +3,6 @@ export declare function verifyCommand(options: {
     fixLocks?: boolean;
     fixStale?: boolean;
     relaxed?: boolean;
+    noExit?: boolean;
 }): void;
 //# sourceMappingURL=verify.d.ts.map
