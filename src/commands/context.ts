@@ -39,26 +39,42 @@ export function contextCommand(task: string, options: { budget?: number; format?
     // Beautiful human/agent readable Markdown output
     console.log(`# PMEM_CONTEXT_READY: ${task}`);
     console.log('');
-    console.log(`- **Project Stage**: ${result.project_stage || 'Not recorded'}`);
-    console.log(`- **Current Focus**: ${result.current_focus}`);
+
+    console.log('## Project Snapshot');
+    console.log(`- **Project**: ${result.project_name || 'Unknown'}`);
+    console.log(`- **Stage**: ${result.project_stage || 'Not recorded'}`);
+    console.log(`- **Focus**: ${result.current_focus}`);
     console.log('');
 
-    console.log('## Suggested Reads');
-    for (const item of result.must_read) {
-      console.log(`- [${path.basename(item.path)}](file://${path.resolve(item.path)}) — ${item.reason}`);
-    }
-    console.log('');
-
-    if (result.relevant_memory.length > 0) {
-      console.log('## Relevant Memory Cards');
-      for (const card of result.relevant_memory) {
-        console.log(`- **${card.id}** (${card.type}): [${card.title}](file://${path.resolve(card.file_path)})`);
-        if (card.summary) {
-          console.log(`  > ${card.summary}`);
-        }
+    console.log('## Current Architecture');
+    if (result.current_architecture && result.current_architecture.length > 0) {
+      for (const arch of result.current_architecture) {
+        console.log(`- ${arch}`);
       }
-      console.log('');
+    } else {
+      console.log('- (none)');
     }
+    console.log('');
+
+    console.log('## Recent Session Memory');
+    if (result.recent_session_memory && result.recent_session_memory.length > 0) {
+      for (const mem of result.recent_session_memory) {
+        console.log(`- ${mem}`);
+      }
+    } else {
+      console.log(`- ${result.current_focus}`);
+    }
+    console.log('');
+
+    console.log('## Relevant Decisions');
+    if (result.relevant_decisions && result.relevant_decisions.length > 0) {
+      for (const dec of result.relevant_decisions) {
+        console.log(`- ${dec}`);
+      }
+    } else {
+      console.log('- (none)');
+    }
+    console.log('');
 
     if (result.changed_files.length > 0) {
       console.log('## Changed Files');
@@ -68,13 +84,11 @@ export function contextCommand(task: string, options: { budget?: number; format?
       console.log('');
     }
 
-    if (result.warnings.length > 0) {
-      console.log('## Warnings / Status');
-      for (const warning of result.warnings) {
-        console.log(`- ${warning}`);
-      }
-      console.log('');
+    console.log('## Must Read');
+    for (const item of result.must_read) {
+      console.log(`- [${path.basename(item.path)}](file://${path.resolve(item.path)}) — ${item.reason}`);
     }
+    console.log('');
 
     console.log('## Recommended Next Action');
     console.log(result.recommended_next_action);

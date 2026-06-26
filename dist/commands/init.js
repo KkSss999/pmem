@@ -147,6 +147,7 @@ Just initialized.
 `;
 const NEXT_MD = `# Next Steps
 
+<!-- pmem:next:start -->
 ## Recommended Next Step
 Define your first module or decision card.
 
@@ -155,6 +156,7 @@ Building memory cards early establishes the project knowledge graph.
 
 ## Needed Context
 Run \`pmem recall\` to see the current project state.
+<!-- pmem:next:end -->
 `;
 const RECALL_SKILL = `# Skill: Recall Project Memory
 
@@ -398,6 +400,7 @@ ${scan.candidates.map(c => `| ${c.suggestedId.replace('module.', '')} | candidat
 `;
     const nextContent = `# Next Steps
 
+<!-- pmem:next:start -->
 ## Recommended Next Step
 ${info.nextStep}
 
@@ -406,6 +409,7 @@ Identified during guided initialization.
 
 ## Needed Context
 Run \`pmem recall\` to see the current project state.
+<!-- pmem:next:end -->
 `;
     const candidatesContent = `# Generated Module Candidates
 

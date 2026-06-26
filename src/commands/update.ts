@@ -9,6 +9,7 @@ import { parseGitStatusPorcelain } from '../core/git';
 import { checkStaleMemory } from '../core/consistency';
 import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
 
+import { writeManagedNext } from '../core/next';
 const PMEM_DIR = '.pmem';
 
 export function updateCommand(options: {
@@ -141,7 +142,7 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
 
       try {
         const db = openDatabase(pmemPath);
-        const output = execSync('git status --porcelain', { encoding: 'utf8', cwd });
+        const output = execSync('git status --porcelain -u', { encoding: 'utf8', cwd });
         const changedFiles = parseGitStatusPorcelain(output).map(change => change.path);
 
         const activeSession = getActiveSession(db);
@@ -309,18 +310,11 @@ function confirmUpdate(pmemPath: string, summary?: string, next?: string, refres
   try {
     // Update next.md
     if (next) {
-      const nextPath = path.join(pmemPath, 'next.md');
-      atomicWrite(nextPath, `# Next Steps
-
-## Recommended Next Step
-${next}
-
-## Why
-Confirmed during update.
-
-## Needed Context
-Run \`pmem recall\` for full context.
-`);
+      writeManagedNext(pmemPath, {
+        nextStep: next,
+        why: 'Confirmed during update.',
+        context: ['Run `pmem recall` for full context.']
+      });
     }
 
     let sqliteLogged = false;

@@ -43,6 +43,7 @@ const rebuild_1 = require("./rebuild");
 const db_1 = require("../core/db");
 const git_1 = require("../core/git");
 const consistency_1 = require("../core/consistency");
+const next_1 = require("../core/next");
 const PMEM_DIR = '.pmem';
 function updateCommand(options) {
     const cwd = process.cwd();
@@ -150,7 +151,7 @@ function markDirtyCommand(reason, options = {}) {
             }
             try {
                 const db = (0, db_1.openDatabase)(pmemPath);
-                const output = (0, child_process_1.execSync)('git status --porcelain', { encoding: 'utf8', cwd });
+                const output = (0, child_process_1.execSync)('git status --porcelain -u', { encoding: 'utf8', cwd });
                 const changedFiles = (0, git_1.parseGitStatusPorcelain)(output).map(change => change.path);
                 const activeSession = (0, db_1.getActiveSession)(db);
                 const dirtyCards = [];
@@ -303,18 +304,11 @@ function confirmUpdate(pmemPath, summary, next, refreshVerified) {
     try {
         // Update next.md
         if (next) {
-            const nextPath = path.join(pmemPath, 'next.md');
-            (0, fs_1.atomicWrite)(nextPath, `# Next Steps
-
-## Recommended Next Step
-${next}
-
-## Why
-Confirmed during update.
-
-## Needed Context
-Run \`pmem recall\` for full context.
-`);
+            (0, next_1.writeManagedNext)(pmemPath, {
+                nextStep: next,
+                why: 'Confirmed during update.',
+                context: ['Run `pmem recall` for full context.']
+            });
         }
         let sqliteLogged = false;
         // Add trace if summary provided

@@ -33,8 +33,45 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
   // 1. Recall
   try {
     const recall = recallQuery(pmemPath, { budget });
+    result.project_name = recall.project;
     result.project_stage = recall.stage;
     result.current_focus = recall.focus;
+
+    if (recall.architecture) {
+      result.current_architecture = recall.architecture.map(m => {
+        const sum = m.summary ? ` — ${m.summary}` : '';
+        return `${m.id}${sum}`;
+      });
+    }
+
+    if (recall.recent_traces) {
+      result.recent_session_memory = recall.recent_traces.map(t => t.summary);
+    }
+
+    const decsSet = new Set<string>();
+    const lowercaseDecs = new Set<string>();
+    const addDecision = (val: string) => {
+      const trimmed = val.trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      if (!lowercaseDecs.has(lower)) {
+        lowercaseDecs.add(lower);
+        decsSet.add(trimmed);
+      }
+    };
+    if (recall.decisions) {
+      for (const d of recall.decisions) {
+        addDecision(`${d.title}${d.summary ? ` — ${d.summary}` : ''}`);
+      }
+    }
+    if (recall.recent_traces) {
+      for (const t of recall.recent_traces) {
+        for (const d of t.decisions) {
+          addDecision(d);
+        }
+      }
+    }
+    result.relevant_decisions = Array.from(decsSet);
   } catch (err: any) {
     result.warnings.push(`Recall query failed: ${err.message}`);
   }

@@ -79,7 +79,7 @@ export function newCommand(type: string, title: string): void {
     `created: "${created}"`,
     'source_files: []',
     'depends_on: []',
-    'related_to: []',
+    'related: []',
     '---',
     `# ${trimmedTitle}`,
     '',

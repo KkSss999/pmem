@@ -111,22 +111,142 @@ function formatRecallCompact(r: Record<string, unknown>): string {
   const lines: string[] = [];
   lines.push(`PROJECT: ${r.project || 'Unknown'}`);
   if (r.stage) lines.push(`STAGE: ${r.stage}`);
-  if (r.focus) {
-    lines.push('');
-    lines.push(`FOCUS: ${r.focus}`);
+  if (r.focus) lines.push(`FOCUS: ${r.focus}`);
+
+  // 1. CURRENT CONTEXT
+  lines.push('');
+  lines.push('CURRENT CONTEXT:');
+  const contextSummary = r.context_summary as string[] | undefined;
+  if (Array.isArray(contextSummary) && contextSummary.length > 0) {
+    for (const s of contextSummary) {
+      const subLines = s.split('\n').map(x => x.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+      for (const sl of subLines) {
+        lines.push(`- ${sl}`);
+      }
+    }
+  } else {
+    lines.push(`- ${r.focus || 'No current context recorded.'}`);
   }
-  if (r.next) {
-    lines.push('');
-    lines.push('NEXT:');
-    lines.push(`${r.next}`);
+
+  // 2. RECENT CHANGES
+  lines.push('');
+  lines.push('RECENT CHANGES:');
+  const recentTraces = r.recent_traces as any[] | undefined;
+  if (Array.isArray(recentTraces) && recentTraces.length > 0) {
+    const changes: string[] = [];
+    const seen = new Set<string>();
+    for (const trace of recentTraces) {
+      // Prefer what_changed (snake_case DTO field) — thick trace symbols & file info
+      const thickItems: string[] = Array.isArray(trace.what_changed)
+        ? trace.what_changed
+        : Array.isArray(trace.whatChanged)
+          ? trace.whatChanged
+          : [];
+      if (thickItems.length > 0) {
+        for (const item of thickItems.slice(0, 5)) {
+          const clean = item.replace(/^[-*]\s*/, '').trim();
+          if (clean && !seen.has(clean)) {
+            seen.add(clean);
+            changes.push(clean);
+          }
+        }
+      } else if (trace.summary) {
+        // Fallback: use session-level summary when no thick content
+        const clean = trace.summary.replace(/^[-*]\s*/, '').trim();
+        if (clean && !seen.has(clean)) {
+          seen.add(clean);
+          changes.push(clean);
+        }
+      }
+    }
+    if (changes.length > 0) {
+      for (const item of changes.slice(0, 15)) {
+        lines.push(`- ${item}`);
+      }
+    } else {
+      lines.push('- No recent changes recorded.');
+    }
+  } else {
+    lines.push('- No recent changes recorded.');
   }
-  if (Array.isArray(r.state) && (r.state as string[]).length > 0) {
-    lines.push('');
-    lines.push('STATE:');
-    for (const s of r.state as string[]) {
-      lines.push(`  ${s}`);
+
+  // 3. ARCHITECTURE
+  lines.push('');
+  lines.push('ARCHITECTURE:');
+  const arch = r.architecture as any[] | undefined;
+  if (Array.isArray(arch) && arch.length > 0) {
+    for (const m of arch) {
+      const filesStr = Array.isArray(m.source_files) && m.source_files.length > 0
+        ? `: ${m.source_files.join(', ')}`
+        : '';
+      const summaryStr = m.summary ? ` — ${m.summary}` : '';
+      lines.push(`- ${m.id}${filesStr}${summaryStr}`);
+    }
+  } else {
+    lines.push('- (none)');
+  }
+
+  // 4. DECISIONS
+  lines.push('');
+  lines.push('DECISIONS:');
+  const decsList = new Set<string>();
+  const decs = r.decisions as any[] | undefined;
+  const addedLower = new Set<string>();
+  const addDecision = (val: string) => {
+    const trimmed = val.trim();
+    if (!trimmed) return;
+    const lower = trimmed.toLowerCase();
+    if (!addedLower.has(lower)) {
+      addedLower.add(lower);
+      decsList.add(trimmed);
+    }
+  };
+  if (Array.isArray(decs) && decs.length > 0) {
+    for (const d of decs) {
+      addDecision(`${d.title}${d.summary ? ` — ${d.summary}` : ''}`);
     }
   }
+  if (Array.isArray(recentTraces)) {
+    for (const trace of recentTraces) {
+      if (Array.isArray(trace.decisions)) {
+        for (const dec of trace.decisions) {
+          addDecision(dec);
+        }
+      }
+    }
+  }
+  if (decsList.size > 0) {
+    for (const d of Array.from(decsList)) {
+      lines.push(`- ${d}`);
+    }
+  } else {
+    lines.push('- (none)');
+  }
+
+  // 5. NEXT
+  lines.push('');
+  lines.push('NEXT:');
+  const nextSteps = new Set<string>();
+  if (r.next && r.next !== 'No next step recorded.') {
+    nextSteps.add(String(r.next).replace(/^[-*]\s*/, '').trim());
+  }
+  if (Array.isArray(recentTraces)) {
+    for (const trace of recentTraces) {
+      if (Array.isArray(trace.next)) {
+        for (const n of trace.next) {
+          nextSteps.add(n.replace(/^[-*]\s*/, '').trim());
+        }
+      }
+    }
+  }
+  if (nextSteps.size > 0) {
+    for (const n of Array.from(nextSteps)) {
+      lines.push(`- ${n}`);
+    }
+  } else {
+    lines.push('- Continue development.');
+  }
+
   if (Array.isArray(r.mustRead) && (r.mustRead as string[]).length > 0) {
     lines.push('');
     lines.push('READ_IF_NEEDED:');

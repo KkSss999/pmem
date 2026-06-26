@@ -176,7 +176,7 @@ function getChangedFiles(pmemPath, cwd, since) {
     try {
         const source = detectChangesFrom();
         if (source === 'git') {
-            const output = (0, child_process_1.execSync)('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
+            const output = (0, child_process_1.execSync)('git status --porcelain -u', { cwd, encoding: 'utf-8', timeout: 5000 });
             for (const change of (0, git_1.parseGitStatusPorcelain)(output)) {
                 if (skipDirs.some(d => change.path.startsWith(d + '/') || change.path === d))
                     continue;

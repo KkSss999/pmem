@@ -62,6 +62,8 @@ function checkStaleMemory(pmemPath) {
     try {
         const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all();
         for (const card of cards) {
+            if (card.type === 'trace')
+                continue;
             const sourceFiles = db.prepare("SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'").all(card.id);
             const t1 = card.updated_at ? new Date(card.updated_at).getTime() : 0;
             const t2 = card.last_verified_at ? new Date(card.last_verified_at).getTime() : 0;

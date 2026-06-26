@@ -243,7 +243,7 @@ export function getChangedFiles(cwd: string, since?: string): FileChange[] {
   try {
     const source = detectChangesFrom();
     if (source === 'git') {
-      const output = execSync('git status --porcelain', { cwd, encoding: 'utf-8', timeout: 5000 });
+      const output = execSync('git status --porcelain -u', { cwd, encoding: 'utf-8', timeout: 5000 });
       for (const change of parseGitStatusPorcelain(output)) {
         // Skip ignored directories
         if (skipDirs.some(d => change.path.startsWith(d + '/') || change.path === d)) continue;
