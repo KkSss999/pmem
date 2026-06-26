@@ -42,6 +42,8 @@ jobs:
       - run: npm run test:e2e:v07-research
       - run: npm run test:e2e:v07-sync-flow
       - run: npm run test:e2e:v074-agent-ux
+      - run: npm run test:e2e:v075-context-restoration
+      - run: npm run test:e2e:v075-next-dedup
 
   pack:
     name: Pack
