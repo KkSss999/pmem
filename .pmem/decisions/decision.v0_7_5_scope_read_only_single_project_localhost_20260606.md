@@ -1,22 +1,29 @@
 ---
 id: decision.v0_7_5_scope_read_only_single_project_localhost_20260606
 type: decision
-title: "v0.7.5 Scope: Read-Only, Single Project, Localhost"
-status: active
-tags: [v0.7.5, scope, read-only, localhost]
+title: "Deferred Web UI Scope: Read-Only, Single Project, Localhost"
+status: deferred
+tags: [scope, read-only, localhost, web-ui, deferred]
 created: "2026-06-06"
+updated: "2026-06-26T12:25:00.000Z"
 source_files:
   - .pmem/features/feature.v0_7_5_graph_visualization_20260606.md
 depends_on: []
 related_to:
+  - decision.project_rag_os_positioning_20260626
   - feature.v0_7_5_graph_visualization_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
+last_verified: "2026-06-26T12:19:26.213Z"
 ---
-# v0.7.5 Scope: Read-Only, Single Project, Localhost
+# Deferred Web UI Scope: Read-Only, Single Project, Localhost
+
+## Current Status
+
+This decision is deferred with the Web UI feature. It remains the preferred boundary if/when pmem implements a local graph/browser interface, but it no longer defines the v0.7.5 milestone.
 
 ## Decision
 
-The v0.7.5 visualization closeout has three explicit scope boundaries, each chosen to keep the milestone shippable:
+The deferred visualization scope has three explicit boundaries:
 
 1. **Read-only.** The web UI can browse, search, filter, and inspect cards. It cannot create, edit, or delete cards. All writes continue to flow through `pmem update --confirm` and other CLI commands, preserving the confirmation-first product principle.
 2. **Single project.** `pmem serve` serves the `.pmem/` directory found in its current working directory. There is no project switcher, no multi-project aggregation, no cross-project dashboard in v0.7.5.

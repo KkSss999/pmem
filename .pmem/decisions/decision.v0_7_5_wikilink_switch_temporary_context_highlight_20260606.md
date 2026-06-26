@@ -1,21 +1,28 @@
 ---
 id: decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
 type: decision
-title: "v0.7.5 Wikilink: Switch + Temporary Context Highlight"
-status: active
-tags: [v0.7.5, wikilink, interaction, graph]
+title: "Deferred Web UI Wikilink Interaction"
+status: deferred
+tags: [wikilink, interaction, graph, web-ui, deferred]
 created: "2026-06-06"
+updated: "2026-06-26T12:25:00.000Z"
 source_files: []
 depends_on: []
 related_to:
+  - decision.project_rag_os_positioning_20260626
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
+last_verified: "2026-06-26T12:25:00.000Z"
 ---
-# v0.7.5 Wikilink: Switch + Temporary Context Highlight
+# Deferred Web UI Wikilink Interaction
+
+## Current Status
+
+This interaction decision is deferred with the Web UI. It remains useful design material, but it is not part of the active v0.7.5 milestone.
 
 ## Decision
 
-When a user clicks a wikilink in a rendered card body, two things happen in this order:
+If the deferred graph UI is resumed, clicking a wikilink in a rendered card body should trigger two actions in this order:
 
 1. **Switch**: The side panel navigates to the target card (replaces current card content). The graph centers on the target node.
 2. **Highlight context**: The target's **in-edges and out-edges** are visually emphasized (color, weight, or glow). All other nodes are dimmed (low opacity). Edge labels/types remain visible for the highlighted subset.

@@ -1,26 +1,34 @@
 ---
 id: trace.v0_7_5_design_discussion_web_visualization_mcp_20260606
 type: trace
-title: "v0.7.5 Design Discussion: Web Visualization + MCP"
-status: draft
-tags: [v0.7.5, design, trace, visualization, mcp, pmem-rt]
+title: "Historical Design Discussion: Web Visualization + MCP"
+status: superseded
+tags: [design, trace, visualization, mcp, pmem-rt, superseded]
 created: "2026-06-06"
+updated: "2026-06-26T12:30:00.000Z"
 token_policy: relaxed
 source_files: []
 depends_on: []
 related_to:
+  - decision.project_rag_os_positioning_20260626
+  - task.rag_research_sprint_20260626
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_scope_read_only_single_project_localhost_20260606
   - decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
   - task.post_v0_7_optimization_roadmap_20260602
+last_verified: "2026-06-26T12:30:00.000Z"
 ---
-# v0.7.5 Design Discussion: Web Visualization + MCP
+# Historical Design Discussion: Web Visualization + MCP
+
+## Current Status
+
+This trace records the 2026-06-06 thinking, but its milestone conclusion has been superseded by the 2026-06-26 Project RAG OS repositioning. The current next step is `task.rag_research_sprint_20260626`, not Web UI P1.
 
 ## What Changed
 
-Captured the v0.7.5 design discussion on 2026-06-06 in which the project lead re-scoped the web visualization work from v0.8.0 to the v0.7.5 closeout target, and explicitly deferred MCP / `pmem-rt` to a post-v0.7.5 milestone.
+Captured the 2026-06-06 Web UI + MCP design discussion. Its original v0.7.5 Web UI conclusion is now historical: the 2026-06-26 Project RAG OS repositioning superseded it and moved the active next step to the v0.8 Hybrid Recall Engine research sprint.
 
 ## Context (entering the discussion)
 
@@ -84,12 +92,6 @@ Captured the v0.7.5 design discussion on 2026-06-06 in which the project lead re
 - Do not bundle MCP-related dependencies (`@modelcontextprotocol/sdk`, etc.) in v0.7.5's `package.json`.
 - Do not register MCP server entries in any agent's config as part of v0.7.5 release.
 
-## Next
+## Historical Next (superseded)
 
-Begin v0.7.5 P1 implementation:
-
-1. `pmem serve` subcommand in `src/commands/serve.ts`.
-2. Thin HTTP layer routing to a `GraphService` (initial version: just wraps `src/core/db.ts` reads).
-3. Minimum-viable Sigma.js frontend in `dist/web/`, served as static assets.
-4. E2E: `pmem serve` starts, `GET /api/cards/:id` returns structured JSON, browser renders graph + card panel.
-5. Run `pmem verify` and an integration test that the new card content passes through the `verify` flow.
+Superseded. Run the RAG research sprint and produce the v0.8 Hybrid Recall Engine architecture decision.

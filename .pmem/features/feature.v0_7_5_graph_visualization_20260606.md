@@ -1,31 +1,40 @@
 ---
 id: feature.v0_7_5_graph_visualization_20260606
 type: feature
-title: "v0.7.5 Graph Visualization (Web UI)"
-status: draft
-tags: [v0.7.5, visualization, web-ui, graph]
+title: "Deferred Graph Visualization (Web UI)"
+status: deferred
+tags: [visualization, web-ui, graph, deferred]
 created: "2026-06-06"
+updated: "2026-06-26T12:20:00.000Z"
 token_policy: relaxed
 source_files: []
 depends_on: []
 related_to:
+  - decision.project_rag_os_positioning_20260626
+  - task.post_v0_7_optimization_roadmap_20260602
   - decision.v0_7_5_scope_read_only_single_project_localhost_20260606
   - decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
-  - task.post_v0_7_optimization_roadmap_20260602
+last_verified: "2026-06-26T12:20:00.000Z"
 ---
-# v0.7.5 Graph Visualization (Web UI)
+# Deferred Graph Visualization (Web UI)
+
+## Current Status
+
+This card is preserved as a future human-inspection direction, but it is no longer the active v0.7.5 milestone boundary. After the 2026-06-26 repositioning, v0.7.5 is treated as the published Context Restoration milestone and v0.8 targets the Hybrid Recall Engine.
+
+The Web UI idea should be reconsidered after the recall/RAG architecture is clearer, because graph visualization is most useful when it can expose real retrieval evidence, freshness, graph expansion, and memory lifecycle state.
 
 ## Goal
 
-Make pmem's graph-shaped memory **browsable by humans in a browser**, complementing the agent-facing CLI/recall/ask read path. The "closeout" target of the v0.7.5 milestone is "visualization fully ready": a `pmem serve` command opens a local web UI that lets the user see all cards, navigate the relationship graph, and read full Markdown card bodies — without going through token budgets or `recall` summaries.
+Make pmem's graph-shaped memory **browsable by humans in a browser**, complementing the agent-facing CLI/recall/ask read path. The original 2026-06-06 proposal targeted a `pmem serve` command that opens a local web UI where the user can see all cards, navigate the relationship graph, and read full Markdown card bodies without going through token budgets or `recall` summaries.
 
 ## Why v0.7.5 (not v0.8.0)
 
-Originally placed in v0.8.0 by `task.post_v0_7_optimization_roadmap_20260602`. After design discussion on 2026-06-06, the project lead re-scoped visualization into the v0.7.x line because it is **additive** to the existing CLI contract — no schema break, no new command semantics for the existing `recall`/`ask`/`update` flows. It belongs with the v0.7 "agent-native polish" theme, not as a 0.8 paradigm shift. `pmem-rt`/MCP is the natural v0.8+ work; visualization is not.
+Originally placed in v0.8.0 by `task.post_v0_7_optimization_roadmap_20260602`. After design discussion on 2026-06-06, the project lead temporarily re-scoped visualization into the v0.7.x line because it was additive to the existing CLI contract. That milestone boundary was superseded on 2026-06-26 by the Project RAG OS repositioning: v0.7.5 is Context Restoration, v0.8 is Hybrid Recall Engine, and graph visualization is deferred.
 
-## Scope (v0.7.5 closeout)
+## Original Scope
 
 - A new `pmem serve` subcommand that boots an HTTP server on `127.0.0.1` (default port `7321`, TBD) and opens the browser.
 - Read-only: no in-UI editing. Writes continue to flow through `pmem update --confirm`. Rationale: confirmation-first is a core product principle, and replicating it in a browser is a separate effort.
