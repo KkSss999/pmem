@@ -97,7 +97,7 @@ For `pmem recall --format json`, read `active_foundation`. `active_modules` rema
 
 Legacy v0.6.x projects do not need migration. When `schema` is absent, pmem falls back to the old software defaults without rewriting the manifest.
 
-### Context Recovery
+### Context Recovery (v0.7.5 Trace-Aware)
 
 ```bash
 # Restore project context (hot memory, ~2000 tokens)
@@ -111,6 +111,14 @@ pmem ask "module.core" --format json    # machine-readable
 pmem related module.core --depth 2
 pmem trace decision.sqlite_runtime
 ```
+
+In v0.7.5, `pmem recall` is trace-aware, meaning it reads the recent capture history (traces) and integrates them to restore context. The output is structured into:
+- **PROJECT & STAGE**: The current metadata of the repository.
+- **CURRENT CONTEXT**: Recent summaries of what the project is doing.
+- **RECENT CHANGES**: Thick trace logs of what files and symbols changed.
+- **ARCHITECTURE**: Map of active modules and their files.
+- **DECISIONS**: Case-insensitive deduplicated long-term decisions.
+- **NEXT**: Recommended next steps.
 
 ### Relationship Discovery (v0.6.3+)
 
@@ -239,6 +247,14 @@ pmem rename --find "old-lib" --replace "new-lib" --write
 # Consolidate traces into stable cards
 pmem distill --suggest
 pmem distill --confirm
+
+# Propose and write module cards based on codebase directories & rules (v0.7.5)
+pmem module infer         # dry-run
+pmem module infer --write # writes module.xxx.md candidate cards
+
+# Scan trace history for decision statements to promote (v0.7.5)
+pmem decision infer       # dry-run
+pmem decision infer --write # writes decision.xxx.md candidate cards
 
 # Run diagnostics
 pmem doctor
