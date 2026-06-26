@@ -10,3 +10,4 @@ v064-*/
 node_modules/
 *.zip
 .DS_Store
+.mcp.json

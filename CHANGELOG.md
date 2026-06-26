@@ -2,6 +2,23 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.5 — Context Restoration Release (2026-06-26)
+
+### Added
+
+- **Thick Traces**: `pmem capture --auto` now automatically generates thick traces containing What Changed, Why, Architecture Notes, Decisions, and Next steps, using git diffs, file modifications, and code symbol extraction.
+- **Trace-Aware Recall**: `pmem recall` reads recent traces and renders an integrated context view (Snapshot, Context, Recent Changes, Architecture, Decisions, Next).
+- **Next Step De-duplication**: Unifies `next.md` under a single managed block (`<!-- pmem:next:start -->` / `<!-- pmem:next:end -->`) across capture, sync, init, and update commands.
+- **Module Inference**: `pmem module infer` command proposes module cards based on project structure (ui, engine, renderer, storage, api, audio, config).
+- **Decision Inference**: `pmem decision infer` scans trace cards to automatically suggest decision candidates.
+- **Card Summary Parsing**: Automatically extracts `CardRow.summary` from card frontmatter `summary:` or `## Summary` / `## Purpose` sections on rebuild.
+
+### Fixed
+
+- **Case-Insensitive Decisions**: Case-insensitive deduplication of decisions in recall and context output.
+- **Trace Card Staleness Exemption**: Excludes historical trace cards from staleness checks in `verify` to avoid false stale memory warnings.
+- **Recursive Status Checks**: Runs `git status --porcelain` with `-u` to correctly list untracked files recursively.
+
 ## v0.7.4 — Agent UX Release (2026-06-26)
 
 ### Added

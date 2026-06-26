@@ -249,6 +249,14 @@ pmem sync -s "<summary>" -n "<next step>"
 
 `distill` consolidates trace cards into stable cards when enough evidence accumulates.
 
+### Module & Decision Inference (v0.7.5)
+
+To automate codebase module and decision mapping:
+- **`pmem module infer`**: Scans project directories and content keywords to automatically propose `module` memory card candidates.
+- **`pmem decision infer`**: Analyzes the trace capture history for decision patterns/comments and suggests `decision` memory card candidates.
+
+Use `--write` to save proposed candidates (tagged `inferred` and written as `status: active` cards) to `.pmem/modules/` and `.pmem/decisions/` respectively. Cards are clearly marked with the `inferred` tag so you can review and confirm them before relying on them as source of truth.
+
 ### Domain Presets & Custom Schema
 
 Starting with v0.7.0, `pmem` is domain-neutral. You can initialize a project with a domain preset, customize valid card types, directories, and behavior.
@@ -358,6 +366,9 @@ pmem update [--auto] [--suggest] [--apply-suggestion <id>] [--confirm] [--force]
 pmem sync -s "<summary>" [-n "<next>"]
 
 pmem milestone <version> [-m <message>] [--tag <name>]
+
+pmem module infer [--write] [--dry-run]
+pmem decision infer [--from-traces] [--write]
 
 pmem distill [--suggest] [--confirm] [--apply-suggestion <id>] [--suggest-splits]
 pmem rebuild [--changed] [--full] [--card <id>]
