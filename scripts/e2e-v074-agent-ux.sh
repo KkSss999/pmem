@@ -75,7 +75,8 @@ grep -q "diff_hash:" "$TRACE_FILE"
 
 # Verify next.md updated inside managed block
 grep -q "<!-- pmem:next:start -->" .pmem/next.md
-grep -q "Recommended next step: Continue development" .pmem/next.md
+grep -q "## Recommended Next Step" .pmem/next.md
+grep -q "Continue development" .pmem/next.md
 grep -q "<!-- pmem:next:end -->" .pmem/next.md
 
 # 5. Run capture --auto again (duplicate check should trigger skip)
