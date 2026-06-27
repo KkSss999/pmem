@@ -33,33 +33,6 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     });
   }
 
-  // 2. Check SQLite DB exists
-  const dbPath = path.join(pmemPath, 'pmem.db');
-  const dbExists = fileExists(dbPath);
-  let db: ReturnType<typeof openDatabase> | null = null;
-
-  if (!dbExists) {
-    issues.push({
-      severity: 'warning',
-      type: 'missing_database',
-      message: '.pmem/pmem.db not found.',
-      fix: 'Run: pmem rebuild',
-    });
-  } else {
-    try {
-      db = openDatabase(pmemPath);
-      createSchema(db);
-    } catch (err: any) {
-      issues.push({
-        severity: 'error',
-        type: 'corrupt_database',
-        message: err?.message || '.pmem/pmem.db is corrupted.',
-        fix: 'Back up the file if needed, then run: pmem rebuild --full',
-      });
-      db = null;
-    }
-  }
-
   // 2b. Lock status check (read-only)
   //
   // v0.7.6 FIX-1 (issue #9): restructured the lock block. The old code
@@ -155,6 +128,35 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   // exit. The early-return `active_lock` branch above already bails before
   // reaching this block, so it does not need its own release.
   try {
+
+  // 2. Check SQLite DB exists (v0.7.6 FIX-1: moved here from before lock
+  //    acquisition so the active_lock fast path never sees a transient
+  //    missing_database warning when rebuild is busy creating the index).
+  const dbPath = path.join(pmemPath, 'pmem.db');
+  const dbExists = fileExists(dbPath);
+  let db: ReturnType<typeof openDatabase> | null = null;
+
+  if (!dbExists) {
+    issues.push({
+      severity: 'warning',
+      type: 'missing_database',
+      message: '.pmem/pmem.db not found.',
+      fix: 'Run: pmem rebuild',
+    });
+  } else {
+    try {
+      db = openDatabase(pmemPath);
+      createSchema(db);
+    } catch (err: any) {
+      issues.push({
+        severity: 'error',
+        type: 'corrupt_database',
+        message: err?.message || '.pmem/pmem.db is corrupted.',
+        fix: 'Back up the file if needed, then run: pmem rebuild --full',
+      });
+      db = null;
+    }
+  }
 
   if (manifest) {
     // 3. Check schema version

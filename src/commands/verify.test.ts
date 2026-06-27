@@ -488,6 +488,56 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
     }
   });
 
+  it('Test A2 (tech-lead lock ordering): active lock + missing DB only reports active_lock, not missing_database', () => {
+    // v0.7.6 FIX-1 follow-up: when rebuild is running and the SQLite DB does not
+    // yet exist (rebuild just started), verify must NOT report `missing_database`
+    // — that warning belongs after the lock is acquired. The active_lock fast path
+    // (lock unacquirable) must surface ONLY the lock condition and defer all DB
+    // checks.
+
+    const lockPath = path.join(testDir, '.pmem', '.lock');
+    fs.mkdirSync(lockPath);
+    // Use PID 1 (init/launchd) — a process that exists on every macOS/Linux
+    // system and is NOT the current process. The lock is fresh (mtime < 60s)
+    // so neither getLockStatus nor acquireLock will consider it stale.
+    fs.writeFileSync(path.join(lockPath, 'pid'), '1');
+
+    // Remove the DB so that, if verify ran its old DB check (before the lock),
+    // it would emit `missing_database`.
+    const dbPath = path.join(testDir, '.pmem', 'pmem.db');
+    const dbBackup = dbPath + '.fix1-a2-bak';
+    try {
+      if (fs.existsSync(dbPath)) {
+        fs.renameSync(dbPath, dbBackup);
+      }
+
+      const r = pmem('verify', testDir);
+
+      // The key assertion: `missing_database` must NOT appear — the lock was
+      // not acquired, so DB checks were deferred.
+      assert.ok(
+        !r.stdout.includes('missing_database'),
+        `expected NO missing_database warning during active lock (DB check is after lock), got:\n${r.stdout}`,
+      );
+
+      // The active_lock info note MUST appear.
+      assert.ok(
+        r.stdout.includes('active_lock'),
+        `expected active_lock info note, got:\n${r.stdout}`,
+      );
+
+      // Exit code 0 for info-only result.
+      assert.strictEqual(r.code, 0,
+        `expected exit 0 for info-only result, got ${r.code}\nstdout:\n${r.stdout}`);
+    } finally {
+      // Restore DB (only if we moved it) and release lock.
+      try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch {}
+      if (dbBackup && fs.existsSync(dbBackup)) {
+        fs.renameSync(dbBackup, dbPath);
+      }
+    }
+  });
+
   it('Test B: with no active lock, verify runs the full stale_index check', () => {
     // Sanity check: the active-lock guard must not break the normal path.
     // With no lock held, verify should reach the stale_index check and
