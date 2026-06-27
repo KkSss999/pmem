@@ -1,1 +1,0 @@
-{"version":3,"file":"rebuild.d.ts","sourceRoot":"","sources":["../../src/commands/rebuild.ts"],"names":[],"mappings":"AAWA,UAAU,cAAc;IACtB,OAAO,CAAC,EAAE,OAAO,CAAC;IAClB,IAAI,CAAC,EAAE,OAAO,CAAC;IACf,IAAI,CAAC,EAAE,MAAM,CAAC;CACf;AASD,wBAAgB,cAAc,CAAC,OAAO,GAAE,cAAmB,GAAG,IAAI,CAidjE;AA8BD;;;;;GAKG;AACH,wBAAgB,gBAAgB,CAAC,QAAQ,EAAE,MAAM,GAAG,MAAM,EAAE,CAQ3D"}
