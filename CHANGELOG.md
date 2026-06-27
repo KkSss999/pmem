@@ -2,6 +2,26 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.6 — Agent Contract & Write-Path Integrity (2026-06-28)
+
+### Added
+
+- **Lock Protocol**: `pmem rebuild` and `pmem update --confirm` acquire `.pmem/.lock` during index mutations. `pmem verify` acquires the lock before reading the SQLite index. Concurrent verify during an active rebuild emits `active_lock` (info) and defers freshness checks instead of producing transient `stale_index` warnings. Stale locks (>60s, from crashed processes) are auto-cleaned on acquisition and can be manually cleaned with `pmem verify --fix-locks`. Reentrant: nested calls (e.g. `update --confirm` → `rebuildCommand`) share the same lock without deadlock.
+- **`pmem relations <id> --format json`**: Inspect a card's edge graph with `outgoing`/`incoming` edges, `summary_by_type`, `summary_by_source`, and `pruning_candidates` (edges with `source: inferred` or `confidence < 0.5`).
+- **`too_many_relations` verify output**: When a card exceeds its relation threshold, `pmem verify` now includes `top_edges` (up to 10 lowest-confidence edges) and `pruning_candidates` in the issue, so agents can identify which relations to prune.
+- **`content_trust: "untrusted_project_data"`**: All MCP card objects carry this annotation per agent contract.
+
+### Fixed
+
+- **Rebuild/verify race (#9)**: `pmem verify` no longer produces false `stale_index`/`missing_database` warnings when run during an active `pmem rebuild`. Lock acquisition gates all DB reads.
+- **Test pollution (#9)**: `src/core/next.test.ts` no longer mutates global `process.cwd()`, preventing collateral failures in `src/mcp/security.test.ts` under Node's concurrent test runner.
+- **Write-path contract (#10)**: `pmem update --confirm` preserves all existing card content — it writes only to `.pmem/state.md`, `.pmem/next.md`, and trace files. Agent-authored frontmatter fields are merged without removing user content.
+
+### Changed
+
+- **Build artifacts excluded from repo**: `dist/` added to `.gitignore` and removed from git tracking (264 files). CI/pack/publish all run `npm run build` before packaging.
+- **Skills updated**: `code-task.md`, `update.md`, and `distill.md` now document lock protocol behavior and verify output interpretation.
+
 ## v0.7.5 — Context Restoration Release (2026-06-26)
 
 ### Added

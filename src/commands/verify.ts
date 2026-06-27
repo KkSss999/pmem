@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { statSync } from 'fs';
-import { readFile, fileExists, getLockStatus, breakLock } from '../core/fs';
+import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock } from '../core/fs';
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
@@ -33,7 +33,105 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     });
   }
 
-  // 2. Check SQLite DB exists
+  // 2b. Lock status check (read-only)
+  //
+  // v0.7.6 FIX-1 (issue #9): restructured the lock block. The old code
+  // emitted an `active_lock` warning here based purely on lock presence.
+  // The new flow instead tries to *acquire* the lock with a short timeout
+  // (see below) — if it cannot, another process is rebuilding right now
+  // and we defer stale-index checks instead of producing a transient
+  // `stale_index` warning. The `stale_lock` / `stale_lock_cleaned`
+  // classification still exists so users can still detect + clean
+  // crashed pmem processes that left a lock behind.
+  const lockPath = path.join(pmemPath, '.lock');
+  const lockStatus = getLockStatus(lockPath);
+  if (lockStatus.exists && lockStatus.stale) {
+    const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
+    if (options.fixLocks) {
+      breakLock(lockPath);
+      issues.push({
+        severity: 'warning',
+        type: 'stale_lock_cleaned',
+        message: `Stale lock at .pmem/.lock (age: ${ageSec}s) was cleaned.`,
+        fix: 'Lock has been removed. You can now run pmem commands.',
+      });
+    } else {
+      issues.push({
+        severity: 'warning',
+        type: 'stale_lock',
+        message: `Stale lock detected at .pmem/.lock (age: ${ageSec}s).`,
+        fix: 'Run: pmem verify --fix-locks (to clean stale lock)\n       Or: pmem doctor (to diagnose lock status)',
+      });
+    }
+  }
+
+  // v0.7.6 FIX-1 (issue #9): try to acquire the lock with a short timeout
+  // so a concurrent `pmem rebuild` cannot tear the SQLite index out from
+  // under us while we read it (which would produce a transient `stale_index`
+  // warning that disappears on the next verify). If we cannot acquire the
+  // lock, surface a single info-level `active_lock` note and skip the
+  // freshness checks entirely.
+  const lockAcquired = acquireLock(lockPath, 500);
+  if (!lockAcquired) {
+    const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
+    issues.push({
+      severity: 'info',
+      type: 'active_lock',
+      message: `Active lock at .pmem/.lock (age: ${ageSec}s). Another pmem process is running — deferring index freshness checks.`,
+      fix: 'Wait for the other pmem process to finish, then re-run: pmem verify',
+    });
+
+    const errors = issues.filter(i => i.severity === 'error');
+    const warnings = issues.filter(i => i.severity === 'warning');
+    const infos = issues.filter(i => i.severity === 'info');
+    const passed = errors.length === 0;
+    const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 5);
+    const result: VerifyResult = { passed, score, issues };
+
+    if (passed && warnings.length === 0) {
+      console.log(`Memory Verify Result: clean (index checks deferred).`);
+      console.log(`Score: ${score}/100`);
+      if (infos.length > 0) {
+        console.log('');
+        console.log('Informational Notes:');
+        for (const issue of infos) {
+          console.log(`ℹ [${issue.type}] ${issue.message}`);
+        }
+      }
+      return;
+    }
+
+    console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
+    console.log(`Score: ${score}/100`);
+    console.log('');
+    for (const issue of issues) {
+      let icon = 'ℹ';
+      if (issue.severity === 'error') icon = '✗';
+      else if (issue.severity === 'warning') icon = '⚠';
+      console.log(`${icon} [${issue.type}] ${issue.message}`);
+      console.log(`  Fix: ${issue.fix}`);
+      console.log('');
+    }
+
+    const hasErrors = issues.some(i => i.severity === 'error');
+    if (hasErrors) {
+      if (options.noExit) return;
+      process.exit(2);
+    }
+    if (options.noExit) return;
+    process.exit(0);
+  }
+
+  // v0.7.6 FIX-1 (issue #9): wrap the bulk of verify (manifest/schema/hash/
+  // policy checks + auto-fix) in a try/finally so the lock acquired above
+  // is always released — even on a thrown error or an auto-fix subprocess
+  // exit. The early-return `active_lock` branch above already bails before
+  // reaching this block, so it does not need its own release.
+  try {
+
+  // 2. Check SQLite DB exists (v0.7.6 FIX-1: moved here from before lock
+  //    acquisition so the active_lock fast path never sees a transient
+  //    missing_database warning when rebuild is busy creating the index).
   const dbPath = path.join(pmemPath, 'pmem.db');
   const dbExists = fileExists(dbPath);
   let db: ReturnType<typeof openDatabase> | null = null;
@@ -57,39 +155,6 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
         fix: 'Back up the file if needed, then run: pmem rebuild --full',
       });
       db = null;
-    }
-  }
-
-  // 2b. Lock status check
-  const lockPath = path.join(pmemPath, '.lock');
-  const lockStatus = getLockStatus(lockPath);
-  if (lockStatus.exists) {
-    if (lockStatus.stale) {
-      const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
-      if (options.fixLocks) {
-        breakLock(lockPath);
-        issues.push({
-          severity: 'warning',
-          type: 'stale_lock_cleaned',
-          message: `Stale lock at .pmem/.lock (age: ${ageSec}s) was cleaned.`,
-          fix: 'Lock has been removed. You can now run pmem commands.',
-        });
-      } else {
-        issues.push({
-          severity: 'warning',
-          type: 'stale_lock',
-          message: `Stale lock detected at .pmem/.lock (age: ${ageSec}s).`,
-          fix: 'Run: pmem verify --fix-locks (to clean stale lock)\n       Or: pmem doctor (to diagnose lock status)',
-        });
-      }
-    } else if (lockStatus.age !== null) {
-      const ageSec = Math.round(lockStatus.age / 1000);
-      issues.push({
-        severity: 'warning',
-        type: 'active_lock',
-        message: `Active lock at .pmem/.lock (age: ${ageSec}s). Another pmem process may be running.`,
-        fix: 'Wait for the other process to finish. If no other process is running, run: pmem verify --fix-locks',
-      });
     }
   }
 
@@ -253,11 +318,46 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
             ?? policy.warn_when_related_count_gt;
 
           if (relatedEdgeCount > threshold) {
+            // v0.7.6 (issue #10): fetch up to 10 lowest-confidence edges so the
+            // agent can see which relations contribute to the count and which
+            // are safe to prune. Sort ASC so lowest-confidence (best pruning
+            // candidates) appear first.
+            const topEdgesRaw = db.prepare(
+              `SELECT from_id, to_id, type, source, confidence
+               FROM edges
+               WHERE from_id = ? OR to_id = ?
+               ORDER BY confidence ASC
+               LIMIT 10`
+            ).all(card.id, card.id) as Array<{
+              from_id: string;
+              to_id: string;
+              type: string;
+              source: string;
+              confidence: number;
+            }>;
+
+            const topEdges = topEdgesRaw.map(e => ({
+              from_id: e.from_id,
+              to_id: e.to_id,
+              type: e.type,
+              source: e.source,
+              confidence: e.confidence,
+            }));
+
+            const pruningCandidates = topEdges.filter(
+              e => e.source === 'inferred' || e.confidence < 0.5
+            );
+
             issues.push({
               severity: 'warning',
               type: 'too_many_relations',
               message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${threshold} for type "${card.type}").`,
-              fix: 'Review whether all relations are necessary.',
+              fix: `Run: pmem relations ${card.id} --format json to inspect.`,
+              card_id: card.id,
+              relation_count: relatedEdgeCount,
+              threshold,
+              top_edges: topEdges,
+              pruning_candidates: pruningCandidates,
             });
           }
         }
@@ -394,10 +494,20 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   const hasErrors = issues.some(i => i.severity === 'error');
   if (hasErrors) {
     if (options.noExit) return;
+    releaseLock(lockPath);
     process.exit(2);
   }
   if (options.noExit) return;
+  releaseLock(lockPath);
   process.exit(0);
+
+  } finally {
+    // If we got here via an exception thrown during verify (e.g. a SQL
+    // error from createSchema), still release the lock. The explicit
+    // `releaseLock` calls above cover the normal exit paths since
+    // `process.exit` does NOT run `finally` blocks.
+    try { releaseLock(lockPath); } catch { /* ignore */ }
+  }
 }
 
 function updateFrontmatterTimestamp(filePath: string, field: 'last_verified' | 'updated'): void {

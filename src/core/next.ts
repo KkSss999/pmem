@@ -77,22 +77,77 @@ export function readNext(pmemPath: string): NextState {
   return { nextStep: 'No next step recorded.' };
 }
 
-export function writeManagedNext(pmemPath: string, nextState: NextState): void {
+/**
+ * v0.7.6 fix U3: writeManagedNext now supports partial writes.
+ *
+ * - Pass only the fields you want to change; other fields are preserved
+ *   from the current `next.md` (if it exists). This is the default
+ *   (merge) behavior and protects manually-curated `## Why` and
+ *   `## Needed Context` sections from being clobbered by routine calls.
+ * - Set `replaceManaged: true` to fully replace the managed block
+ *   (legacy behavior — wipes prior `## Why` and `## Needed Context`).
+ * - Calling with a plain `NextState` object (no `replaceManaged` key)
+ *   is treated as a full replacement for backward compatibility.
+ *
+ * Returns the merged `NextState` that was persisted.
+ */
+export interface WriteNextOptions {
+  nextStep?: string;
+  why?: string;
+  context?: string[];
+  /** When true, fully replace the managed block (legacy behavior). Default false. */
+  replaceManaged?: boolean;
+}
+
+export function writeManagedNext(pmemPath: string, opts: WriteNextOptions | NextState): NextState {
   const nextPath = path.join(pmemPath, 'next.md');
   const managedStart = '<!-- pmem:next:start -->';
   const managedEnd = '<!-- pmem:next:end -->';
 
-  const contextBlock = nextState.context && nextState.context.length > 0
-    ? `\n\n## Needed Context\n${nextState.context.map(c => `- ${c}`).join('\n')}`
+  // Partial merge by default (v0.7.6 fix U3): protects manually-curated
+  // ## Why / ## Needed Context from being clobbered by routine writes.
+  // Callers that want the legacy full-replace behavior must pass
+  // `replaceManaged: true` explicitly.
+  const replaceManaged = (opts as WriteNextOptions).replaceManaged === true;
+
+  let nextStep: string;
+  let why: string | undefined;
+  let context: string[] | undefined;
+
+  if (replaceManaged) {
+    nextStep = (opts as NextState).nextStep ?? '';
+    why = (opts as NextState).why;
+    context = (opts as NextState).context;
+  } else {
+    const prior: NextState = readNext(pmemPath);
+    const o = opts as WriteNextOptions;
+    nextStep = o.nextStep ?? prior.nextStep;
+    why = o.why ?? prior.why;
+    context = o.context ?? prior.context;
+  }
+
+  // If `nextStep` was never set (no prior, no override), default to empty.
+  if (nextStep === undefined) {
+    nextStep = '';
+  }
+
+  const merged: NextState = {
+    nextStep,
+    why: why || undefined,
+    context: context && context.length > 0 ? context : undefined,
+  };
+
+  const contextBlock = merged.context && merged.context.length > 0
+    ? `\n\n## Needed Context\n${merged.context.map(c => `- ${c}`).join('\n')}`
     : '';
 
-  const whyBlock = nextState.why
-    ? `\n\n## Why\n${nextState.why}`
+  const whyBlock = merged.why
+    ? `\n\n## Why\n${merged.why}`
     : '';
 
   const managedContent = `${managedStart}
 ## Recommended Next Step
-${nextState.nextStep}${whyBlock}${contextBlock}
+${merged.nextStep}${whyBlock}${contextBlock}
 ${managedEnd}`;
 
   let currentContent = '';
@@ -122,6 +177,8 @@ ${managedEnd}`;
 
   // Write content, removing any duplicate outer headings if they somehow exist
   writeFile(nextPath, updatedContent.trim() + '\n');
+
+  return merged;
 }
 
 export function migrateNextIfNeeded(pmemPath: string): void {

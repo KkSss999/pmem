@@ -11,6 +11,34 @@ export interface InferredModule {
   open_questions: string[];
 }
 
+interface KnowledgePattern {
+  text: string;
+  appliesTo: string[];  // whitelist (empty = all)
+  excludes?: string[];  // blacklist
+  match: (content: string, moduleKey: string, filePath: string) => boolean;
+}
+
+const KNOWLEDGE_PATTERNS: KnowledgePattern[] = [
+  {
+    text: 'Game loop uses requestAnimationFrame for smooth execution.',
+    appliesTo: ['engine'],
+    excludes: ['audio', 'renderer', 'ui', 'api', 'storage', 'config'],
+    match: (c) => c.includes('requestAnimationFrame')
+  },
+  {
+    text: 'Targets a predictable mobile-style 320x560 portrait viewport.',
+    appliesTo: ['engine', 'renderer', 'ui'],
+    excludes: ['audio', 'api', 'storage', 'config'],
+    match: (c) => c.includes('320') && c.includes('560')
+  },
+  {
+    text: 'Score state tracking and score updates are implemented.',
+    appliesTo: ['engine', 'ui'],
+    excludes: ['audio', 'renderer', 'api', 'storage', 'config'],
+    match: (c) => c.includes('score') || c.includes('scoreState')
+  }
+];
+
 const MODULE_HINTS: Record<string, { title: string; purpose: string; keywords: string[] }> = {
   engine: {
     title: 'Engine',
@@ -49,7 +77,16 @@ const MODULE_HINTS: Record<string, { title: string; purpose: string; keywords: s
   }
 };
 
-export function inferModules(cwd: string): InferredModule[] {
+function buildSourceFiles(file: string, coarse: boolean): string[] {
+  if (!coarse) return [file];
+  const parts = file.split(path.sep);
+  if (parts[0] === 'src' && parts.length > 2) {
+    return [`src/${parts[1]}/`];
+  }
+  return [file];
+}
+
+export function inferModules(cwd: string, options?: { coarseAttribution?: boolean }): InferredModule[] {
   const fileList: string[] = [];
   try {
     scanDir(cwd, cwd, fileList);
@@ -65,6 +102,8 @@ export function inferModules(cwd: string): InferredModule[] {
     moduleFilesMap.set(key, new Set());
     moduleKnowledgeMap.set(key, new Set());
   }
+
+  const coarse = options?.coarseAttribution === true;
 
   // Scan files and classify
   for (const file of fileList) {
@@ -98,25 +137,19 @@ export function inferModules(cwd: string): InferredModule[] {
       }
 
       if (isMatch) {
-        // Associate file with module
-        // If file is inside a src subdirectory, prefer to reference the subdirectory itself
-        const parts = file.split(path.sep);
-        if (parts[0] === 'src' && parts.length > 2) {
-          moduleFilesMap.get(key)?.add(`src/${parts[1]}/`);
-        } else {
-          moduleFilesMap.get(key)?.add(file);
+        // Associate file with module (file-level by default; directory-level when coarseAttribution=true)
+        for (const sf of buildSourceFiles(file, coarse)) {
+          moduleFilesMap.get(key)?.add(sf);
         }
 
-        // Try extracting specific knowledge
+        // Try extracting specific knowledge (module-scope guarded)
         if (content) {
-          if (content.includes('requestAnimationFrame')) {
-            moduleKnowledgeMap.get(key)?.add('Game loop uses requestAnimationFrame for smooth execution.');
-          }
-          if (content.includes('320') && content.includes('560')) {
-            moduleKnowledgeMap.get(key)?.add('Targets a predictable mobile-style 320x560 portrait viewport.');
-          }
-          if (content.includes('score') || content.includes('scoreState')) {
-            moduleKnowledgeMap.get(key)?.add('Score state tracking and score updates are implemented.');
+          for (const pattern of KNOWLEDGE_PATTERNS) {
+            if (pattern.appliesTo.length > 0 && !pattern.appliesTo.includes(key)) continue;
+            if (pattern.excludes?.includes(key)) continue;
+            if (pattern.match(content, key, file)) {
+              moduleKnowledgeMap.get(key)?.add(pattern.text);
+            }
           }
         }
       }

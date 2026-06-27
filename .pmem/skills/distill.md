@@ -13,6 +13,7 @@ Use this to consolidate traces into stable memory cards.
 3. Run `pmem distill --confirm` to apply.
 4. Run `pmem rebuild` to update indexes.
 5. Run `pmem verify` to check consistency.
+   - If `active_lock` appears, wait a few seconds and re-run — another pmem process is rebuilding.
 
 ## What Gets Distilled
 - Trace summaries are added to their related module/decision/task cards.
