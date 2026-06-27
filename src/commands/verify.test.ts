@@ -378,3 +378,150 @@ process.stdout.write(JSON.stringify(rows));`, 'utf8');
       `LIMIT 10 should cap top_edges at 10, got ${rows.length}`);
   });
 });
+
+/**
+ * v0.7.6 FIX-1 (issue #9): tests for the verify/rebuild lock protocol.
+ *
+ * GitHub Issue #9: `pmem rebuild` and `pmem verify` run close together
+ * could produce a transient `stale_index` warning even though a subsequent
+ * `pmem verify` would pass.
+ *
+ * Root cause: `verify` only observed the lock (read-only) and never
+ * acquired it, so a concurrent rebuild could tear down the SQLite index
+ * mid-verify and produce a false `stale_index`.
+ *
+ * FIX-1: `rebuild` now holds `.pmem/.lock` for its duration. `verify`
+ * tries to acquire that lock with a short timeout; if it can't, it
+ * emits a single info-level `active_lock` issue and SKIPS stale-index
+ * checks (instead of running them against a torn-down index).
+ *
+ * These tests simulate the lock-holding process by acquiring the lock
+ * in the test process before spawning `pmem verify` as a subprocess,
+ * then releasing the lock in `after()` / between tests.
+ */
+describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
+  const testDir = path.join(TEMP_ROOT, 'fix1-lock-protocol');
+
+  before(() => {
+    const pmemDir = path.join(testDir, '.pmem');
+    fs.mkdirSync(path.join(pmemDir, 'modules'), { recursive: true });
+    writeFile(path.join(pmemDir, 'manifest.yml'), makeManifest(10));
+    writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
+    writeFile(path.join(pmemDir, 'state.md'), '# State\n');
+    writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
+
+    // Seed a single card so verify has a card row whose hash it can compare
+    // against. After the initial rebuild, we will mutate the file on disk
+    // (without rebuilding) to inject a hash mismatch → stale_index.
+    writeFile(path.join(testDir, `.pmem/modules/module.alpha.md`), moduleCard('module.alpha'));
+
+    const r0 = pmem('rebuild --full', testDir);
+    assert.strictEqual(r0.code, 0, `seed rebuild failed: ${r0.stdout}\nstderr: ${r0.stderr}`);
+  });
+
+  after(() => {
+    // Best-effort: ensure no leftover .lock from a failed/aborted test.
+    try { fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+  });
+
+  it('Test A: with an active lock, verify emits info-level `active_lock` and skips stale_index', () => {
+    // Acquire the .lock manually from the test process so the subprocess
+    // (`pmem verify`) sees an active lock and cannot acquire it within its
+    // 500ms wait window.
+    const lockPath = path.join(testDir, '.pmem', '.lock');
+    fs.mkdirSync(lockPath);
+    fs.writeFileSync(path.join(lockPath, 'pid'), String(process.pid));
+
+    try {
+      // Seed a hash mismatch (stale_index) directly on disk so that, if the
+      // verify subprocess were to RUN the stale_index check, it WOULD fire.
+      // The expectation is that it does NOT fire — instead `active_lock`
+      // info is surfaced and the freshness checks are deferred.
+      const alphaFile = path.join(testDir, '.pmem', 'modules', 'module.alpha.md');
+      const original = fs.readFileSync(alphaFile, 'utf8');
+      const mutated = original + '\n<!-- mutated by fix1-test to trigger stale_index -->\n';
+      fs.writeFileSync(alphaFile, mutated, 'utf8');
+
+      try {
+        const r = pmem('verify', testDir);
+
+        // The subprocess must report `active_lock` at INFO severity.
+        assert.ok(
+          r.stdout.includes('active_lock'),
+          `expected active_lock info note in stdout, got:\n${r.stdout}`,
+        );
+        assert.ok(
+          r.stdout.includes('deferring index freshness checks'),
+          `expected "deferring index freshness checks" wording, got:\n${r.stdout}`,
+        );
+
+        // And critically, `stale_index` must NOT appear — that is the whole
+        // point of FIX-1. A concurrent rebuild can produce a transient
+        // stale_index right now; this is exactly what we are guarding
+        // against.
+        assert.ok(
+          !r.stdout.includes('stale_index'),
+          `expected NO stale_index warning during active lock, got:\n${r.stdout}`,
+        );
+
+        // The `ℹ [active_lock]` icon line must be present (info severity).
+        assert.ok(
+          /ℹ \[active_lock\]/.test(r.stdout),
+          `expected info-level ℹ icon on active_lock line, got:\n${r.stdout}`,
+        );
+
+        // Exit code should be 0 (info-only → passed) — this is different
+        // from the old behavior where `active_lock` was a warning.
+        assert.strictEqual(
+          r.code, 0,
+          `expected exit 0 for info-only result, got ${r.code}\nstdout:\n${r.stdout}`,
+        );
+      } finally {
+        // Restore file so subsequent tests (and the lock-release path) see
+        // a clean state.
+        fs.writeFileSync(alphaFile, original, 'utf8');
+      }
+    } finally {
+      // Release the lock so the next test starts clean.
+      try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('Test B: with no active lock, verify runs the full stale_index check', () => {
+    // Sanity check: the active-lock guard must not break the normal path.
+    // With no lock held, verify should reach the stale_index check and
+    // emit a `stale_index` warning for the mutated card.
+    //
+    // Make sure no leftover .lock from the previous test is hanging around.
+    try { fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true }); } catch {}
+
+    // Inject a hash mismatch so the stale_index check fires.
+    const alphaFile = path.join(testDir, '.pmem', 'modules', 'module.alpha.md');
+    const original = fs.readFileSync(alphaFile, 'utf8');
+    const mutated = original + '\n<!-- fix1-test-B injected mismatch -->\n';
+    fs.writeFileSync(alphaFile, mutated, 'utf8');
+
+    try {
+      const r = pmem('verify', testDir);
+
+      // `stale_index` should appear.
+      assert.ok(
+        r.stdout.includes('stale_index'),
+        `expected stale_index warning when no lock is held, got:\n${r.stdout}`,
+      );
+
+      // `active_lock` should NOT appear.
+      assert.ok(
+        !r.stdout.includes('active_lock'),
+        `expected NO active_lock when lock is free, got:\n${r.stdout}`,
+      );
+    } finally {
+      // Restore the card on disk and rerun rebuild so any subsequent test
+      // starts from a clean index.
+      fs.writeFileSync(alphaFile, original, 'utf8');
+      const r1 = pmem('rebuild --full', testDir);
+      assert.strictEqual(r1.code, 0, `cleanup rebuild failed: ${r1.stdout}`);
+    }
+  });
+});
