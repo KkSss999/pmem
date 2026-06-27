@@ -253,11 +253,46 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
             ?? policy.warn_when_related_count_gt;
 
           if (relatedEdgeCount > threshold) {
+            // v0.7.6 (issue #10): fetch up to 10 lowest-confidence edges so the
+            // agent can see which relations contribute to the count and which
+            // are safe to prune. Sort ASC so lowest-confidence (best pruning
+            // candidates) appear first.
+            const topEdgesRaw = db.prepare(
+              `SELECT from_id, to_id, type, source, confidence
+               FROM edges
+               WHERE from_id = ? OR to_id = ?
+               ORDER BY confidence ASC
+               LIMIT 10`
+            ).all(card.id, card.id) as Array<{
+              from_id: string;
+              to_id: string;
+              type: string;
+              source: string;
+              confidence: number;
+            }>;
+
+            const topEdges = topEdgesRaw.map(e => ({
+              from_id: e.from_id,
+              to_id: e.to_id,
+              type: e.type,
+              source: e.source,
+              confidence: e.confidence,
+            }));
+
+            const pruningCandidates = topEdges.filter(
+              e => e.source === 'inferred' || e.confidence < 0.5
+            );
+
             issues.push({
               severity: 'warning',
               type: 'too_many_relations',
               message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${threshold} for type "${card.type}").`,
-              fix: 'Review whether all relations are necessary.',
+              fix: `Run: pmem relations ${card.id} --format json to inspect.`,
+              card_id: card.id,
+              relation_count: relatedEdgeCount,
+              threshold,
+              top_edges: topEdges,
+              pruning_candidates: pruningCandidates,
             });
           }
         }

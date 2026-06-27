@@ -241,6 +241,38 @@ export interface VerifyIssue {
   message: string;
   fix: string;
   card_id?: string;
+  /**
+   * v0.7.6 (issue #10): for `too_many_relations` — count of related edges.
+   */
+  relation_count?: number;
+  /**
+   * v0.7.6 (issue #10): for `too_many_relations` — threshold that was exceeded.
+   */
+  threshold?: number;
+  /**
+   * v0.7.6 (issue #10): for `too_many_relations` — up to 10 edges attached to
+   * the card, sorted by ascending confidence so the most-likely-prunable edges
+   * appear first.
+   */
+  top_edges?: Array<{
+    from_id: string;
+    to_id: string;
+    type: string;
+    source: string;
+    confidence: number;
+  }>;
+  /**
+   * v0.7.6 (issue #10): for `too_many_relations` — subset of `top_edges`
+   * that are inferred (`source = 'inferred'`) or low-confidence (`confidence < 0.5`).
+   * These are the best candidates for pruning.
+   */
+  pruning_candidates?: Array<{
+    from_id: string;
+    to_id: string;
+    type: string;
+    source: string;
+    confidence: number;
+  }>;
 }
 
 export interface VerifyResult {

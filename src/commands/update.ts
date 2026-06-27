@@ -10,6 +10,7 @@ import { checkStaleMemory } from '../core/consistency';
 import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
 
 import { writeManagedNext } from '../core/next';
+import { statusQuery } from '../core/query/status';
 const PMEM_DIR = '.pmem';
 
 export function updateCommand(options: {
@@ -25,6 +26,7 @@ export function updateCommand(options: {
   acceptEdges?: string;
   rejectEdges?: string;
   refreshVerified?: string;
+  replaceManagedBlocks?: boolean;
 }): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -66,7 +68,7 @@ export function updateCommand(options: {
 
   // --confirm or --force: write changes
   if (options.confirm || options.force) {
-    confirmUpdate(pmemPath, options.summary, options.next, options.refreshVerified);
+    confirmUpdate(pmemPath, options.summary, options.next, options.refreshVerified, options.replaceManagedBlocks);
     return;
   }
 
@@ -74,14 +76,34 @@ export function updateCommand(options: {
   showDirtyState(pmemPath);
 }
 
-export function markDirtyCommand(reason: string, options: { auto?: boolean; cardIds?: string[] } = {}): void {
+export function markDirtyCommand(
+  reason: string,
+  options: { auto?: boolean; cardIds?: string[]; format?: string } = {}
+): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
+  const format = options.format ?? 'compact';
 
   if (!fileExists(pmemPath)) {
-    console.log('No .pmem directory found. Run `pmem init` first.');
+    if (format === 'json') {
+      console.log(JSON.stringify({
+        command: 'mark-dirty',
+        state: 'no_pmem',
+        message: 'No .pmem directory found. Run `pmem init` first.',
+        changed_files: [],
+        marked_card_ids: [],
+      }, null, 2));
+    } else {
+      console.log('No .pmem directory found. Run `pmem init` first.');
+    }
     return;
   }
+
+  const nextActions = [{
+    command: 'pmem update --suggest --format json',
+    reason: 'Scan for suggestions regardless',
+    blocking: false,
+  }];
 
   // --card <id>: explicitly mark specific cards as dirty
   if (options.cardIds && options.cardIds.length > 0) {
@@ -94,14 +116,22 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
     try {
       const db = openDatabase(pmemPath);
       const activeSession = getActiveSession(db);
+      const markedIds: string[] = [];
+      const notFoundIds: string[] = [];
 
       for (const cardId of options.cardIds) {
         const card = db.prepare('SELECT id FROM cards WHERE id = ? AND is_deleted = 0').get(cardId) as { id: string } | undefined;
         if (card) {
           insertDirtyFlag(db, 'card', cardId, reason, activeSession?.id);
-          console.log(`Marked card dirty: ${cardId}`);
+          markedIds.push(cardId);
+          if (format !== 'json') {
+            console.log(`Marked card dirty: ${cardId}`);
+          }
         } else {
-          console.log(`Card not found or deleted: ${cardId}`);
+          notFoundIds.push(cardId);
+          if (format !== 'json') {
+            console.log(`Card not found or deleted: ${cardId}`);
+          }
         }
       }
 
@@ -117,6 +147,18 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
       }
 
       closeDatabase();
+
+      if (format === 'json') {
+        console.log(JSON.stringify({
+          command: 'mark-dirty',
+          state: 'marked_dirty',
+          reason,
+          marked_card_ids: markedIds,
+          not_found_ids: notFoundIds,
+          next_actions: nextActions,
+        }, null, 2));
+      }
+
       return;
     } catch (err) {
       console.error('Could not mark cards as dirty:', err);
@@ -166,11 +208,34 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
         closeDatabase();
 
         if (dirtyCards.length > 0) {
-          console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
+          if (format === 'json') {
+            console.log(JSON.stringify({
+              command: 'mark-dirty --auto',
+              state: 'marked_dirty',
+              changed_files: changedFiles,
+              marked_card_ids: dirtyCards,
+              next_actions: nextActions,
+            }, null, 2));
+          } else {
+            console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
+          }
           return;
         } else {
-          console.log('No related cards found for changed files.');
-          process.exit(1);
+          // No-op case: changed files exist but none map to known cards.
+          // Exit 0 (NOT process.exit(1)) so documented `&&` chains keep running.
+          if (format === 'json') {
+            console.log(JSON.stringify({
+              command: 'mark-dirty --auto',
+              state: 'no_related_cards',
+              changed_files: changedFiles,
+              marked_card_ids: [],
+              next_actions: nextActions,
+            }, null, 2));
+          } else {
+            console.log('No related cards found for changed files.');
+            console.log('(If files changed were only .pmem/**/*.md or outside pmem scope, this is expected.)');
+          }
+          return;
         }
       } catch (err) {
         console.error('Could not auto-detect changed files.');
@@ -193,10 +258,21 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
     manifest.memory_status.dirty_reason = reason;
     manifest.memory_status.dirty_since = timestamp;
     saveManifest(pmemPath, manifest);
-    console.log(`Memory marked as dirty.`);
-    console.log(`  Reason: ${reason}`);
-    console.log(`  Since: ${timestamp}`);
-    console.log(`\nRun \`pmem update --auto\` to detect changes or \`pmem update --confirm\` to record them.`);
+
+    if (format === 'json') {
+      console.log(JSON.stringify({
+        command: 'mark-dirty',
+        state: 'marked_dirty',
+        reason,
+        since: timestamp,
+        next_actions: nextActions,
+      }, null, 2));
+    } else {
+      console.log(`Memory marked as dirty.`);
+      console.log(`  Reason: ${reason}`);
+      console.log(`  Since: ${timestamp}`);
+      console.log(`\nRun \`pmem update --auto\` to detect changes or \`pmem update --confirm\` to record them.`);
+    }
   }
 
   // SQLite: log dirty flag (additive — does not replace file-based dirty tracking)
@@ -207,7 +283,9 @@ export function markDirtyCommand(reason: string, options: { auto?: boolean; card
       const activeSession = getActiveSession(db);
       insertDirtyFlag(db, 'project', '.pmem', reason, activeSession?.id);
       closeDatabase();
-      console.log(`  Dirty flag logged to SQLite.`);
+      if (format !== 'json') {
+        console.log(`  Dirty flag logged to SQLite.`);
+      }
     } catch {
       // DB not available or schema not yet created — skip SQLite
     }
@@ -295,7 +373,7 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
   }
 }
 
-function confirmUpdate(pmemPath: string, summary?: string, next?: string, refreshVerified?: string): void {
+function confirmUpdate(pmemPath: string, summary?: string, next?: string, refreshVerified?: string, replaceManagedBlocks?: boolean): void {
   const lockPath = path.join(pmemPath, '.lock');
   if (!acquireLock(lockPath)) {
     console.log('Failed to acquire pmem lock after 3s.');
@@ -309,11 +387,13 @@ function confirmUpdate(pmemPath: string, summary?: string, next?: string, refres
 
   try {
     // Update next.md
+    // v0.7.6 fix U3: default behavior preserves manually-curated
+    // ## Why / ## Needed Context (partial merge). Pass --replace-managed-blocks
+    // to fully replace the managed block.
     if (next) {
       writeManagedNext(pmemPath, {
         nextStep: next,
-        why: 'Confirmed during update.',
-        context: ['Run `pmem recall` for full context.']
+        replaceManaged: replaceManagedBlocks === true,
       });
     }
 
@@ -468,6 +548,17 @@ function listSourceFiles(root: string): string[] {
 interface SuggestionReport {
   summary: SuggestSummary;
   message: string;
+  /**
+   * v0.7.6 fix U2: machine-readable state for `update --suggest`.
+   * - `no_cards`: project has zero cards (bootstrap needed).
+   * - `no_affected_cards`: cards exist but no suggestions produced.
+   * - `has_suggestions`: at least one blocking/warning/info suggestion.
+   */
+  state: 'no_cards' | 'no_affected_cards' | 'has_suggestions';
+  /** Total active card count at time of suggestion generation. */
+  card_count: number;
+  /** Whether the SQLite index needs to be rebuilt. */
+  needs_rebuild: boolean;
   next_steps: string[];
   groups: SuggestGroups;
   error?: boolean;
@@ -530,6 +621,9 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
     return {
       summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
       message: 'No SQLite database. Run pmem rebuild first.',
+      state: 'no_affected_cards',
+      card_count: 0,
+      needs_rebuild: true,
       next_steps: ['Run `pmem rebuild` to create the database index.'],
       groups: { blocking_for_verify: [], current_suggestions: [], historical_dirty_flags: [] },
       error: true,
@@ -543,6 +637,9 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
     return {
       summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
       message: 'Cannot open database. Run pmem rebuild first.',
+      state: 'no_affected_cards',
+      card_count: 0,
+      needs_rebuild: true,
       next_steps: ['Run `pmem rebuild` to recreate the database.'],
       groups: { blocking_for_verify: [], current_suggestions: [], historical_dirty_flags: [] },
       error: true,
@@ -694,12 +791,27 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
   };
 
   // 8. Build message and next steps
-  const message = buildSuggestMessage(summary, cardCount);
+  // v0.7.6 fix U2: buildSuggestMessage now returns { message, state }.
+  const { message, state } = buildSuggestMessage(summary, cardCount);
   const nextSteps = buildSuggestNextSteps(summary, cardCount);
+
+  // v0.7.6 fix U2: also surface `needs_rebuild` from the change graph so
+  // agents can tell "no suggestions because change graph is clean" from
+  // "no suggestions because index is stale". Best-effort: if statusQuery
+  // fails (e.g. not in a git repo, or pmem not initialized), default to false.
+  let needsRebuild = false;
+  try {
+    needsRebuild = statusQuery(pmemPath).needs_rebuild;
+  } catch {
+    needsRebuild = false;
+  }
 
   return {
     summary,
     message,
+    state,
+    card_count: cardCount,
+    needs_rebuild: needsRebuild,
     next_steps: nextSteps,
     groups: {
       blocking_for_verify: blockingForVerify,
@@ -713,10 +825,32 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
   let report = generateSuggestions(pmemPath, includeHistory);
   report = enrichWithEdgeSuggestions(pmemPath, report);
 
+  // v0.7.6 fix U2: re-derive the suggestion state from the (now possibly
+  // mutated) summary. enrichWithEdgeSuggestions may have flipped the state
+  // from `no_affected_cards` to `has_suggestions` by adding edge reviews.
+  if (report.state !== 'no_cards') {
+    if (report.summary.blocking > 0 || report.summary.warning > 0 || report.summary.info > 0) {
+      report.state = 'has_suggestions';
+    } else {
+      report.state = 'no_affected_cards';
+    }
+  }
+
   if (format === 'json') {
+    // v0.7.6 fix U2: also emit state, card_count, blocking/warning/info
+    // counts, needs_rebuild, and next_actions so agents can distinguish
+    // empty states. Existing fields (summary, message, next_steps, groups)
+    // keep their names for backward compatibility.
     console.log(JSON.stringify({
-      summary: report.summary,
+      state: report.state,
       message: report.message,
+      card_count: report.card_count,
+      needs_rebuild: report.needs_rebuild,
+      blocking: report.summary.blocking,
+      warning: report.summary.warning,
+      info: report.summary.info,
+      summary: report.summary,
+      next_actions: report.next_steps,
       next_steps: report.next_steps,
       groups: report.groups,
     }, null, 2));
@@ -763,14 +897,23 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
       }
     }
 
-    // Message
+    // v0.7.6 fix U2: show the full message whenever we have suggestions
+    // (any severity). Previously only `blocking > 0` triggered this branch,
+    // which hid warning/info messages. For `no_cards` / `no_affected_cards`
+    // we still want the explanatory line that helps the agent decide what
+    // to do next.
     console.log('');
-    if (report.summary.blocking > 0) {
+    if (report.state === 'has_suggestions') {
       console.log(report.message);
+    } else if (report.state === 'no_cards') {
+      console.log(report.message);
+      console.log('');
+      console.log(`Card count: ${report.card_count}`);
     } else {
-      console.log('No blocking memory consistency issues.');
-      if (report.summary.historical_hidden > 0) {
-        console.log('Historical suggestions available with --include-history.');
+      // no_affected_cards
+      console.log(report.message);
+      if (report.needs_rebuild) {
+        console.log('  Note: change graph indicates an index rebuild may be needed.');
       }
     }
 
@@ -804,18 +947,42 @@ function getCardCount(pmemPath: string): number {
   }
 }
 
-function buildSuggestMessage(summary: SuggestSummary, cardCount: number): string {
+/**
+ * v0.7.6 fix U2: Distinguish three empty states for `update --suggest`.
+ *
+ * - `no_cards`: project has zero memory cards (genuine empty state, need to bootstrap).
+ * - `no_affected_cards`: cards exist but no dirty flags were detected (or none
+ *    mapped to any card). Memory may genuinely be up to date OR the change graph
+ *    may not have surfaced anything yet — agents should verify with `pmem status`.
+ * - `has_suggestions`: at least one blocking/warning/info suggestion was produced.
+ *
+ * Exported for unit testing in src/commands/update.test.ts.
+ */
+export function buildSuggestMessage(summary: SuggestSummary, cardCount: number): {
+  message: string;
+  state: 'no_cards' | 'no_affected_cards' | 'has_suggestions';
+} {
   if (cardCount === 0) {
-    return 'No memory cards found. Create a first module, decision, or task card to start building project memory.';
+    return {
+      message: 'No memory cards exist in this project yet. Run `pmem new <type> <title>` to create one, or `pmem init --guided` to bootstrap.',
+      state: 'no_cards',
+    };
   }
-  if (summary.blocking > 0 || summary.warning > 0 || summary.info > 0) {
-    const parts: string[] = [];
-    if (summary.blocking > 0) parts.push(`${summary.blocking} blocking memory consistency issue(s)`);
-    if (summary.warning > 0) parts.push(`${summary.warning} current suggestion(s)`);
-    if (summary.info > 0) parts.push(`${summary.info} informational item(s)`);
-    return parts.join(' and ') + '.';
+  if (summary.blocking === 0 && summary.warning === 0 && summary.info === 0) {
+    return {
+      message: 'No suggestions generated; no affected cards were detected. Run `pmem status --format json` to verify the change graph, and `pmem verify` to check freshness.',
+      state: 'no_affected_cards',
+    };
   }
-  return 'No suggestions. Memory is up to date.';
+  // Has at least one suggestion. Build a parts-list message.
+  const parts: string[] = [];
+  if (summary.blocking > 0) parts.push(`${summary.blocking} blocking memory consistency issue(s)`);
+  if (summary.warning > 0) parts.push(`${summary.warning} current suggestion(s)`);
+  if (summary.info > 0) parts.push(`${summary.info} informational item(s)`);
+  return {
+    message: parts.join(' and ') + '.',
+    state: 'has_suggestions',
+  };
 }
 
 function buildSuggestNextSteps(summary: SuggestSummary, cardCount: number): string[] {
