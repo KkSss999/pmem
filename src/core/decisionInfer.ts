@@ -13,16 +13,45 @@ export interface InferredDecision {
   source_files: string[];
 }
 
-export function inferDecisions(pmemPath: string): InferredDecision[] {
+export interface InferredDecisionsDiagnostics {
+  trace_dir_exists: boolean;
+  traces_scanned: number;
+  traces_with_decisions: number;
+  decision_lines_found: number;
+  candidates_above_threshold: number;
+}
+
+export interface InferredDecisionsResult {
+  decisions: InferredDecision[];
+  diagnostics: InferredDecisionsDiagnostics;
+}
+
+export function inferDecisions(
+  pmemPath: string,
+  options?: { threshold?: number; verbose?: boolean }
+): InferredDecisionsResult {
   const traceDir = path.join(pmemPath, 'traces');
-  if (!fileExists(traceDir)) return [];
+  const diagnostics: InferredDecisionsDiagnostics = {
+    trace_dir_exists: fileExists(traceDir),
+    traces_scanned: 0,
+    traces_with_decisions: 0,
+    decision_lines_found: 0,
+    candidates_above_threshold: 0,
+  };
+
+  if (!diagnostics.trace_dir_exists) {
+    return { decisions: [], diagnostics };
+  }
 
   const decisions: InferredDecision[] = [];
+  const seen = new Set<string>();
 
   try {
     const traceFiles = fs.readdirSync(traceDir)
       .filter(f => f.endsWith('.md'))
       .sort((a, b) => a.localeCompare(b)); // Chronological order
+
+    diagnostics.traces_scanned = traceFiles.length;
 
     for (const file of traceFiles) {
       const filePath = path.join(traceDir, file);
@@ -31,6 +60,9 @@ export function inferDecisions(pmemPath: string): InferredDecision[] {
 
       const parsed = parseTraceCard(content);
       if (!parsed || !parsed.decisions || parsed.decisions.length === 0) continue;
+
+      diagnostics.traces_with_decisions++;
+      diagnostics.decision_lines_found += parsed.decisions.length;
 
       for (const dec of parsed.decisions) {
         if (dec === '(none)') continue;
@@ -72,6 +104,11 @@ export function inferDecisions(pmemPath: string): InferredDecision[] {
               }),
             source_files: parsed.changedFiles
           });
+
+          if (!seen.has(id)) {
+            seen.add(id);
+            diagnostics.candidates_above_threshold++;
+          }
         }
       }
     }
@@ -82,7 +119,10 @@ export function inferDecisions(pmemPath: string): InferredDecision[] {
     d.related = Array.from(new Set(d.related));
   }
 
-  return decisions;
+  // Suppress unused parameter warning while keeping API shape stable.
+  void options;
+
+  return { decisions, diagnostics };
 }
 
 export function writeInferredDecisions(pmemPath: string, decisions: InferredDecision[]): string[] {

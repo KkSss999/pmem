@@ -106,7 +106,7 @@ export async function startMcpServer(pmemPath: string, writeMode: 'readonly' | '
   }
 
   const server = new Server(
-    { name: 'pmem-rt', version: '0.7.4' },
+    { name: 'pmem-rt', version: '0.7.6' },
     { capabilities: { tools: {} } }
   );
 
@@ -212,7 +212,7 @@ export async function startMcpServer(pmemPath: string, writeMode: 'readonly' | '
       // Post-processing: budget enforcement + content trust + schema version
       result = enforceBudget(result, 4000);
       result = addContentTrust(result);
-      result.schema_version = '0.7.4';
+      result.schema_version = '0.7.6';
 
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result) }],

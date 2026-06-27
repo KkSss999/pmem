@@ -63,7 +63,16 @@ export function copyFile(src: string, dest: string): void {
 }
 
 // NEW: Simple file lock using mkdir (atomic operation)
+// v0.7.6 FIX-1 (issue #9): reentrant — if the calling process already owns
+// the lock (matches the `pid` file inside the lock dir), `acquireLock`
+// returns true immediately. This lets nested helpers (e.g. `rebuildCommand`
+// invoked from `pmem update --confirm`, which already holds the lock) call
+// `acquireLock` without deadlocking on a fresh, process-owned lock.
 export function acquireLock(lockPath: string, timeoutMs: number = 3000): boolean {
+  // Reentrant fast-path: same process re-acquiring its own lock.
+  if (lockOwnedBySelf(lockPath)) {
+    return true;
+  }
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -99,6 +108,75 @@ export function acquireLock(lockPath: string, timeoutMs: number = 3000): boolean
     }
   }
   return false;
+}
+
+/**
+ * v0.7.6 FIX-1 (issue #9): wrap a critical section in the pmem file lock.
+ *
+ * Acquires `.pmem/.lock`, runs `fn`, then releases the lock — even if `fn`
+ * throws. Use this for CLI entry points that mutate the index/database
+ * (e.g. `pmem rebuild`, `pmem update --confirm`) so concurrent processes
+ * serialize through the same lock.
+ *
+ * Reentrancy: if the calling process already owns the lock when `withLock`
+ * is entered, `withLock` runs `fn` directly WITHOUT releasing on exit —
+ * the outer `acquireLock` / `releaseLock` pair stays in charge of the lock
+ * lifetime. This is what lets `pmem update --confirm` → `rebuildCommand`
+ * compose safely without the inner `withLock` accidentally tearing down
+ * the lock the outer command still holds.
+ *
+ * Behaviour on lock contention is controlled by `opts.onTimeout`:
+ *   - `'error'`  (default): throw an Error naming the lock path.
+ *   - `'skip'`:              return `undefined` (caller should treat as a
+ *                            no-op and emit an info note, e.g. `active_lock`).
+ *
+ * `opts.timeoutMs` defaults to 30s — long enough to absorb a stale-lock
+ * break-and-retry but short enough that a wedged pmem process fails fast.
+ */
+export function withLock<T>(
+  pmemPath: string,
+  fn: () => T,
+  opts: { timeoutMs?: number; onTimeout?: 'error' | 'skip' } = {},
+): T | undefined {
+  const lockPath = path.join(pmemPath, '.lock');
+
+  // Reentrant fast-path: if WE already own the lock, just run fn without
+  // touching the lock lifetime. The outer holder is responsible for release.
+  if (lockOwnedBySelf(lockPath)) {
+    return fn();
+  }
+
+  const acquired = acquireLock(lockPath, opts.timeoutMs ?? 30000);
+  if (!acquired) {
+    if (opts.onTimeout === 'skip') {
+      return undefined;
+    }
+    throw new Error(
+      `Could not acquire pmem lock at ${lockPath}. Another pmem process may be running.`,
+    );
+  }
+  try {
+    return fn();
+  } finally {
+    releaseLock(lockPath);
+  }
+}
+
+/**
+ * v0.7.6 FIX-1 (issue #9): returns true if the lock at `lockPath` is held
+ * by the current process (i.e. the `pid` file inside the lock directory
+ * matches `process.pid`). Used by `withLock` and `acquireLock` to support
+ * reentrant critical sections without deadlock or premature release.
+ */
+function lockOwnedBySelf(lockPath: string): boolean {
+  try {
+    const pidFile = path.join(lockPath, 'pid');
+    if (!fs.existsSync(pidFile)) return false;
+    const pidRaw = fs.readFileSync(pidFile, 'utf-8').trim();
+    return parseInt(pidRaw, 10) === process.pid;
+  } catch {
+    return false;
+  }
 }
 
 // NEW: Release file lock

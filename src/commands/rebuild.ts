@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime } from '../core/fs';
+import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
@@ -23,9 +23,25 @@ interface ParsedCard {
 }
 
 export function rebuildCommand(options: RebuildOptions = {}): void {
-  const cwd = process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const pmemPath = path.join(process.cwd(), PMEM_DIR);
 
+  // v0.7.6 FIX-1 (issue #9): hold `.pmem/.lock` for the duration of the
+  // rebuild so a concurrent `pmem verify` waits (or reports `active_lock`)
+  // instead of reading a torn-down SQLite index and emitting transient
+  // `stale_index` warnings. `withLock` is reentrant — when invoked from
+  // `pmem update --confirm` (which already holds the lock) it just runs
+  // the body without an extra acquire/release round trip.
+  withLock(pmemPath, () => {
+    rebuildLocked(pmemPath, options);
+  }, { timeoutMs: 30000, onTimeout: 'error' });
+}
+
+/**
+ * The actual rebuild body, run inside the `.pmem/.lock` critical section
+ * (see FIX-1 in `rebuildCommand`).
+ */
+function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
+  const cwd = process.cwd();
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     if (fileExists(pmemPath)) {

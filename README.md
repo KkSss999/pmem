@@ -228,6 +228,16 @@ pmem ask "sqlite runtime" --format compact
 pmem ask "release checklist" --format json
 ```
 
+### Relations
+
+Use `relations` to inspect a card's edge graph and find pruning candidates:
+
+```bash
+pmem relations module.auth --format json
+```
+
+The JSON output includes `outgoing` / `incoming` edge lists, `summary_by_type`, `summary_by_source`, and `pruning_candidates` — edges with `source: inferred` or `confidence < 0.5` that are safe to prune. This helps agents reduce noise when a card accumulates too many low-quality relations.
+
 ### Dirty, Update, Distill
 
 The memory update flow is intentionally confirmation-first:
@@ -248,6 +258,29 @@ pmem sync -s "<summary>" -n "<next step>"
 ```
 
 `distill` consolidates trace cards into stable cards when enough evidence accumulates.
+
+### Lock Protocol (v0.7.6)
+
+`pmem rebuild` and `pmem update --confirm` acquire `.pmem/.lock` during index mutations. `pmem verify` acquires the lock before reading the SQLite index.
+
+When an agent runs `pmem verify` during an active rebuild:
+- It emits an `active_lock` info note (not a warning/error) and defers all index freshness checks.
+- The output says `clean (index checks deferred)` with Score 100/100.
+- No transient `stale_index` or `missing_database` warnings are emitted — those checks are skipped because another process holds the lock.
+
+If a `pmem` process crashes, the lock may become stale (>60s). Run:
+
+```bash
+pmem verify --fix-locks    # clean the stale lock
+```
+
+Agent guidance:
+- If `pmem verify` reports `active_lock`, wait and retry — do not treat it as a failure.
+- If it reports `stale_lock`, run `pmem verify --fix-locks` before proceeding.
+
+### Verify Output: too_many_relations
+
+When a card exceeds its relation threshold, `pmem verify` emits `too_many_relations` with `top_edges` (up to 10 lowest-confidence edges) and `pruning_candidates` (edges with `source: inferred` or `confidence < 0.5`). Agents can use `pruning_candidates` to suggest which relations to remove, or run `pmem relations <id> --format json` for a full inspection.
 
 ### Module & Decision Inference (v0.7.5)
 
@@ -355,6 +388,7 @@ pmem discover [--dry-run] [--format compact|json] [--min-confidence <n>]
               [--lang auto|nodejs,python,rust,go,cpp,java]
               [--pattern-file <path>]
 pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|mention|all]
+pmem relations <id> [--format json]
 pmem trace <id>
 
 pmem status [--since <timestamp>] [--format compact|json]

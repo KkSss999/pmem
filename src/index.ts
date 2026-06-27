@@ -27,6 +27,7 @@ import { contextCommand } from './commands/context';
 import { captureCommand } from './commands/capture';
 import { moduleInferCommand } from './commands/module';
 import { decisionInferCommand } from './commands/decision';
+import { relationsCommand } from './commands/relations';
 
 
 const program = new Command();
@@ -145,6 +146,22 @@ program
   });
 
 program
+  .command('relations <id>')
+  .description('List all relations for a card (grouped by direction; useful for too_many_relations triage)')
+  .option('-t, --type <type>', 'Filter by edge type (e.g. depends_on)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .option('--source <source>', 'Filter by edge source (explicit, inferred, mention, manual, all)', 'all')
+  .option('--limit <n>', 'Limit edges per direction (default: all)')
+  .action((id: string, options) => {
+    relationsCommand(id, {
+      type: options.type,
+      format: options.format,
+      source: options.source,
+      limit: options.limit ? parseInt(options.limit, 10) : undefined
+    });
+  });
+
+program
   .command('update')
   .description('Update project memory')
   .option('--auto', 'Auto-detect changes, generate suggestions')
@@ -159,6 +176,7 @@ program
   .option('--accept-edges <ids>', 'Comma-separated edge IDs to accept (upgrade to explicit)')
   .option('--reject-edges <ids>', 'Comma-separated edge IDs to reject (delete)')
   .option('--refresh-verified <ids>', 'Comma-separated card IDs to refresh last_verified timestamps')
+  .option('--replace-managed-blocks', 'Replace ## Why / ## Needed Context sections in next.md (destructive; default is to preserve)')
   .action((options) => {
     updateCommand(options);
   });
@@ -187,8 +205,13 @@ program
   .option('-r, --reason <reason>', 'Reason for marking dirty', 'code_changed')
   .option('--auto', 'Auto-detect changed files and mark related cards dirty')
   .option('--card <id...>', 'Mark specific cards as dirty (space-separated, repeatable)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action((options) => {
-    markDirtyCommand(options.reason, { auto: options.auto, cardIds: options.card });
+    markDirtyCommand(options.reason, {
+      auto: options.auto,
+      cardIds: options.card,
+      format: options.format,
+    });
   });
 
 program
@@ -375,8 +398,15 @@ moduleCmd
   .description('Auto-infer software modules from codebase structure and files')
   .option('--write', 'Write inferred modules directly to .pmem/modules/', false)
   .option('--dry-run', 'Preview inferred modules without writing', false)
+  .option('--coarse-attribution', 'Use directory-level source file attribution (legacy behavior)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action((options) => {
-    moduleInferCommand({ write: options.write, dryRun: options.dryRun });
+    moduleInferCommand({
+      write: options.write,
+      dryRun: options.dryRun,
+      coarseAttribution: options.coarseAttribution,
+      format: options.format,
+    });
   });
 
 const decisionCmd = program
@@ -388,8 +418,15 @@ decisionCmd
   .description('Auto-infer project decisions from traces')
   .option('--write', 'Write inferred decisions directly to .pmem/decisions/', false)
   .option('--from-traces', 'Infer decisions from traces', true)
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .option('-t, --threshold <n>', 'Minimum confidence threshold (0-1)', '0.3')
   .action((options) => {
-    decisionInferCommand({ write: options.write, fromTraces: options.fromTraces });
+    decisionInferCommand({
+      write: options.write,
+      fromTraces: options.fromTraces,
+      format: options.format,
+      threshold: options.threshold !== undefined ? parseFloat(options.threshold) : undefined,
+    });
   });
 
 program.parse();

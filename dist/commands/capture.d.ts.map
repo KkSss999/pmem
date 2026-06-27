@@ -1,1 +1,0 @@
-{"version":3,"file":"capture.d.ts","sourceRoot":"","sources":["../../src/commands/capture.ts"],"names":[],"mappings":"AAIA,wBAAgB,cAAc,CAAC,OAAO,EAAE;IACtC,IAAI,CAAC,EAAE,OAAO,CAAC;IACf,OAAO,CAAC,EAAE,MAAM,CAAC;IACjB,IAAI,CAAC,EAAE,MAAM,CAAC;IACd,IAAI,CAAC,EAAE,OAAO,CAAC;IACf,KAAK,CAAC,EAAE,OAAO,CAAC;CACjB,GAAG,IAAI,CA+BP"}
