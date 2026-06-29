@@ -438,20 +438,24 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   // Helper to clean up stale DB card rows when source .md files are missing.
   // Called before rebuildCommand() so --fix / --fix-stale can immediately
   // remove stale card references without waiting for a full index rebuild.
+  // Wrapped in a transaction for atomicity — a crash mid-cleanup rolls back.
   const cleanupMissingCards = (db: ReturnType<typeof openDatabase>, issues: VerifyIssue[]): void => {
     const missingCardIssues = issues.filter(i => i.type === 'missing_card_file' && i.card_id);
     if (missingCardIssues.length === 0) return;
 
     console.log(`Cleaning up ${missingCardIssues.length} stale card(s) from database...`);
-    for (const issue of missingCardIssues) {
-      const cardId = issue.card_id!;
-      db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(cardId, cardId);
-      db.prepare('DELETE FROM aliases WHERE card_id = ?').run(cardId);
-      db.prepare('DELETE FROM tags WHERE card_id = ?').run(cardId);
-      db.prepare('DELETE FROM paths WHERE card_id = ?').run(cardId);
-      db.prepare('UPDATE cards SET is_deleted = 1 WHERE id = ?').run(cardId);
-      console.log(`  Removed stale card: ${cardId}`);
-    }
+    const cleanupTx = db.transaction(() => {
+      for (const issue of missingCardIssues) {
+        const cardId = issue.card_id!;
+        db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(cardId, cardId);
+        db.prepare('DELETE FROM aliases WHERE card_id = ?').run(cardId);
+        db.prepare('DELETE FROM tags WHERE card_id = ?').run(cardId);
+        db.prepare('DELETE FROM paths WHERE card_id = ?').run(cardId);
+        db.prepare('UPDATE cards SET is_deleted = 1 WHERE id = ?').run(cardId);
+        console.log(`  Removed stale card: ${cardId}`);
+      }
+    });
+    cleanupTx();
   };
 
   // --fix-stale: refresh stale_memory cards by bumping last_verified timestamps.

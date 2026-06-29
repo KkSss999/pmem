@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -383,25 +383,33 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
   // Execute all SQLite writes in a single transaction
   doRebuild();
 
-  // v0.7.7 (issue #12): clean up stale DB cards whose source .md files
+  // v0.7.6-a (issue #12): clean up stale DB cards whose source .md files
   // have been deleted from disk. The rebuild loop only processes files
   // that exist — it never removes DB rows for deleted files — so an
   // incremental rebuild would otherwise dead-loop on `missing_card_file`
   // verify warnings with no way to resolve them short of `--full`.
+  //
+  // Wrapped in a transaction so a crash mid-cleanup leaves the DB in a
+  // consistent state (all-or-nothing per stale card batch).
   let cleanedStaleCards = 0;
   {
-    const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
-    for (const card of staleCards) {
-      const absPath = path.join(cwd, card.file_path);
-      if (!fileExists(absPath)) {
-        db.prepare("UPDATE cards SET is_deleted = 1 WHERE id = ?").run(card.id);
-        deleteCardEdges(db, card.id);
-        deleteCardAliases(db, card.id);
-        deleteCardTags(db, card.id);
-        deleteCardPaths(db, card.id);
-        cleanedStaleCards++;
+    const cleanupTx = db.transaction(() => {
+      const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
+      for (const card of staleCards) {
+        const absPath = path.join(cwd, card.file_path);
+        if (!fileExists(absPath)) {
+          db.prepare("UPDATE cards SET is_deleted = 1 WHERE id = ?").run(card.id);
+          // Bidirectional edge cleanup — covers both outgoing and incoming edges
+          // for the deleted card, matching the verify.ts cleanupMissingCards pattern.
+          db.prepare("DELETE FROM edges WHERE from_id = ? OR to_id = ?").run(card.id, card.id);
+          deleteCardAliases(db, card.id);
+          deleteCardTags(db, card.id);
+          deleteCardPaths(db, card.id);
+          cleanedStaleCards++;
+        }
       }
-    }
+    });
+    cleanupTx();
   }
 
   // v0.7.3 (issue #6): prune orphan edges after rebuild.
