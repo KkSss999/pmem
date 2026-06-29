@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -383,17 +383,31 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
   // Execute all SQLite writes in a single transaction
   doRebuild();
 
-  // v0.7.3 (issue #6): prune orphan edges after a --full rebuild.
-  // The rebuild loop inserts explicit edges (depends_on, related) from
-  // each card's current frontmatter without checking that the target
-  // card still has a file. If a target card was deleted but the
-  // declaring card's frontmatter still names it (or a card was just
-  // renamed and the caller hasn't yet propagated the rename), those
-  // edges would otherwise dangle and trip `pmem verify`'s
-  // orphan_edges / too_many_relations checks.
-  if (isFull) {
-    deleteOrphanEdges(db);
+  // v0.7.7 (issue #12): clean up stale DB cards whose source .md files
+  // have been deleted from disk. The rebuild loop only processes files
+  // that exist — it never removes DB rows for deleted files — so an
+  // incremental rebuild would otherwise dead-loop on `missing_card_file`
+  // verify warnings with no way to resolve them short of `--full`.
+  let cleanedStaleCards = 0;
+  {
+    const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
+    for (const card of staleCards) {
+      const absPath = path.join(cwd, card.file_path);
+      if (!fileExists(absPath)) {
+        db.prepare("UPDATE cards SET is_deleted = 1 WHERE id = ?").run(card.id);
+        deleteCardEdges(db, card.id);
+        deleteCardAliases(db, card.id);
+        deleteCardTags(db, card.id);
+        deleteCardPaths(db, card.id);
+        cleanedStaleCards++;
+      }
+    }
   }
+
+  // v0.7.3 (issue #6): prune orphan edges after rebuild.
+  // v0.7.7 (issue #12): run unconditionally — stale card cleanup above
+  // can create new orphan edges even in incremental mode.
+  deleteOrphanEdges(db);
 
   // v0.7.0-a (revised in v0.7.3, issue #6): restore edges that the
   // rebuild loop did not and could not have re-derived. We now
@@ -501,6 +515,9 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
 
   console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
   console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
+  if (cleanedStaleCards > 0) {
+    console.log(`Cleaned ${cleanedStaleCards} stale card(s) (source files deleted)`);
+  }
 
   closeDatabase();
 }

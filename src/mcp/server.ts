@@ -106,7 +106,7 @@ export async function startMcpServer(pmemPath: string, writeMode: 'readonly' | '
   }
 
   const server = new Server(
-    { name: 'pmem-rt', version: '0.7.6' },
+    { name: 'pmem-rt', version: '0.7.6-a' },
     { capabilities: { tools: {} } }
   );
 
