@@ -2,6 +2,20 @@
 
 All notable changes to pmem are documented here.
 
+## v0.7.6-a — Stale Card Cleanup & missing_card_file Fix (2026-06-29)
+
+### Fixed
+
+- **`missing_card_file` rebuild dead loop (#12)**: `pmem verify` previously reported `missing_card_file` and suggested `pmem rebuild`, but incremental rebuild only processed existing `.md` files on disk and never cleaned up DB rows for deleted cards — creating an unresolvable loop. Incremental rebuild now detects stale DB cards whose source files no longer exist, marks them `is_deleted = 1`, and cleans up their edges/aliases/tags/paths.
+- **`deleteOrphanEdges` now runs unconditionally**: Previously only called during `--full` rebuild; now runs in all rebuild modes since stale card cleanup can create new orphan edges in incremental mode.
+- **`--fix` / `--fix-stale` directly handle `missing_card_file`**: Before calling rebuild, these options now directly remove stale card rows from the database, providing an immediate repair path without waiting for index rebuild.
+
+### Changed
+
+- **Verify fix hint updated**: `missing_card_file` now suggests `"pmem rebuild (incremental rebuild will clean up stale card references)"` instead of just `"pmem rebuild"`.
+- **`card_id` added to `missing_card_file` verify issues**: Enables direct DB cleanup by `--fix` / `--fix-stale`.
+- **Rebuild summary reports cleaned stale cards**: `"Cleaned N stale card(s) (source files deleted)"` when applicable.
+
 ## v0.7.6 — Agent Contract & Write-Path Integrity (2026-06-28)
 
 ### Added

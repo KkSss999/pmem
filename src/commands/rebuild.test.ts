@@ -482,4 +482,41 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     assert.ok(toIds.includes('module.IM2'),
       `incremental rebuild should have re-derived inferred T->IM2, got: ${JSON.stringify(after)}`);
   });
+
+  it('should clean up stale cards when source file is deleted', () => {
+    // Write a module card and rebuild to seed the DB
+    writeFile(path.join(testDir, '.pmem/modules/module.test-module.md'),
+      card('module.test-module', 'module'));
+
+    const rebuild1 = pmem('rebuild --full', testDir);
+    assert.strictEqual(rebuild1.code, 0, `rebuild failed: ${rebuild1.stdout}`);
+
+    // Verify should pass cleanly -- no missing_card_file warnings
+    const verify1 = pmem('verify', testDir);
+    assert.ok(!verify1.stdout.includes('missing_card_file'),
+      `unexpected missing_card_file before deletion: ${verify1.stdout}`);
+
+    // Delete the source .md file
+    fs.unlinkSync(path.join(testDir, '.pmem/modules/module.test-module.md'));
+
+    // Incremental rebuild should detect the missing file and mark the card as deleted
+    const rebuild2 = pmem('rebuild', testDir);
+    assert.strictEqual(rebuild2.code, 0, `incremental rebuild failed: ${rebuild2.stdout}`);
+
+    // DB should have is_deleted = 1 for the missing card
+    const rows = queryEdges(testDir,
+      "SELECT id, is_deleted FROM cards WHERE id = 'module.test-module'");
+    assert.strictEqual(rows.length, 1, `expected 1 card row, got ${rows.length}`);
+    assert.strictEqual(rows[0].is_deleted, 1,
+      `expected is_deleted=1, got ${JSON.stringify(rows[0])}`);
+
+    // Verify should not report missing_card_file warnings
+    const verify2 = pmem('verify', testDir);
+    assert.ok(!verify2.stdout.includes('missing_card_file'),
+      `still has missing_card_file after incremental rebuild: ${verify2.stdout}`);
+
+    // Incremental rebuild should report cleaned stale cards
+    assert.ok(rebuild2.stdout.includes('Cleaned'),
+      `expected "Cleaned" stale card message in rebuild output: ${rebuild2.stdout}`);
+  });
 });
