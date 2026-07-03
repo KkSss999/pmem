@@ -29,7 +29,7 @@ The design is intentionally local and Git-friendly. Markdown cards remain the so
 - You want agents to update memory deliberately instead of auto-writing noisy logs.
 - You prefer local files over hosted memory services.
 
-It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.6 focuses on making the CLI agent-native with relationship discovery and polished workflows.
+It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.8 adds the Hybrid Recall Engine: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
 ## Install
 
@@ -215,20 +215,24 @@ Do not edit SQLite directly. Edit Markdown cards or use pmem workflow commands, 
 
 ### Recall And Ask
 
-Use `recall` for the current project state. v0.8 (upcoming on `main` branch, not yet released to npm) adds budget modes: `brief` returns L0 + read-if-needed paths, `normal` is the default agent context, and `deep` preserves more detail when budget allows.
+Use `recall` for the current project state. v0.8 adds recall modes: `--mode brief` returns L0 + read-if-needed paths only, `--mode normal` (default) is the full agent context, and `--mode deep` preserves more detail when budget allows.
 
 ```bash
 pmem recall --budget 2000
 pmem recall --mode brief --budget 500
+pmem recall --mode deep --budget 6000
 ```
 
-Use `ask` for targeted retrieval. v0.8 (upcoming on `main` branch, not yet released to npm) uses the Hybrid Recall Engine: exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, graph expansion, recency, and stale/dirty penalties are fused into a deterministic score. Add `--explain` to see why each card was recalled.
+Use `ask` for targeted retrieval. v0.8 uses the Hybrid Recall Engine: a 5-stage deterministic pipeline — intent parse → multi-channel candidate generation → graph expansion → score fusion → L0-L3 budget packing. Channels include exact card ID, ID substring, exact title, title phrase, title token, aliases, tags, source file path, always-on FTS5/BM25, and graph hop expansion. Scores are multiplicative: `base × type_weight × recency × staleness_penalty × status`. Add `--explain` to see the `reasons[]` and `factors{}` for each matched card.
 
 ```bash
 pmem ask "sqlite runtime" --format compact
 pmem ask "src/core/query/recall.ts" --explain --limit 5
 pmem ask "release checklist" --format json
+pmem ask "module.core" --explain          # explain why this card was matched
 ```
+
+`--limit N` caps the result set (must be a positive integer; exit 2 on invalid value). `--explain` adds per-card `reasons` and `factors` fields to JSON output and a `Reasons:` section to compact output.
 
 ### Relations
 

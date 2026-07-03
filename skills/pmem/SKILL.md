@@ -114,7 +114,7 @@ pmem related module.core --depth 2
 pmem trace decision.sqlite_runtime
 ```
 
-In v0.8 (upcoming on `main` branch, not yet released to npm), `pmem recall` remains trace-aware and adds recall modes, while `pmem ask` uses deterministic hybrid retrieval (exact IDs, aliases, tags, source files, FTS5/BM25, graph expansion, recency, and stale/dirty penalties). The recall output is structured into:
+v0.8 adds recall modes to `pmem recall` and replaces `pmem ask` with the Hybrid Recall Engine: a 5-stage deterministic pipeline (intent parse → multi-channel candidate generation → graph expansion → score fusion → L0-L3 budget packing) that fuses exact IDs, aliases, tags, source file paths, FTS5/BM25, graph expansion, recency, and stale/dirty penalties into a ranked result. Use `--explain` to see per-card `reasons[]` and `factors{}`. The recall output is structured into:
 - **PROJECT & STAGE**: The current metadata of the repository.
 - **CURRENT CONTEXT**: Recent summaries of what the project is doing.
 - **RECENT CHANGES**: Thick trace logs of what files and symbols changed.
@@ -317,7 +317,7 @@ pmem mcp
 | Tool | Description |
 |------|-------------|
 | `pmem_recall` | Restore project memory context (stage, focus, next, active cards, updates) |
-| `pmem_ask` | Search memory with 6-step retrieval (ID → alias → tag → graph → FTS5 → LIKE) |
+| `pmem_ask` | Search memory with Hybrid Recall Engine (exact ID/alias/tag/source-file → FTS5/BM25 → graph expansion → score fusion) |
 | `pmem_related` | Query graph neighbors of a card (edges grouped by type with direction/confidence) |
 | `pmem_status` | Detect changed files and affected memory cards (git or mtime) |
 
