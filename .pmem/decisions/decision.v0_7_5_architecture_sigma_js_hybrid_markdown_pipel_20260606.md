@@ -17,7 +17,7 @@ related_to:
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_scope_read_only_single_project_localhost_20260606
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
-last_verified: "2026-06-26T12:25:00.000Z"
+last_verified: "2026-07-02T21:07:09.089Z"
 ---
 # Deferred Web UI Architecture: Sigma.js + Hybrid Markdown Pipeline
 

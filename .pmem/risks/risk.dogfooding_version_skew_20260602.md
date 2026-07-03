@@ -5,16 +5,17 @@ title: "Dogfooding Version Skew"
 status: active
 tags: [dogfooding, release, npm, version-skew]
 created: "2026-06-02"
-updated: "2026-06-02T19:52:43.628Z"
+updated: "2026-07-03T23:59:59.000Z"
 source_files:
   - package.json
+  - package-lock.json
   - CHANGELOG.md
   - docs/project-roadmap.md
 depends_on: []
 related_to:
   - decision.dogfood_pmem_for_pmem_development_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
-last_verified: "2026-06-26T11:57:08.461Z"
+last_verified: "2026-07-03T23:59:59.000Z"
 ---
 # Dogfooding Version Skew
 
@@ -24,12 +25,13 @@ The published npm latest package and the repository's sealed baseline can diverg
 
 ## Observed State
 
-During initialization:
+During v0.8.0 release closure:
 
-- `npm view pmem-ai version` returned `0.6.3`.
-- The handoff said v0.6.4 was sealed in git with tag `v0.6.4`.
-- Local `package.json` reports `0.6.4`.
-- The current working tree includes uncommitted v0.7.0 Phase 2 changes.
+- Local `package.json` and `package-lock.json` report `0.8.0`.
+- Local dogfood uses `node dist/index.js` against the current working tree.
+- `npm pack --dry-run` reports `pmem-ai@0.8.0`.
+
+Earlier initialization observed published/local skew (`npm view pmem-ai version` returned `0.6.3` while local work was ahead), so release validation must continue to name whether it uses local `dist/index.js` or the published npm package.
 
 ## Impact
 

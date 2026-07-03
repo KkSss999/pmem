@@ -16,7 +16,7 @@ depends_on: []
 related_to:
   - module.manifest_runtime_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
-last_verified: "2026-06-26T11:35:51.956Z"
+last_verified: "2026-07-02T21:15:37.370Z"
 ---
 # CLI Runtime
 

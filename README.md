@@ -215,16 +215,18 @@ Do not edit SQLite directly. Edit Markdown cards or use pmem workflow commands, 
 
 ### Recall And Ask
 
-Use `recall` for the current project state:
+Use `recall` for the current project state. v0.8 (upcoming on `main` branch, not yet released to npm) adds budget modes: `brief` returns L0 + read-if-needed paths, `normal` is the default agent context, and `deep` preserves more detail when budget allows.
 
 ```bash
 pmem recall --budget 2000
+pmem recall --mode brief --budget 500
 ```
 
-Use `ask` for targeted retrieval:
+Use `ask` for targeted retrieval. v0.8 (upcoming on `main` branch, not yet released to npm) uses the Hybrid Recall Engine: exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, graph expansion, recency, and stale/dirty penalties are fused into a deterministic score. Add `--explain` to see why each card was recalled.
 
 ```bash
 pmem ask "sqlite runtime" --format compact
+pmem ask "src/core/query/recall.ts" --explain --limit 5
 pmem ask "release checklist" --format json
 ```
 
@@ -382,8 +384,8 @@ pmem init [project-name] [--guided] [--description <text>] [--stage <text>] [--n
 pmem context <task> [--budget N] [--format compact|json]
 pmem capture [--auto] [-s <summary>] [-n <next>] [--full] [--force]
 
-pmem recall [--budget N] [--format compact|json|paths|pack] [--since <duration>]
-pmem ask <query> [--format compact|json|paths|pack]
+pmem recall [--budget N] [--mode brief|normal|deep] [--format compact|json|paths|pack] [--since <duration>]
+pmem ask <query> [--format compact|json|paths|pack] [--explain] [--limit N]
 pmem discover [--dry-run] [--format compact|json] [--min-confidence <n>]
               [--lang auto|nodejs,python,rust,go,cpp,java]
               [--pattern-file <path>]

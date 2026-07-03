@@ -107,19 +107,31 @@ program
   .option('--since <duration>', 'Only show cards updated within duration (e.g. 7d, 24h, 1w)')
   .option('--recent <count>', 'Number of recent traces to read', '5')
   .option('--no-traces', 'Do not load recent traces')
+  .option('--mode <mode>', 'Recall mode (brief, normal, deep)', 'normal')
   .action((options) => {
     recallCommand(parseInt(options.budget, 10), options.format, options.since, {
       recent: options.recent ? parseInt(options.recent, 10) : undefined,
-      noTraces: options.traces === false
+      noTraces: options.traces === false,
+      mode: ['brief', 'normal', 'deep'].includes(options.mode) ? options.mode : 'normal'
     });
   });
 
 program
   .command('ask <query>')
-  .description('Graph-guided memory recall')
+  .description('Hybrid memory recall (multi-channel + graph + scoring)')
   .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
+  .option('--explain', 'Show per-result reasons and scoring factors')
+  .option('--limit <n>', 'Max results to return', '20')
   .action((query: string, options) => {
-    askCommand(query, options.format);
+    const parsedLimit = options.limit ? parseInt(options.limit, 10) : undefined;
+    if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit < 1)) {
+      console.error('Error: --limit must be a positive integer.');
+      process.exit(2);
+    }
+    askCommand(query, options.format, {
+      explain: options.explain === true,
+      limit: parsedLimit,
+    });
   });
 
 program

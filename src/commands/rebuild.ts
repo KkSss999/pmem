@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5 } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -130,6 +130,12 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
     updated_at: string | null;
   }> = [];
 
+  // v0.8: FTS rows collected during the card loop, written after createFTS5.
+  // For skipped (hash-match) cards we still collect so a missing FTS row can
+  // be backfilled — the card_fts table did not exist before v0.8.
+  const ftsRows: CardFtsRow[] = [];
+  const ftsSkippedIds: string[] = [];
+
   // Pre-scan all card IDs for wikilink validation (so [[card-id]] refs
   // resolve even when the target card hasn't been processed yet)
   const validCardIds = new Set<string>();
@@ -238,6 +244,17 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
           if (card && !card.updated_at) {
             db.prepare('UPDATE cards SET updated_at = ? WHERE file_path = ?').run(resolveUpdatedAt(fm.updated, file), relPath);
           }
+          // v0.8 FTS backfill: card content unchanged, but its FTS row may
+          // not exist yet (table introduced in v0.8). Collect for backfill.
+          ftsRows.push({
+            id: fm.id,
+            title,
+            summary: extractCardSummary(fm, parsed.bodyText),
+            body: parsed.bodyText,
+            aliases: fm.aliases ?? [],
+            tags: fm.tags ?? [],
+          });
+          ftsSkippedIds.push(fm.id);
           skipped++;
           continue;
         }
@@ -273,6 +290,15 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
       };
 
       upsertCard(db, cardRow);
+
+      ftsRows.push({
+        id: fm.id,
+        title,
+        summary: cardRow.summary,
+        body: parsed.bodyText,
+        aliases: fm.aliases ?? [],
+        tags: fm.tags ?? [],
+      });
 
       // Clear existing explicit, mention, and inferred relations before
       // re-inserting from the current frontmatter. v0.7.3 (issue #6):
@@ -405,6 +431,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
           deleteCardAliases(db, card.id);
           deleteCardTags(db, card.id);
           deleteCardPaths(db, card.id);
+          deleteCardFts(db, card.id);
           cleanedStaleCards++;
         }
       }
@@ -482,6 +509,20 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
 
   // Create FTS5 virtual table for full-text search (outside transaction)
   createFTS5(db);
+
+  // v0.8: populate FTS index. Updated cards always refresh; skipped cards
+  // only backfill when their FTS row is missing. Full rebuild starts clean.
+  {
+    const ftsSkipped = new Set(ftsSkippedIds);
+    const ftsTx = db.transaction(() => {
+      if (isFull) clearCardFts(db);
+      for (const row of ftsRows) {
+        if (!isFull && ftsSkipped.has(row.id) && cardFtsRowExists(db, row.id)) continue;
+        refreshCardFts(db, row);
+      }
+    });
+    ftsTx();
+  }
 
   // Write legacy graph.json for backward compatibility
   const allContent = cardFiles.map(f => readFile(f) || '').join('');

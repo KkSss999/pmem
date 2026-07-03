@@ -12,7 +12,7 @@ source_files:
 depends_on: []
 related_to:
   - task.v0_7_0_a_fix_card_id_wikilink_to_edge_parsing_for__20260603
-last_verified: "2026-06-26T11:35:51.958Z"
+last_verified: "2026-07-02T21:07:09.089Z"
 ---
 
 ## Decision

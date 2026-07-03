@@ -31,7 +31,7 @@ related_to:
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
   - module.recall_retrieval_runtime_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # Post v0.7 Project RAG OS Roadmap
 

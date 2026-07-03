@@ -18,7 +18,7 @@ depends_on:
 related_to:
   - task.post_v0_7_optimization_roadmap_20260602
   - risk.rag_scope_creep_heavy_vector_stack_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-07-02T20:48:42.243Z"
 ---
 # v1.0 Project RAG OS
 

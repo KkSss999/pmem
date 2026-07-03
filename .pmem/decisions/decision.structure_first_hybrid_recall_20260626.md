@@ -16,7 +16,7 @@ related_to:
   - feature.v0_8_hybrid_recall_engine_20260626
   - module.recall_retrieval_runtime_20260626
   - task.rag_research_sprint_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # Structure-First Hybrid Recall Before Vector RAG
 

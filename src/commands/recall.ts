@@ -8,7 +8,7 @@ export function recallCommand(
   budget: number = 2000,
   format: CliFormat = 'compact',
   since?: string,
-  options?: { recent?: number; noTraces?: boolean }
+  options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep' }
 ): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
@@ -26,7 +26,11 @@ export function recallCommand(
       noTraces: options?.noTraces
     });
 
-    const output = formatOutput(result, format, budget);
+    const output = formatOutput(
+      options?.mode && format !== 'json' ? { ...result, recall_mode: options.mode } : result,
+      format,
+      budget
+    );
     console.log(output);
   } catch (err: any) {
     console.error(`Error: ${err.message}`);

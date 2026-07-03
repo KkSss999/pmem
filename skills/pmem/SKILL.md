@@ -97,14 +97,16 @@ For `pmem recall --format json`, read `active_foundation`. `active_modules` rema
 
 Legacy v0.6.x projects do not need migration. When `schema` is absent, pmem falls back to the old software defaults without rewriting the manifest.
 
-### Context Recovery (v0.7.5 Trace-Aware)
+### Context Recovery (v0.8 Hybrid Recall)
 
 ```bash
 # Restore project context (hot memory, ~2000 tokens)
 pmem recall --format compact --budget 2000
+pmem recall --mode brief --budget 500    # L0 + READ_IF_NEEDED only
 
 # Search for specific topics
 pmem ask "sqlite runtime" --format compact
+pmem ask "src/core/query/recall.ts" --explain --limit 5
 pmem ask "module.core" --format json    # machine-readable
 
 # Explore graph neighbors
@@ -112,7 +114,7 @@ pmem related module.core --depth 2
 pmem trace decision.sqlite_runtime
 ```
 
-In v0.7.5, `pmem recall` is trace-aware, meaning it reads the recent capture history (traces) and integrates them to restore context. The output is structured into:
+In v0.8 (upcoming on `main` branch, not yet released to npm), `pmem recall` remains trace-aware and adds recall modes, while `pmem ask` uses deterministic hybrid retrieval (exact IDs, aliases, tags, source files, FTS5/BM25, graph expansion, recency, and stale/dirty penalties). The recall output is structured into:
 - **PROJECT & STAGE**: The current metadata of the repository.
 - **CURRENT CONTEXT**: Recent summaries of what the project is doing.
 - **RECENT CHANGES**: Thick trace logs of what files and symbols changed.

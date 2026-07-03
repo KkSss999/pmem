@@ -669,6 +669,9 @@ export interface ContextCardInfo {
   file_path: string;
   summary?: string;
   type: string;
+  score?: number;
+  reason?: string;
+  stale?: boolean;
 }
 
 export interface ContextQueryResult {

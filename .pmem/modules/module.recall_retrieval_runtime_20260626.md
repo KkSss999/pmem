@@ -5,7 +5,7 @@ title: "Recall and Retrieval Runtime"
 status: active
 tags: [recall, ask, query, retrieval, rag, sqlite]
 created: "2026-06-26"
-updated: "2026-06-26T12:15:00.000Z"
+updated: "2026-07-03T00:00:00.000Z"
 source_files:
   - src/commands/recall.ts
   - src/commands/ask.ts
@@ -15,13 +15,17 @@ source_files:
   - src/core/query/related.ts
   - src/core/query/context.ts
   - src/core/query/status.ts
+  - src/core/query/engine/intent.ts
+  - src/core/query/engine/candidates.ts
+  - src/core/query/engine/scoring.ts
+  - src/core/query/engine/pack.ts
 depends_on:
   - module.manifest_runtime_20260602
 related_to:
   - decision.structure_first_hybrid_recall_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
   - feature.v0_9_contextual_rerank_retrieval_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # Recall and Retrieval Runtime
 

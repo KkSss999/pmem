@@ -15,7 +15,7 @@ related_to:
   - feature.v0_8_5_lightweight_semantic_layer_20260626
   - feature.v1_0_project_rag_os_20260626
   - module.recall_retrieval_runtime_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # v0.9 Contextual Retrieval and Reranking
 

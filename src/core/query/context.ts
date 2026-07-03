@@ -80,7 +80,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
   let askMatched: any[] = [];
   if (fileExists(dbPath)) {
     try {
-      const ask = askQuery(pmemPath, task);
+      const ask = askQuery(pmemPath, task, { explain: true, limit: 12 });
       askMatched = ask.matched || [];
     } catch (err: any) {
       result.warnings.push(`Ask query failed: ${err.message}`);
@@ -113,12 +113,18 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
         ).get(m.id) as { type: string; title: string; summary: string | null; file_path: string } | undefined;
         
         if (card) {
+          const reasons = Array.isArray(m.reasons)
+            ? m.reasons.map((r: any) => r.channel).filter(Boolean).join(', ')
+            : m.match_type;
           result.relevant_memory.push({
             id: m.id,
             title: card.title,
             file_path: card.file_path,
             summary: card.summary || undefined,
-            type: card.type
+            type: card.type,
+            score: m.score,
+            reason: reasons || undefined,
+            stale: m.stale === true
           });
         }
       }

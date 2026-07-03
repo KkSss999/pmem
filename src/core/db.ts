@@ -160,6 +160,50 @@ export function createFTS5(db: Database.Database): void {
   `);
 }
 
+export function ftsTableExists(db: Database.Database): boolean {
+  try {
+    const row = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_fts'"
+    ).get();
+    return !!row;
+  } catch {
+    return false;
+  }
+}
+
+export interface CardFtsRow {
+  id: string;
+  title: string;
+  summary: string | null;
+  body: string;
+  aliases: string[];
+  tags: string[];
+}
+
+export function refreshCardFts(db: Database.Database, card: CardFtsRow): void {
+  if (!ftsTableExists(db)) return;
+  db.prepare('DELETE FROM card_fts WHERE card_id = ?').run(card.id);
+  db.prepare(
+    'INSERT INTO card_fts (card_id, title, summary, body, aliases, tags) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(card.id, card.title, card.summary ?? '', card.body, card.aliases.join(' '), card.tags.join(' '));
+}
+
+export function deleteCardFts(db: Database.Database, cardId: string): void {
+  if (!ftsTableExists(db)) return;
+  db.prepare('DELETE FROM card_fts WHERE card_id = ?').run(cardId);
+}
+
+export function cardFtsRowExists(db: Database.Database, cardId: string): boolean {
+  if (!ftsTableExists(db)) return false;
+  const row = db.prepare('SELECT card_id FROM card_fts WHERE card_id = ? LIMIT 1').get(cardId);
+  return !!row;
+}
+
+export function clearCardFts(db: Database.Database): void {
+  if (!ftsTableExists(db)) return;
+  db.exec('DELETE FROM card_fts');
+}
+
 export function getSchemaVersion(db: Database.Database): string | null {
   try {
     const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;

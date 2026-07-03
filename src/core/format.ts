@@ -1,4 +1,5 @@
 import { RecallResult, AskResult, AskMatch, CliFormat } from '../types';
+import { pack } from './query/engine/pack';
 
 export function formatOutput(result: unknown, format: CliFormat, budget: number = 1600): string {
   switch (format) {
@@ -61,6 +62,29 @@ function formatPaths(result: unknown): string {
 
 function formatPack(result: unknown, budget: number): string {
   const r = result as Record<string, unknown>;
+
+  if (r.project) {
+    const mode = r.recall_mode === 'brief' || r.recall_mode === 'deep' ? r.recall_mode : 'normal';
+    const l0 = [
+      `PROJECT: ${r.project || 'Unknown'}`,
+      ...(r.stage ? [`STAGE: ${r.stage}`] : []),
+      ...(r.focus ? [`FOCUS: ${r.focus}`] : []),
+      ...(r.next ? [`NEXT: ${String(r.next).replace(/^[-*]\s*/, '').trim()}`] : []),
+    ];
+    const arch = Array.isArray(r.architecture) ? r.architecture as any[] : [];
+    const decisions = Array.isArray(r.decisions) ? r.decisions as any[] : [];
+    const packed = pack({
+      l0,
+      l1: [
+        ...arch.slice(0, 5).map(m => `ARCH: ${m.id}${m.summary ? ` — ${m.summary}` : ''}`),
+        ...decisions.slice(0, 5).map(d => `DECISION: ${d.id || d.title}${d.summary ? ` — ${d.summary}` : ''}`),
+      ],
+      l2: [],
+      l3: Array.isArray(r.mustRead) ? r.mustRead as string[] : [],
+    }, { budget, mode });
+    return packed.lines.join('\n');
+  }
+
   const parts: string[] = [];
   let used = 0;
 
@@ -109,9 +133,24 @@ function formatPack(result: unknown, budget: number): string {
 
 function formatRecallCompact(r: Record<string, unknown>): string {
   const lines: string[] = [];
+  const mode = r.recall_mode === 'brief' || r.recall_mode === 'deep' ? r.recall_mode : 'normal';
   lines.push(`PROJECT: ${r.project || 'Unknown'}`);
   if (r.stage) lines.push(`STAGE: ${r.stage}`);
   if (r.focus) lines.push(`FOCUS: ${r.focus}`);
+
+  if (mode === 'brief') {
+    if (r.next) {
+      lines.push('');
+      lines.push('NEXT:');
+      lines.push(`- ${String(r.next).replace(/^[-*]\s*/, '').trim()}`);
+    }
+    if (Array.isArray(r.mustRead) && (r.mustRead as string[]).length > 0) {
+      lines.push('');
+      lines.push('READ_IF_NEEDED:');
+      for (const f of r.mustRead as string[]) lines.push(`  ${f}`);
+    }
+    return lines.join('\n');
+  }
 
   // 1. CURRENT CONTEXT
   lines.push('');
