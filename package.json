@@ -43,7 +43,7 @@
     "sqlite"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "repository": {
     "type": "git",

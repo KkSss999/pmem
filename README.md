@@ -1,35 +1,36 @@
-# pmem
+# pmem — Project Memory for AI Agents
 
-Project Memory for AI Agents.
+[![npm version](https://img.shields.io/npm/v/pmem-ai)](https://www.npmjs.com/package/pmem-ai)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](https://nodejs.org)
 
-`pmem` is a local CLI runtime that helps coding agents remember a project: where it is, what changed, what matters next, and why. It stores project memory as Markdown cards in `.pmem/`, then builds SQLite indexes so agents can recall context with fewer tokens and update memory as code changes.
+`pmem` is a local CLI runtime that gives AI coding agents persistent, queryable project memory. It stores memory as Markdown cards under `.pmem/` and rebuilds SQLite indexes for fast, token-efficient recall — so agents remember where the project is, what changed, what matters next, and why.
 
 ## Why pmem
 
-Coding agents lose project context quickly. A repository has source files, docs, decisions, tasks, and traces, but the agent usually has to rediscover that context every session.
+Coding agents lose project context every session. A repository has source files, docs, decisions, tasks, and traces — but the agent usually re-discovers all of it from scratch.
 
-`pmem` gives the project a small, explicit memory layer:
+pmem adds a small, explicit memory layer to the project:
 
-- `pmem context "<task>"` restores and aggregates task-specific memory and file context.
-- `pmem capture --auto` automatically synchronizes modified files and memory status.
-- `pmem install --agent-rules` installs compact rules files (AGENTS.md, Cursor rules, etc.) to guide coding agents.
-- `pmem ask "<query>"` finds relevant memory cards.
-- `pmem discover` auto-discovers project relationships (tech stack, file deps, imports) across 6 languages.
-- `pmem verify` checks that Markdown cards and runtime indexes still agree.
+| Your Need | pmem Command |
+|---|---|
+| Restore project context across sessions | `pmem recall --budget 2000` |
+| Auto-detect code changes and sync memory | `pmem capture --auto` / `pmem sync` |
+| Find relevant memory cards | `pmem ask "<query>"` |
+| Discover codebase relationships | `pmem discover` |
+| Verify memory integrity | `pmem verify` |
+| Install agent rules (AGENTS.md, Cursor, etc.) | `pmem install --agent-rules` |
 
+The design is intentionally **local and Git-friendly**. Markdown cards are the source of truth. SQLite is a rebuildable runtime index — not a separate knowledge base. No cloud services, no vector DBs, no lock-in.
 
-The design is intentionally local and Git-friendly. Markdown cards remain the source of truth. SQLite is a rebuildable runtime index, not a separate knowledge base.
+It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 adds the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-## Who It Is For
+## Who It's For
 
-`pmem` is useful when:
-
-- You use code agents such as Codex, Claude Code, Cursor, or similar tools.
-- Your project has decisions and context that should survive across sessions.
-- You want agents to update memory deliberately instead of auto-writing noisy logs.
-- You prefer local files over hosted memory services.
-
-It is not a vector database, MCP server, Graph UI, or remote multi-user service. v0.8 adds the Hybrid Recall Engine: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
+- You use AI coding agents (Claude Code, Codex, Cursor, Cline, Aider, Windsurf, Gemini CLI)
+- Your project has decisions and context that should survive across sessions
+- You want agents to update memory deliberately — not auto-write noisy logs
+- You prefer local, version-controlled files over hosted memory services
 
 ## Install
 
@@ -38,11 +39,11 @@ npm install -g pmem-ai
 pmem --version
 ```
 
-Node.js 18 or newer is required. `better-sqlite3` is compiled during install.
+Requires Node.js ≥ 18. `better-sqlite3` is compiled during install.
 
 Run `pmem doctor` anytime to check the health of your project memory setup.
 
-To install from source:
+### From Source
 
 ```bash
 git clone https://github.com/KkSss999/pmem.git
@@ -63,11 +64,9 @@ pmem install --skills --gemini    # → ~/.gemini/skills/pmem/
 pmem install --skills --all       # → all detected agents
 ```
 
-Run the command for each agent you use. Each install copies the packaged
-`skills/pmem/` directory, including `SKILL.md` and the reference guides, into
-that agent's global skills folder.
+Run the command for each agent you use. Each install copies the packaged `skills/pmem/` directory — including `SKILL.md` and reference guides — into that agent's global skills folder.
 
-Verify the installed skill files:
+Verify installed skill files:
 
 ```bash
 test -f ~/.claude/skills/pmem/SKILL.md
@@ -75,9 +74,9 @@ test -f ~/.codex/skills/pmem/SKILL.md
 test -f ~/.gemini/skills/pmem/SKILL.md
 ```
 
-## 5-Minute Quick Start
+## Quick Start
 
-Create project memory in a repository:
+### 5-Minute Setup
 
 ```bash
 pmem init my-project
@@ -86,16 +85,19 @@ pmem context "Implement core setup"
 pmem capture --auto
 ```
 
-For a richer setup:
+For a richer guided setup:
 
 ```bash
 pmem init my-project --guided
 ```
 
+### Adding Memory Cards
+
 Add a module card that points at source files:
 
 ```bash
 mkdir -p .pmem/modules src
+
 cat > .pmem/modules/core.md <<'EOF'
 ---
 id: module.core
@@ -116,7 +118,9 @@ pmem rebuild
 pmem ask "core" --format compact
 ```
 
-Then make a code change and let pmem identify the affected memory:
+### Tracking Changes
+
+Make a code change and let pmem identify the affected memory:
 
 ```bash
 echo "export const value = 2;" > src/index.ts
@@ -127,11 +131,11 @@ pmem update --confirm -s "Updated core module" -n "Continue development"
 pmem verify
 ```
 
-Note: `pmem update --suggest` outputs suggestions in JSON. Agents should check `summary.has_actionable` to decide next steps.
+> **Note:** `pmem update --suggest` outputs suggestions in JSON. Agents should check `summary.has_actionable` to decide next steps.
 
-### The Second Session (Cross-Session Recall)
+### Cross-Session Recall
 
-pmem's value appears when you come back. Open a new terminal or start a new agent session the next day:
+pmem's value shines when you come back. Open a new terminal or start a new agent session the next day:
 
 ```bash
 pmem session start -a "Claude"
@@ -139,6 +143,7 @@ pmem recall --format compact --budget 2000
 ```
 
 Output:
+
 ```
 PROJECT: my-project
 STAGE: Active development
@@ -152,7 +157,7 @@ READ_IF_NEEDED:
   .pmem/modules/core.md
 ```
 
-In a single command you restored the project context, last state, and what to read next — without re-reading all your source files or asking "where were we?" This is pmem's core value: **cross-session project memory**.
+In one command you restored project context, last state, and what to read next — without re-reading all source files or asking "where were we?"
 
 ### Agent-Native Init (for scripts and CI)
 
@@ -175,16 +180,18 @@ pmem init my-project --answers ./pmem-init.json
 
 ### Markdown Cards
 
-Cards under `.pmem/**/*.md` are the source of truth. Each card has YAML frontmatter and Markdown body content.
+Cards under `.pmem/**/*.md` are the **source of truth**. Each card has YAML frontmatter and a Markdown body.
 
-Common card types include:
+Common card types:
 
-- `module`
-- `feature`
-- `decision`
-- `task`
-- `risk`
-- `trace`
+| Type | Purpose |
+|---|---|
+| `module` | Code modules and their responsibilities |
+| `feature` | Feature specs and status |
+| `decision` | Architecture and design decisions |
+| `task` | Work items and progress |
+| `risk` | Known risks and mitigations |
+| `trace` | Session traces and change logs |
 
 Important frontmatter fields:
 
@@ -202,41 +209,53 @@ depends_on: [decision.sqlite_runtime]
 
 `.pmem/pmem.db` stores rebuildable indexes and runtime state:
 
-- cards
-- edges
-- aliases
-- tags
-- paths
-- sessions
-- dirty flags
-- update logs
+- **cards** — memory card metadata and content
+- **edges** — relationships between cards
+- **aliases** — alternative identifiers
+- **tags** — tag index
+- **paths** — source file paths
+- **sessions** — agent session history
+- **dirty flags** — change tracking
+- **update logs** — change history
 
-Do not edit SQLite directly. Edit Markdown cards or use pmem workflow commands, then run `pmem rebuild`.
+**Do not edit SQLite directly.** Edit Markdown cards or use pmem workflow commands, then run `pmem rebuild`.
 
-### Recall And Ask
+### Hybrid Recall Engine (v0.8)
 
-Use `recall` for the current project state. v0.8 adds recall modes: `--mode brief` returns L0 + read-if-needed paths only, `--mode normal` (default) is the full agent context, and `--mode deep` preserves more detail when budget allows.
+`pmem ask` uses a 5-stage deterministic pipeline:
 
-```bash
-pmem recall --budget 2000
-pmem recall --mode brief --budget 500
-pmem recall --mode deep --budget 6000
-```
+1. **Intent parse** — classify the query type
+2. **Multi-channel candidate generation** — exact card ID, ID substring, exact title, title phrase, title token, aliases, tags, source file paths, always-on FTS5/BM25
+3. **Graph expansion** — hop outward from matched cards via edges
+4. **Score fusion** — `base × type_weight × recency × staleness_penalty × status`
+5. **L0–L3 budget packing** — pack results into context tiers
 
-Use `ask` for targeted retrieval. v0.8 uses the Hybrid Recall Engine: a 5-stage deterministic pipeline — intent parse → multi-channel candidate generation → graph expansion → score fusion → L0-L3 budget packing. Channels include exact card ID, ID substring, exact title, title phrase, title token, aliases, tags, source file path, always-on FTS5/BM25, and graph hop expansion. Scores are multiplicative: `base × type_weight × recency × staleness_penalty × status`. Add `--explain` to see the `reasons[]` and `factors{}` for each matched card.
+Add `--explain` to see per-card `reasons[]` and `factors{}`:
 
 ```bash
 pmem ask "sqlite runtime" --format compact
 pmem ask "src/core/query/recall.ts" --explain --limit 5
-pmem ask "release checklist" --format json
-pmem ask "module.core" --explain          # explain why this card was matched
+pmem ask "module.core" --explain
 ```
 
-`--limit N` caps the result set (must be a positive integer; exit 2 on invalid value). `--explain` adds per-card `reasons` and `factors` fields to JSON output and a `Reasons:` section to compact output.
+### Recall Modes
 
-### Relations
+`pmem recall` supports three modes:
 
-Use `relations` to inspect a card's edge graph and find pruning candidates:
+| Mode | Budget | What You Get |
+|---|---|---|
+| `brief` | ~500 tokens | L0 state + read-if-needed paths only |
+| `normal` | ~2000 tokens | Full agent context (default) |
+| `deep` | ~6000 tokens | Extended detail when budget allows |
+
+```bash
+pmem recall --mode brief --budget 500
+pmem recall --mode deep --budget 6000
+```
+
+### Relations & Graph
+
+Inspect a card's edge graph and find pruning candidates:
 
 ```bash
 pmem relations module.auth --format json
@@ -244,20 +263,20 @@ pmem relations module.auth --format json
 
 The JSON output includes `outgoing` / `incoming` edge lists, `summary_by_type`, `summary_by_source`, and `pruning_candidates` — edges with `source: inferred` or `confidence < 0.5` that are safe to prune. This helps agents reduce noise when a card accumulates too many low-quality relations.
 
-### Dirty, Update, Distill
+### Tracking Changes: Dirty, Update, Distill
 
-The memory update flow is intentionally confirmation-first:
+The memory update flow is **confirmation-first** — agents see suggestions before anything is written:
 
 ```bash
-pmem status
-pmem mark-dirty --auto
-pmem update --suggest
+pmem status                    # find changed files
+pmem mark-dirty --auto         # flag affected cards
+pmem update --suggest          # preview suggested changes
 pmem update --confirm -s "<summary>" -n "<next step>"
-pmem distill --suggest
-pmem verify
+pmem distill --suggest         # consolidate traces into stable cards
+pmem verify                    # check integrity
 ```
 
-Alternatively, you can run the one-command sync and update shortcut (v0.7.1):
+Or use the one-command shortcut (v0.7.1+):
 
 ```bash
 pmem sync -s "<summary>" -n "<next step>"
@@ -270,120 +289,86 @@ pmem sync -s "<summary>" -n "<next step>"
 `pmem rebuild` and `pmem update --confirm` acquire `.pmem/.lock` during index mutations. `pmem verify` acquires the lock before reading the SQLite index.
 
 When an agent runs `pmem verify` during an active rebuild:
-- It emits an `active_lock` info note (not a warning/error) and defers all index freshness checks.
-- The output says `clean (index checks deferred)` with Score 100/100.
-- No transient `stale_index` or `missing_database` warnings are emitted — those checks are skipped because another process holds the lock.
+- It emits an `active_lock` info note (not a warning/error) and defers all index freshness checks
+- Output says `clean (index checks deferred)` with Score 100/100
+- No transient `stale_index` or `missing_database` warnings — those checks are skipped because another process holds the lock
 
-If a `pmem` process crashes, the lock may become stale (>60s). Run:
+If a pmem process crashes, the lock may become stale (>60s). Run:
 
 ```bash
 pmem verify --fix-locks    # clean the stale lock
 ```
 
-Agent guidance:
-- If `pmem verify` reports `active_lock`, wait and retry — do not treat it as a failure.
-- If it reports `stale_lock`, run `pmem verify --fix-locks` before proceeding.
+**Agent guidance:**
+- If `pmem verify` reports `active_lock`, wait and retry — do not treat it as a failure
+- If it reports `stale_lock`, run `pmem verify --fix-locks` before proceeding
 
-### Verify Output: too_many_relations
+### Verify Output: `too_many_relations`
 
 When a card exceeds its relation threshold, `pmem verify` emits `too_many_relations` with `top_edges` (up to 10 lowest-confidence edges) and `pruning_candidates` (edges with `source: inferred` or `confidence < 0.5`). Agents can use `pruning_candidates` to suggest which relations to remove, or run `pmem relations <id> --format json` for a full inspection.
 
 ### Module & Decision Inference (v0.7.5)
 
-To automate codebase module and decision mapping:
-- **`pmem module infer`**: Scans project directories and content keywords to automatically propose `module` memory card candidates.
-- **`pmem decision infer`**: Analyzes the trace capture history for decision patterns/comments and suggests `decision` memory card candidates.
+Automate codebase mapping:
 
-Use `--write` to save proposed candidates (tagged `inferred` and written as `status: active` cards) to `.pmem/modules/` and `.pmem/decisions/` respectively. Cards are clearly marked with the `inferred` tag so you can review and confirm them before relying on them as source of truth.
+- **`pmem module infer`** — scans project directories and content keywords to propose `module` card candidates
+- **`pmem decision infer`** — analyzes trace capture history for decision patterns and suggests `decision` card candidates
+
+Use `--write` to save proposed candidates (tagged `inferred`) to `.pmem/modules/` and `.pmem/decisions/`. Review them before relying on them as source of truth.
 
 ### Domain Presets & Custom Schema
 
-Starting with v0.7.0, `pmem` is domain-neutral. You can initialize a project with a domain preset, customize valid card types, directories, and behavior.
+Starting with v0.7.0, pmem is **domain-neutral**. Choose a preset at init or customize the schema manifest.
 
-#### Domain Presets
+#### Built-in Presets
 
-Initialize a project with a domain preset using `--domain <preset>`:
+| Preset | Use Case | Key Card Types | Discover |
+|---|---|---|---|
+| `software` | Software projects (default) | `module`, `feature`, `decision` | Enabled |
+| `novel` | Creative writing | `character`, `chapter`, `world` | Disabled |
+| `research` | Literature reviews, papers | `source`, `claim`, `experiment` | Disabled |
+
 ```bash
 pmem init my-project --domain novel
 ```
 
-Built-in presets:
-- **`software`** (default): For software engineering projects. Creates directories for `modules/`, `features/`, `decisions/`, etc. `discover` is enabled. Foundational types: `['module']`.
-- **`novel`**: For creative writing. Creates directories for `characters/`, `chapters/`, `world/`, `arc/`, `decisions/`, `traces/`. `discover` is disabled by default. Foundational types: `['character', 'chapter']`.
-- **`research`**: For literature reviews, research papers, and studies. Creates directories for `sources/`, `claims/`, `notes/`, `experiments/`, `decisions/`, `traces/`. `discover` is disabled by default. Foundational types: `['source', 'claim']`.
-
-#### Custom Schema Manifest Settings
+#### Custom Schema Manifest
 
 The manifest `schema` section controls validation and runtime behavior:
-- `schema.card_types`: Whitelist of valid card types.
-- `schema.type_dirs`: Key-value map of card types to directory paths (e.g., `character: characters`).
-- `schema.creatable_types`: Types that `pmem new` can instantiate.
-- `schema.foundational_types`: Core types returned as foundational cards during recall.
-- `schema.evidence_types`: Card types representing evidence (e.g., `decision`, `trace`) used for `pmem ask` and graph tracing.
-- `schema.default_type`: Fallback type when none is specified.
+
+```yaml
+schema:
+  card_types: [module, feature, decision, task, risk, trace]
+  type_dirs:
+    module: modules
+    character: characters
+  creatable_types: [module, decision, task]
+  foundational_types: [module]
+  evidence_types: [decision, trace]
+  default_type: module
+```
+
+Key schema fields:
+- **`card_types`** — whitelist of valid card types
+- **`type_dirs`** — key-value map of card types to directory paths
+- **`creatable_types`** — types that `pmem new` can instantiate
+- **`foundational_types`** — core types returned during recall
+- **`evidence_types`** — types used for graph tracing and `pmem ask`
+- **`default_type`** — fallback when none is specified
 
 #### Recall Output (`active_foundation`)
 
-When calling `pmem recall --format json` on non-software domains, the JSON output populates `active_foundation` with cards matching the `foundational_types` configuration. For legacy compatibility, the `active_modules` field is also populated with the same list.
-
-#### Discovery Configuration (`discover.enabled`)
-
-To toggle autodiscovery globally, configure `discover.enabled` in `manifest.yml`:
-```yaml
-discover:
-  enabled: false
-```
-When disabled, running `pmem discover` will print a disabled message and exit `0` immediately without scanning files.
+When calling `pmem recall --format json` on non-software domains, `active_foundation` populates with cards matching `foundational_types`. For backward compatibility, `active_modules` is also populated with the same list.
 
 #### Backward Compatibility
 
-`pmem` v0.7.0 maintains strict zero-migration backward compatibility with v0.6.x legacy projects. If a project does not contain a `schema` block in its manifest, `pmem` will automatically fall back to the legacy `software` defaults without modifying or rewriting the manifest file.
-
-## Agent Workflow
-
-At the start of an agent session:
-
-```bash
-pmem session start -a "Codex"
-pmem recall --format compact --budget 2000
-```
-
-Before a specific task:
-
-```bash
-pmem ask "<task or module>" --format compact
-```
-
-After editing files:
-
-```bash
-# Recommended shortcut:
-pmem sync -s "<what changed>" -n "<next step>"
-
-# Or manual update flow:
-pmem status --format json
-pmem mark-dirty --auto
-pmem update --suggest --format json
-pmem update --confirm -s "<what changed>" -n "<next step>"
-```
-
-At session end:
-
-```bash
-pmem session end -s "<task summary>"
-pmem verify
-```
-
-Installed integration templates are available under:
-
-```txt
-.pmem/integrations/
-```
+pmem v0.7.0+ maintains strict zero-migration compatibility with v0.6.x legacy projects. If a project manifest lacks a `schema` block, pmem falls back to the legacy `software` defaults without modifying the manifest file.
 
 ## CLI Reference
 
 ```bash
-pmem init [project-name] [--guided] [--description <text>] [--stage <text>] [--next <text>] [--answers <path>] [--domain software|novel|research]
+pmem init [project-name] [--guided] [--description <text>] [--stage <text>] \
+          [--next <text>] [--answers <path>] [--domain software|novel|research]
 
 pmem context <task> [--budget N] [--format compact|json]
 pmem capture [--auto] [-s <summary>] [-n <next>] [--full] [--force]
@@ -393,7 +378,8 @@ pmem ask <query> [--format compact|json|paths|pack] [--explain] [--limit N]
 pmem discover [--dry-run] [--format compact|json] [--min-confidence <n>]
               [--lang auto|nodejs,python,rust,go,cpp,java]
               [--pattern-file <path>]
-pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] [--source explicit|inferred|mention|all]
+pmem related <id> [--depth N] [--type <edge-type>] [--format compact|json] \
+              [--source explicit|inferred|mention|all]
 pmem relations <id> [--format json]
 pmem trace <id>
 
@@ -420,36 +406,59 @@ pmem migrate [--to <version>] [--dry-run] [--backup]
 pmem session start [-a <agent-name>]
 pmem session end [-s <summary>]
 pmem integration list|install <framework>|verify
-pmem install [--skills] [--agent-rules] [--claude] [--codex] [--gemini] [--cursor] [--cline] [--aider] [--windsurf] [--all]
+pmem install [--skills] [--agent-rules] [--claude] [--codex] [--gemini] \
+             [--cursor] [--cline] [--aider] [--windsurf] [--all]
 pmem mcp [--write readonly|append-only]
 ```
 
-## Exit Codes
+## Agent Workflow
 
-As of v0.6.2, exit code `0` means the command ran successfully (results or not). Exit code `2` means a runtime error occurred. Exit code `1` is no longer used as a workflow signal.
+### Session Start
 
-| Command | 0 | 2 |
-|---------|---|---|
-| `pmem status` | ok (changes or not) | runtime error |
-| `pmem update --suggest` | ok (suggestions or not) | runtime error |
-| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
-| `pmem verify` | ok (passed or warnings) | errors found |
+```bash
+pmem session start -a "Codex"
+pmem recall --format compact --budget 2000
+```
 
-Agents should parse structured JSON output (`--format json`) to decide next steps, rather than relying on exit codes.
+### Before a Task
 
-> **Breaking change from v0.6.1:** `pmem update --suggest` and `pmem distill --suggest` previously exited with code `1` when suggestions existed. Scripts that checked `$? -eq 1` must now parse JSON output instead.
+```bash
+pmem ask "<task or module>" --format compact
+```
 
-## pmem-rt — MCP Runtime for AI Agents
+### After Editing Files
 
-pmem-rt is a stdio MCP server that lets AI coding agents interact with pmem directly in their tool loop.
+```bash
+# Recommended shortcut:
+pmem sync -s "<what changed>" -n "<next step>"
 
-Default mode is read-only:
+# Or manual update flow:
+pmem status --format json
+pmem mark-dirty --auto
+pmem update --suggest --format json
+pmem update --confirm -s "<what changed>" -n "<next step>"
+```
+
+### Session End
+
+```bash
+pmem session end -s "<task summary>"
+pmem verify
+```
+
+Installed integration templates are available under `.pmem/integrations/`.
+
+## MCP Runtime (pmem-rt)
+
+pmem ships with a stdio MCP server so AI agents can interact with pmem directly in their tool loop.
+
+### Read-Only Mode (default)
 
 ```bash
 pmem mcp
 ```
 
-Append-only capture mode:
+### Append-Only Capture Mode
 
 ```bash
 pmem mcp --write=append-only
@@ -457,52 +466,66 @@ pmem mcp --write=append-only
 
 ### MCP Tools
 
-| Tool           | Mode        | Description                                   |
-| -------------- | ----------- | --------------------------------------------- |
-| `pmem_recall`  | readonly    | Restore project context                       |
-| `pmem_ask`     | readonly    | Search memory cards                           |
-| `pmem_related` | readonly    | Query graph neighbors                         |
-| `pmem_status`  | readonly    | Detect changed files                          |
-| `pmem_context` | readonly    | Get task-aware context package                |
+| Tool | Mode | Description |
+|---|---|---|
+| `pmem_recall` | readonly | Restore project context |
+| `pmem_ask` | readonly | Search memory cards |
+| `pmem_related` | readonly | Query graph neighbors |
+| `pmem_status` | readonly | Detect changed files |
+| `pmem_context` | readonly | Get task-aware context package |
 | `pmem_capture` | append-only | Append trace and update managed next.md block |
 
-All read-only tools are safe to execute and do not perform any side effects on the workspace. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain strictly blocked. Every card object returned carries `content_trust: "untrusted_project_data"`.
+All read-only tools are safe to execute with no side effects. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`.
 
-[Full integration guide →](docs/pmem-rt.md)
+→ [Full MCP integration guide](docs/pmem-rt.md)
 
 ## Project Layout
 
 ```txt
 .pmem/
-  manifest.yml
-  index.md
-  state.md
-  next.md
-  modules/
-  features/
-  decisions/
-  tasks/
-  traces/
-  summaries/
-  risks/
-  candidates/
-  skills/
-  integrations/
-  indexes/
-  pmem.db
+  manifest.yml         # project config + schema
+  index.md             # project overview
+  state.md             # current state
+  next.md              # next steps
+  modules/             # module cards
+  features/            # feature cards
+  decisions/           # decision records
+  tasks/               # task cards
+  traces/              # session traces
+  summaries/           # distilled summaries
+  risks/               # risk cards
+  candidates/          # inferred candidates
+  skills/              # task-specific workflows
+  integrations/        # agent integration templates
+  indexes/             # generated FTS indexes
+  pmem.db              # SQLite runtime index (generated)
 ```
 
-Source-of-truth files are Markdown cards. `pmem.db` and `indexes/` are generated runtime data.
+Markdown cards are canonical. `pmem.db` and `indexes/` are generated runtime data — rebuildable at any time with `pmem rebuild`.
 
-## Integrating with Agent Frameworks
+## Integration Guides
 
-See [docs/usage.md](docs/usage.md) for a step-by-step guide to integrating pmem with Claude Code, Codex, and Cursor.
+- **[Usage Guide](docs/usage.md)** — step-by-step integration with Claude Code, Codex, and Cursor
+- **[MCP Runtime Guide](docs/pmem-rt.md)** — full pmem-rt setup and configuration
+- **[PRD](docs/prd.md)** — product requirements document
+- **[Project Roadmap](docs/project-roadmap.md)** — detailed roadmap and milestones
+
+## Exit Codes
+
+| Command | Exit 0 | Exit 2 |
+|---|---|---|
+| `pmem status` | ok (changes or not) | runtime error |
+| `pmem update --suggest` | ok (suggestions or not) | runtime error |
+| `pmem distill --suggest` | ok (suggestions or not) | runtime error |
+| `pmem verify` | ok (passed or warnings) | errors found |
+
+Agents should parse structured JSON output (`--format json`) to decide next steps, rather than relying on exit codes.
+
+> **Breaking change from v0.6.1:** `pmem update --suggest` and `pmem distill --suggest` previously exited code `1` when suggestions existed. Scripts checking `$? -eq 1` must now parse JSON output instead.
 
 ## Troubleshooting
 
 ### No `.pmem` Directory
-
-Run:
 
 ```bash
 pmem init <project-name>
@@ -511,8 +534,6 @@ pmem init <project-name>
 Run commands from the project root where `.pmem/` should live.
 
 ### `.pmem/pmem.db` Missing
-
-Run:
 
 ```bash
 pmem rebuild
@@ -536,11 +557,9 @@ Then check whether the relevant card has useful `id`, `tags`, `aliases`, or `sou
 
 ### FTS5 Unavailable
 
-Some SQLite builds do not include FTS5. pmem falls back to `LIKE` search; this is slower but should not block normal use.
+Some SQLite builds don't include FTS5. pmem falls back to `LIKE` search — slower but functional.
 
 ### Dirty Flags Remain
-
-Run:
 
 ```bash
 pmem update --suggest
@@ -551,7 +570,7 @@ pmem verify
 ## Roadmap
 
 **v0.5 Productization Beta** — shipped on npm as `pmem-ai`:
-- README, quick start, and [usage guide](docs/usage.md)
+- README, quick start, usage guide
 - E2E suite, CI/CD, error UX, release checklist
 
 **v0.6 Agent-native Workflow Polish** — shipped:
@@ -559,20 +578,46 @@ pmem verify
 - Claude Code slash commands (`/pmem-recall`, `/pmem-ask`, `/pmem-update`, `/pmem-distill`)
 - Relationship auto-discovery across 6 languages (`pmem discover`)
 - Inferred edge review and confirmation workflow
-- False-positive guard: language builtins and external packages filtered out
-- Actionable vs informational `ambiguous` classification (severity field)
-- Actionable empty states and error messages
 - Session fault tolerance
-- Integration verification enhanced
+
+**v0.7 Domain-Neutral Memory** — shipped:
+- Domain presets (software, novel, research)
+- Custom schema manifest (`card_types`, `type_dirs`, `foundational_types`)
+- `pmem sync` shortcut, `pmem relations` graph inspection
+- Lock protocol for concurrent safety
+
+**v0.8 Hybrid Recall Engine** — shipped:
+- 5-stage deterministic recall pipeline
+- Multi-channel candidate generation (exact ID, aliases, tags, FTS5/BM25, graph expansion)
+- Recency scoring, stale/dirty penalties, explainable output
+- Recall modes: brief, normal, deep
 
 Deferred:
+- Embedding-based semantic search
+- `pmem serve` / REST API
+- Graph visualization UI
+- Telemetry
+- Multi-user remote service
 
-- embedding
-- `pmem serve` / MCP / REST
-- Graph UI
-- telemetry
-- multi-user remote service
+## Contributing
+
+Contributions are welcome. Please:
+
+1. Open an issue to discuss the change before starting work
+2. Ensure the E2E suite passes: `npm test`
+3. Follow existing code and documentation conventions
+4. Update the CHANGELOG if applicable
+
+For local development:
+
+```bash
+git clone https://github.com/KkSss999/pmem.git
+cd pmem
+npm install
+npm run build
+npm test
+```
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE) — Copyright 2026 pmem contributors
