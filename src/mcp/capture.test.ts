@@ -10,6 +10,7 @@ import { getCurrentBranch } from '../core/git';
 import { validateCaptureInputs } from './security';
 import { handleMcpTool, listMcpTools } from './server';
 import { Pmem } from '../runtime';
+import { MCP_SCHEMA_VERSION } from '../version';
 
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-capture-test-${Date.now()}`);
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
@@ -357,7 +358,7 @@ source_files: [src/index.ts]
       });
       assert.strictEqual(appendOnly.isError, undefined);
       const body = JSON.parse(appendOnly.content[0].text);
-      assert.strictEqual(body.schema_version, '1.0');
+      assert.strictEqual(body.schema_version, MCP_SCHEMA_VERSION);
       assert.strictEqual(body.content_trust, undefined, 'top-level capture result is not card content');
       assert.ok(body.success);
     });
