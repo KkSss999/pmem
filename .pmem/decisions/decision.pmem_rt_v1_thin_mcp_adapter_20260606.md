@@ -2,7 +2,7 @@
 id: decision.pmem_rt_v1_thin_mcp_adapter_20260606
 type: decision
 title: "pmem-rt v1: Thin MCP Adapter"
-status: draft
+status: superseded
 tags: [pmem-rt, mcp, v0.8, post-v0.7.5, thin-adapter, security]
 created: "2026-06-06"
 source_files: []
@@ -17,7 +17,7 @@ related_to:
 ---
 # pmem-rt v1: Thin MCP Adapter
 
-> **Status: `draft`.** Architecture boundary, not a development task. No MCP code, no new package, no new repository until v0.7.5 ships.
+> **Status: `superseded`.** Superseded by `decision.pmem_two_layer_architecture_20260722`. The MCP server in v1.0 is no longer a standalone thin adapter — it becomes one of three integration depths (alongside CLI/Skills and SDK), all calling the same Runtime API. The security baseline and read-only tool constraints from this decision are preserved in the v1.0 MCP layer.
 
 ## Decision
 
