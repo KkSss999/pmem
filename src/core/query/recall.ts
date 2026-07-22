@@ -58,7 +58,9 @@ export function recallQuery(pmemPath: string, options?: {
   recent?: number;
   noTraces?: boolean;
   db?: Database.Database;
+  cwd?: string;
 }): RecallQueryResult {
+  const cwd = options?.cwd ?? process.cwd();
   const indexContent = readFile(path.join(pmemPath, 'index.md'));
   const stateContent = readFile(path.join(pmemPath, 'state.md'));
   const nextContent = readFile(path.join(pmemPath, 'next.md'));
@@ -158,7 +160,7 @@ export function recallQuery(pmemPath: string, options?: {
               id: parsed.id,
               title: parsed.title,
               summary: parsed.summary,
-              file_path: path.relative(process.cwd(), filePath),
+              file_path: path.relative(cwd, filePath),
               created_at: parsed.createdAt,
               changed_files: parsed.changedFiles,
               what_changed: parsed.whatChanged,
@@ -226,7 +228,7 @@ export function recallQuery(pmemPath: string, options?: {
     ).all() as Array<{ action: string; summary: string | null; created_at: string }>;
     result.recent_updates = recentUpdates;
 
-    const currentBranch = getCurrentBranch(process.cwd());
+    const currentBranch = getCurrentBranch(cwd);
     result.recent_events = getRecentRuntimeEvents(db, 20)
       .filter(e => !e.branch || !currentBranch || e.branch === currentBranch)
       .slice(0, 5)

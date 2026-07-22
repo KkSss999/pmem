@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import Database from 'better-sqlite3';
+import { execSync } from 'child_process';
 import { getDefaultManifest, saveManifest } from '../core/manifest';
 import { ensureDir, writeFile } from '../core/fs';
 import { loadRuntimeConfig } from './config';
@@ -91,6 +92,42 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
     }
   } finally {
     await memory.close();
+  }
+});
+test('Pmem keeps status, capture, recall, and context rooted after process.chdir', async () => {
+  const root = makeProject();
+  const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-runtime-elsewhere-'));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  execSync('git init -q', { cwd: root });
+  execSync('git config user.email "test@example.com"', { cwd: root });
+  execSync('git config user.name "test"', { cwd: root });
+  execSync('git checkout -q -b runtime-root-x', { cwd: root });
+  writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 1;\n');
+
+  const memory = await Pmem.open({ root });
+  const previous = process.cwd();
+  process.chdir(elsewhere);
+  try {
+    const status = await memory.status();
+    assert.equal(status.source, 'git');
+    assert.ok(status.changes.some(change => change.path === 'src/index.ts'));
+
+    const capture = await memory.capture('cross cwd runtime capture', { force: true });
+    assert.equal(capture.success, true, capture.message);
+    assert.ok(capture.tracePath?.startsWith(path.join(root, '.pmem', 'traces')));
+    assert.match(fs.readFileSync(capture.tracePath!, 'utf8'), /src\/index\.ts/);
+
+    const recall = await memory.recall({ recent: 1 });
+    assert.match(recall.recent_traces?.[0]?.file_path ?? '', /^\.pmem\/traces\//);
+    assert.ok(recall.recent_events?.some(event => event.branch === 'runtime-root-x'));
+
+    const context = await memory.context('cross cwd branch event');
+    assert.ok(context.changed_files.some(change => change.path === 'src/index.ts'));
+    assert.match((context.recent_session_memory ?? []).join('\n'), /runtime-root-x/);
+  } finally {
+    process.chdir(previous);
+    await memory.close();
+    fs.rmSync(elsewhere, { recursive: true, force: true });
   }
 });
 

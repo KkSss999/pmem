@@ -13,6 +13,7 @@ interface RebuildOptions {
   changed?: boolean;
   full?: boolean;
   card?: string;
+  cwd?: string;
 }
 
 interface ParsedCard {
@@ -23,7 +24,8 @@ interface ParsedCard {
 }
 
 export function rebuildCommand(options: RebuildOptions = {}): void {
-  const pmemPath = path.join(process.cwd(), PMEM_DIR);
+  const cwd = options.cwd ?? process.cwd();
+  const pmemPath = path.join(cwd, PMEM_DIR);
 
   // v0.7.6 FIX-1 (issue #9): hold `.pmem/.lock` for the duration of the
   // rebuild so a concurrent `pmem verify` waits (or reports `active_lock`)
@@ -32,7 +34,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   // `pmem update --confirm` (which already holds the lock) it just runs
   // the body without an extra acquire/release round trip.
   withLock(pmemPath, () => {
-    rebuildLocked(pmemPath, options);
+    rebuildLocked(pmemPath, options, cwd);
   }, { timeoutMs: 30000, onTimeout: 'error' });
 }
 
@@ -40,8 +42,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
  * The actual rebuild body, run inside the `.pmem/.lock` critical section
  * (see FIX-1 in `rebuildCommand`).
  */
-function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
-  const cwd = process.cwd();
+function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = process.cwd()): void {
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     if (fileExists(pmemPath)) {

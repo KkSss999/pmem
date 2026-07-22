@@ -28,6 +28,7 @@ export interface CaptureOptions {
   next?: string;
   full?: boolean;
   force?: boolean;
+  cwd?: string;
 }
 
 export interface CaptureResult {
@@ -38,7 +39,7 @@ export interface CaptureResult {
 }
 
 export function captureCore(pmemPath: string, options: CaptureOptions = {}): CaptureResult {
-  const cwd = process.cwd();
+  const cwd = options.cwd ?? process.cwd();
   
   if (!fileExists(pmemPath)) {
     return {
@@ -50,7 +51,7 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
   // 1. Detect changed files
   let status;
   try {
-    status = statusQuery(pmemPath);
+    status = statusQuery(pmemPath, { cwd });
   } catch (err: any) {
     return {
       success: false,
@@ -397,7 +398,7 @@ ${listItems(traceSummary.next)}
 
   // 9. Run rebuild (incremental or full)
   try {
-    rebuildCommand({ full: options.full === true });
+    rebuildCommand({ full: options.full === true, cwd });
   } catch (err: any) {
     if (db && transactionActive) {
       try { db.prepare('ROLLBACK').run(); } catch {}
@@ -459,7 +460,7 @@ ${listItems(traceSummary.next)}
 
   // 10. Run lightweight verify
   try {
-    verifyCommand({ fix: false, fixLocks: false, fixStale: false, relaxed: true, noExit: true });
+    verifyCommand({ fix: false, fixLocks: false, fixStale: false, relaxed: true, noExit: true, cwd });
   } catch (err: any) {
     // Verification warning only, do not fail capture
   }

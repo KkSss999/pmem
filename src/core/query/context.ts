@@ -7,7 +7,13 @@ import { askQuery } from './ask';
 import { statusQuery } from './status';
 import type { ContextQueryResult, ContextCardInfo } from '../../types';
 
-export function contextQuery(pmemPath: string, task: string, budget = 4000, dbOverride?: Database.Database): ContextQueryResult {
+export function contextQuery(
+  pmemPath: string,
+  task: string,
+  budget = 4000,
+  dbOverride?: Database.Database,
+  cwd: string = process.cwd(),
+): ContextQueryResult {
   const dbPath = path.join(pmemPath, 'pmem.db');
   
   // Set up defaults
@@ -33,7 +39,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000, dbOv
 
   // 1. Recall
   try {
-    const recall = recallQuery(pmemPath, { budget, db: dbOverride });
+    const recall = recallQuery(pmemPath, { budget, db: dbOverride, cwd });
     result.project_name = recall.project;
     result.project_stage = recall.stage;
     result.current_focus = recall.focus;
@@ -106,7 +112,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000, dbOv
 
   // 3. Status
   try {
-    const status = statusQuery(pmemPath, { db: dbOverride });
+    const status = statusQuery(pmemPath, { db: dbOverride, cwd });
     result.changed_files = (status.changes || []).map(c => ({
       path: c.path,
       status: c.status

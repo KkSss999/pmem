@@ -34,7 +34,7 @@ function formatAffectedCardDetail(ac: AffectedCard): string {
 // Back-compat for syncCommand's legacy internal use. CLI status reads go through
 // Pmem Runtime via statusCommand below.
 export function getChangedFiles(cwd: string, since?: string) {
-  return statusQuery(path.join(cwd, '.pmem'), { since }).changes.map(c => ({
+  return statusQuery(path.join(cwd, '.pmem'), { since, cwd }).changes.map(c => ({
     path: c.path,
     status: c.status,
     relatedCards: c.related_cards.map(rc => ({ card_id: rc.card_id, match_type: rc.match_type })),

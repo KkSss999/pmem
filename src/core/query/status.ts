@@ -55,15 +55,16 @@ export interface StatusResult {
 export function statusQuery(pmemPath: string, options?: {
   since?: string;
   db?: Database.Database;
+  cwd?: string;
 }): StatusResult {
-  const cwd = process.cwd();
+  const cwd = options?.cwd ?? process.cwd();
   const dbPath = path.join(pmemPath, 'pmem.db');
 
   if (!fileExists(pmemPath)) {
     throw new Error('No .pmem directory found. Run `pmem init` first.');
   }
 
-  const source = detectChangesFrom();
+  const source = detectChangesFrom(cwd);
   const changes = getChangedFiles(pmemPath, cwd, options?.since);
 
   const affectedCards = new Map<string, AffectedCard>();
@@ -315,9 +316,9 @@ function upsertAffectedCard(map: Map<string, AffectedCard>, card: AffectedCard):
   }
 }
 
-function detectChangesFrom(): 'git' | 'mtime' {
+function detectChangesFrom(cwd: string = process.cwd()): 'git' | 'mtime' {
   try {
-    execSync('git rev-parse --git-dir', { stdio: 'ignore' });
+    execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' });
     return 'git';
   } catch {
     return 'mtime';
@@ -341,7 +342,7 @@ function getChangedFiles(pmemPath: string, cwd: string, since?: string): FileCha
     : ['node_modules', '.git', '.pmem', 'dist', 'build', '.claude'];
 
   try {
-    const source = detectChangesFrom();
+    const source = detectChangesFrom(cwd);
     if (source === 'git') {
       const output = execSync('git status --porcelain -u', { cwd, encoding: 'utf-8', timeout: 5000 });
       for (const change of parseGitStatusPorcelain(output)) {

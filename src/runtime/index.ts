@@ -54,7 +54,7 @@ export class Pmem implements PmemInstance {
   async recall(opts?: RecallOptions): Promise<RecallQueryResult> {
     this.assertOpen();
     try {
-      return recallQuery(this.pmemPath, { ...opts, db: this.db });
+      return recallQuery(this.pmemPath, { ...opts, db: this.db, cwd: this.root });
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
@@ -63,7 +63,7 @@ export class Pmem implements PmemInstance {
   async context(task: string, budget?: number): Promise<ContextQueryResult> {
     this.assertOpen();
     try {
-      return contextQuery(this.pmemPath, task, budget, this.db);
+      return contextQuery(this.pmemPath, task, budget, this.db, this.root);
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
@@ -81,7 +81,7 @@ export class Pmem implements PmemInstance {
   async status(opts?: StatusOptions): Promise<StatusResult> {
     this.assertOpen();
     try {
-      return statusQuery(this.pmemPath, { ...opts, db: this.db });
+      return statusQuery(this.pmemPath, { ...opts, db: this.db, cwd: this.root });
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
@@ -171,7 +171,7 @@ export class Pmem implements PmemInstance {
     this.assertOpen();
     const captureSummary = summary || opts.summary || '';
     const scope = this.scope.resolve('', { summary: captureSummary, metadata: opts as Record<string, unknown> });
-    const result = captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined });
+    const result = captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined, cwd: this.root });
     if (result.success) {
       this.events.append({ type: 'commit', scope, payload: { summary: captureSummary, options: opts, tracePath: result.tracePath } });
     }
