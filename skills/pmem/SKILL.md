@@ -6,7 +6,7 @@ allowed-tools: Bash(pmem:*)
 
 # Project Memory with pmem
 
-`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. v0.7.0 is domain-neutral: the same workflow works for software projects, novels, research work, and custom card schemas.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. v1.0 ships a two-layer architecture: the familiar CLI/Skills/MCP product layer, plus an embeddable Agentic Memory Runtime (SDK) for deep integration. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
@@ -262,6 +262,10 @@ pmem decision infer --write # writes decision.xxx.md candidate cards
 pmem doctor
 pmem doctor --format json
 
+# Safely forget a memory card (durable tombstone, audit-preserving)
+pmem forget module.old --confirm --reason "No longer relevant"
+pmem forget trace.2026-07-22-001 --confirm -r "Cleanup test trace"
+
 # Migrate schema
 pmem migrate --to 0.3 --dry-run
 pmem migrate --to 0.3 --backup
@@ -290,12 +294,13 @@ pmem install --skills --all        # → all detected agents
 pmem integration verify
 ```
 
-### MCP Server (pmem-rt v1)
+### MCP Server (v1.0)
 
-Start a read-only stdio MCP server for agent tool integration:
+Start a stdio MCP server. Default is read-only; use `--write=append-only` for write tools:
 
 ```bash
-pmem mcp
+pmem mcp                          # read-only
+pmem mcp --write=append-only      # allows capture, observe, forget
 ```
 
 **Agent configuration example** (Claude Code `mcpServers`):
@@ -305,23 +310,50 @@ pmem mcp
   "mcpServers": {
     "pmem-rt": {
       "command": "pmem",
-      "args": ["mcp"],
+      "args": ["mcp", "--write=append-only"],
       "cwd": "/path/to/your/project"
     }
   }
 }
 ```
 
-**Available tools**:
+**Read-only tools** (always available):
 
 | Tool | Description |
 |------|-------------|
 | `pmem_recall` | Restore project memory context (stage, focus, next, active cards, updates) |
-| `pmem_ask` | Search memory with Hybrid Recall Engine (exact ID/alias/tag/source-file → FTS5/BM25 → graph expansion → score fusion) |
+| `pmem_ask` | Search memory with Hybrid Recall Engine (exact ID → alias → tag → source-file → FTS5/BM25 → graph expansion → score fusion) |
 | `pmem_related` | Query graph neighbors of a card (edges grouped by type with direction/confidence) |
 | `pmem_status` | Detect changed files and affected memory cards (git or mtime) |
+| `pmem_context` | Retrieve budget-aware, task-specific context package |
 
-All card content carries `content_trust: "untrusted_project_data"`. Tools are read-only. See [docs/pmem-rt.md](../docs/pmem-rt.md) for the full integration guide.
+**Append-only write tools** (require `--write=append-only`):
+
+| Tool | Description |
+|------|-------------|
+| `pmem_capture` | Capture memory updates, write trace card, update next.md managed blocks |
+| `pmem_observe` | Append a structured observation to Runtime working memory (event store only) |
+| `pmem_forget` | Append a tombstone event for an observation or memory identifier (audit-preserving) |
+
+All card content carries `content_trust: "untrusted_project_data"`. See [docs/pmem-rt.md](../docs/pmem-rt.md) for the full integration guide.
+
+### Runtime / SDK (v1.0)
+
+For deep integration, use the embeddable `Pmem` Runtime:
+
+```ts
+import { Pmem } from 'pmem-ai';
+
+const memory = await Pmem.open({ root: '/path/to/project' });
+const ctx = await memory.context('implement auth', 2000);
+await memory.observe({ file: 'src/auth.ts', summary: 'Added JWT middleware' });
+const receipt = await memory.forget({ id: 'trace.old', reason: 'Stale' });
+await memory.close();
+```
+
+SDK methods: `ask()`, `recall()`, `context()`, `related()`, `status()`, `observe()`, `forget()`, `capture()`, `endSession()`, `close()`.
+
+CLI, MCP, and SDK all call the same Runtime core — one implementation, three interfaces.
 
 ## Exit Codes
 

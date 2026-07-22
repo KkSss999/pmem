@@ -2,6 +2,33 @@
 
 All notable changes to pmem are documented here.
 
+## v1.0.0 — Agentic Memory Runtime (2026-07-22)
+
+### Added
+
+- **`Pmem` Runtime & SDK**: Embeddable `Pmem.open()` API with query methods (`ask`, `recall`, `context`, `related`, `status`) and write methods (`observe`, `forget`, `capture`, `endSession`). Package exports at `pmem-ai` (SDK) and `pmem-ai/runtime` (full internals).
+- **Scope Manager**: `project` → `branch` → `session` → `agent` → `private` hierarchy with git branch-aware resolution.
+- **Policy Engine**: Confirmation gating (required/optional/never), TTL-based expiry, duplicate detection.
+- **Event Store**: Append-only SQLite event log with branch-aware working memory and durable tombstones.
+- **`pmem forget` command**: Durable tombstone for memory cards with audit event and confirm gate.
+- **MCP write tools**: `pmem_observe`, `pmem_forget` (append-only mode), gated behind `--write=append-only`. All 8 tool schemas hardened with `additionalProperties: false` and path scope validation.
+- **Preset system**: `software` (default), `research`, `novel` presets with configurable memory policies.
+- **Independent SQLite instances**: `openOwnedDatabase()` replaces singleton — multi-instance safe.
+
+### Changed
+
+- **Types modularized**: `src/types.ts` → `src/types/` (9 domain files).
+- **CLI routing**: Read commands (`ask`, `recall`, `status`, `context`, `relations`) and `capture` route through `Pmem.open()`.
+- **MCP server**: All tools route through single `Pmem` instance. Version aligned to package `1.0.0`.
+- **SDK type exports**: Full TypeScript types for all query results, options, write operations, and domain models.
+
+### Compatibility
+
+- Markdown cards remain canonical, editable, Git-managed
+- SQLite indexes/runtime state rebuildable via `pmem rebuild`
+- All existing CLI commands and output contracts preserved
+- `sync`, `update`, `verify`, `session`, `rebuild` remain command-native
+
 ## v0.7.6-a — Stale Card Cleanup & missing_card_file Fix (2026-06-29)
 
 ### Fixed

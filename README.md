@@ -23,7 +23,9 @@ pmem adds a small, explicit memory layer to the project:
 
 The design is intentionally **local and Git-friendly**. Markdown cards are the source of truth. SQLite is a rebuildable runtime index — not a separate knowledge base. No cloud services, no vector DBs, no lock-in.
 
-It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 adds the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
+It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
+
+**v1.0 (current)** ships the **Agentic Memory Runtime**: a two-layer architecture with the familiar CLI/Skills/MCP product on top and an embeddable `Pmem` SDK (`Pmem.open()` → `memory.ask()` / `memory.observe()` / `memory.forget()`) beneath. CLI, MCP, and SDK all route through the same Runtime core — one implementation, three interfaces.
 
 ## Who It's For
 
@@ -401,6 +403,7 @@ pmem rebuild [--changed] [--full] [--card <id>]
 pmem verify [--fix] [--fix-stale] [--fix-locks] [--relaxed]
 pmem doctor [--format compact|json]
 pmem new <type> <title>
+pmem forget <id> [--confirm] [--reason <text>]
 pmem rename --find <pattern> --replace <replacement> [--write]
 pmem migrate [--to <version>] [--dry-run] [--backup]
 pmem session start [-a <agent-name>]
@@ -474,10 +477,58 @@ pmem mcp --write=append-only
 | `pmem_status` | readonly | Detect changed files |
 | `pmem_context` | readonly | Get task-aware context package |
 | `pmem_capture` | append-only | Append trace and update managed next.md block |
+| `pmem_observe` | append-only | Append structured observation to working memory |
+| `pmem_forget` | append-only | Append tombstone event (audit-preserving) |
 
-All read-only tools are safe to execute with no intentional writes. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`; MCP responses include `schema_version` derived from the pmem package version.
+All read-only tools are safe to execute with no intentional writes. In `append-only` mode, the agent can call `pmem_capture`, `pmem_observe`, and `pmem_forget` to create traces, record observations, and tombstone memories — while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`; MCP responses include `schema_version` derived from the pmem package version.
 
 → [Full MCP integration guide](docs/pmem-rt.md)
+
+## Agentic Memory Runtime SDK (v1.0)
+
+pmem v1.0 exposes an embeddable Runtime for deep integration into agent frameworks (OpenClaw, Miao, custom agents):
+
+```ts
+import { Pmem } from 'pmem-ai';
+import type {
+  AskResultV03, RecallQueryResult, CaptureResult,
+  StatusResult, Receipt, MemoryCard, MemoryEvent,
+} from 'pmem-ai';
+
+const memory = await Pmem.open({
+  root: '/path/to/project',
+  preset: 'software',       // 'software' | 'research' | 'novel'
+  config: {                  // optional overrides
+    working: { ttl: '1h' },
+    durable: { confirmation: 'required' },
+  },
+});
+
+// Query — same core as CLI and MCP
+const ctx = await memory.context('implement auth', 2000);
+const results = await memory.ask('JWT middleware');
+const recall = await memory.recall({ budget: 2000 });
+
+// Observe & audit
+const receipt = await memory.observe({
+  file: 'src/auth.ts',
+  summary: 'Added JWT middleware',
+  action: 'created',
+});
+await memory.forget({ id: receipt.id, reason: 'Cleanup test observation' });
+
+// Session lifecycle
+await memory.endSession({ summary: 'Auth module complete' });
+await memory.close();
+```
+
+**SDK methods**: `ask()`, `recall()`, `context()`, `related()`, `status()`, `observe()`, `forget()`, `capture()`, `endSession()`, `close()`.
+
+**Package exports**: `require('pmem-ai')` for CJS, plus `import type { ... }` for TypeScript types. The Runtime sub-path (`pmem-ai/runtime`) exposes the full runtime internals for advanced use.
+
+**Three interfaces, one core**: CLI (`pmem ask`), MCP (`pmem_ask`), and SDK (`memory.ask()`) all call `askQuery()` in the same `src/core/query/` module. Fix a bug once, all three paths benefit.
+
+→ [v1.0 Pre-Design](docs/v1.0%20pre-design.md) | [v1.0 Dev Plan](docs/v1.0%20dev-plan.md)
 
 ## Project Layout
 
@@ -591,6 +642,18 @@ pmem verify
 - Multi-channel candidate generation (exact ID, aliases, tags, FTS5/BM25, graph expansion)
 - Recency scoring, stale/dirty penalties, explainable output
 - Recall modes: brief, normal, deep
+
+**v1.0 Agentic Memory Runtime** — shipped:
+- Two-layer architecture: Product (CLI + Skills + MCP) + Runtime (SDK)
+- `Pmem.open()` SDK with full query + write API
+- Scope manager, policy engine, append-only event store
+- Branch-aware working memory, durable tombstones (`pmem forget`)
+- Independent SQLite instances, project-root isolation
+- Unified query core: CLI / MCP / SDK share one implementation
+- MCP: 5 read-only tools + 3 append-only write tools (`pmem_observe`, `pmem_forget`, `pmem_capture`)
+
+**v1.1 System Memory** — planning:
+- See [docs/v1.1 pre-design.md](docs/v1.1%20pre-design.md)
 
 Deferred:
 - Embedding-based semantic search
