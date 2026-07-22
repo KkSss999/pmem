@@ -66,8 +66,8 @@ program
   .option('-n, --next <text>', 'Recommended next step')
   .option('--full', 'Force a full rebuild of the database index after capture', false)
   .option('--force', 'Force capture write even if no files changed or diff hash is duplicate', false)
-  .action((options) => {
-    captureCommand({
+  .action(async (options) => {
+    await captureCommand({
       auto: options.auto,
       summary: options.summary,
       next: options.next,

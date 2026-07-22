@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { askCommand } from './ask';
+import { captureCommand } from './capture';
 import { statusCommand } from './status';
 import { relationsQuery } from './relations';
 import { Pmem } from '../runtime';
@@ -71,6 +72,62 @@ describe('read/query CLI commands use Pmem Runtime', () => {
       'Run `pmem recall` for full project context',
       'Check that cards have relevant aliases and tags',
     ]);
+  });
+
+  it('captureCommand routes through Pmem.capture(), preserves options/output, and closes Runtime', async () => {
+    const root = makePmemProject();
+    process.chdir(root);
+    const cwd = process.cwd();
+    const calls: string[] = [];
+    (Pmem as any).open = async (opts: { root: string }) => {
+      calls.push(`open:${opts.root}`);
+      return {
+        capture: async (summary: string, opts: { auto?: boolean; summary?: string; next?: string; full?: boolean; force?: boolean }) => {
+          calls.push(`capture:${summary}:${opts.auto}:${opts.summary}:${opts.next}:${opts.full}:${opts.force}`);
+          return {
+            success: true,
+            message: 'Memory sync and update completed successfully.',
+            tracePath: path.join(cwd, '.pmem', 'traces', '2026-07-22-001.md'),
+          };
+        },
+        close: async () => { calls.push('close'); },
+      };
+    };
+
+    const out = await withCapturedConsole(() => captureCommand({
+      auto: true,
+      summary: 'runtime capture',
+      next: 'continue',
+      full: true,
+      force: true,
+    }));
+
+    assert.deepStrictEqual(calls, [
+      `open:${cwd}`,
+      'capture:runtime capture:true:runtime capture:continue:true:true',
+      'close',
+    ]);
+    assert.deepStrictEqual(out.stdout, [
+      'Memory sync and update completed successfully.',
+      `Trace card written: ${path.join('.pmem', 'traces', '2026-07-22-001.md')}`,
+    ]);
+    assert.deepStrictEqual(out.stderr, []);
+  });
+
+  it('captureCommand closes Runtime when capture throws', async () => {
+    const root = makePmemProject();
+    process.chdir(root);
+    const calls: string[] = [];
+    (Pmem as any).open = async () => ({
+      capture: async () => {
+        calls.push('capture');
+        throw new Error('capture failed');
+      },
+      close: async () => { calls.push('close'); },
+    });
+
+    await assert.rejects(() => captureCommand({ summary: 'failure' }), /capture failed/);
+    assert.deepStrictEqual(calls, ['capture', 'close']);
   });
 
   it('statusCommand prints the Runtime status result without changing JSON shape', async () => {
