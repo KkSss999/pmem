@@ -251,19 +251,19 @@ source_files: [src/index.ts]
       const recall = await handleMcpTool(runtime, 'readonly', 'pmem_recall', {});
       assert.strictEqual(recall.isError, undefined);
       const recallBody = JSON.parse(recall.content[0].text);
-      assert.strictEqual(recallBody.schema_version, '1.0');
+      assert.strictEqual(recallBody.schema_version, MCP_SCHEMA_VERSION);
       assert.strictEqual(recallBody.project, 'capture-workspace');
 
       const ask = await handleMcpTool(runtime, 'readonly', 'pmem_ask', { query: 'core' });
       assert.strictEqual(ask.isError, undefined);
       const askBody = JSON.parse(ask.content[0].text);
-      assert.strictEqual(askBody.schema_version, '1.0');
+      assert.strictEqual(askBody.schema_version, MCP_SCHEMA_VERSION);
       assert.ok(Array.isArray(askBody.matched));
 
       const context = await handleMcpTool(runtime, 'readonly', 'pmem_context', { task: 'core module' });
       assert.strictEqual(context.isError, undefined);
       const contextBody = JSON.parse(context.content[0].text);
-      assert.strictEqual(contextBody.schema_version, '1.0');
+      assert.strictEqual(contextBody.schema_version, MCP_SCHEMA_VERSION);
       assert.strictEqual(contextBody.task, 'core module');
     });
 
@@ -299,7 +299,7 @@ source_files: [src/index.ts]
       });
       assert.strictEqual(observe.isError, undefined);
       const observed = JSON.parse(observe.content[0].text);
-      assert.strictEqual(observed.schema_version, '1.0');
+      assert.strictEqual(observed.schema_version, MCP_SCHEMA_VERSION);
       assert.strictEqual(observed.type, 'observe');
       assert.strictEqual(observed.created_at, at);
       assert.strictEqual(observed.content_trust, undefined);
@@ -312,7 +312,7 @@ source_files: [src/index.ts]
       });
       assert.strictEqual(forget.isError, undefined);
       const forgotten = JSON.parse(forget.content[0].text);
-      assert.strictEqual(forgotten.schema_version, '1.0');
+      assert.strictEqual(forgotten.schema_version, MCP_SCHEMA_VERSION);
       assert.strictEqual(forgotten.type, 'forget');
       assert.strictEqual(forgotten.scope, observed.scope);
       assert.strictEqual(forgotten.content_trust, undefined);
