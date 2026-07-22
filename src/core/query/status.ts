@@ -1,4 +1,5 @@
 import * as path from 'path';
+import type Database from 'better-sqlite3';
 import { execSync } from 'child_process';
 import { fileExists, getFileMtime, writeFile, isPathMatch, readFile } from '../fs';
 import { openDatabase, createSchema, closeDatabase } from '../db';
@@ -53,6 +54,7 @@ export interface StatusResult {
 
 export function statusQuery(pmemPath: string, options?: {
   since?: string;
+  db?: Database.Database;
 }): StatusResult {
   const cwd = process.cwd();
   const dbPath = path.join(pmemPath, 'pmem.db');
@@ -67,8 +69,8 @@ export function statusQuery(pmemPath: string, options?: {
   const affectedCards = new Map<string, AffectedCard>();
 
   if (fileExists(dbPath)) {
-    const db = openDatabase(pmemPath);
-    createSchema(db);
+    const db = options?.db ?? openDatabase(pmemPath);
+    if (!options?.db) createSchema(db);
 
     // Pass 1: Exact path matching
     try {
@@ -146,7 +148,7 @@ export function statusQuery(pmemPath: string, options?: {
   // === Pass 4: Detect new/modified markdown files under .pmem directly ===
   // This catches cards whose frontmatter id is not yet in the SQLite paths table
   // (i.e., before a pmem rebuild).
-  const existingCardIds = collectExistingCardIds(dbPath);
+  const existingCardIds = collectExistingCardIds(dbPath, options?.db);
   const needsRebuild = detectMemoryCardChanges(cwd, changes, affectedCards, existingCardIds);
 
   const affectedCardsList = [...affectedCards.values()];
@@ -216,18 +218,18 @@ function buildSuggestedAction(affectedCount: number, needsRebuild: boolean, chan
  * "modified_card" (frontmatter id already in DB but content changed).
  * Returns an empty set if the DB is missing or unreadable.
  */
-function collectExistingCardIds(dbPath: string): Set<string> {
+function collectExistingCardIds(dbPath: string, existingDb?: Database.Database): Set<string> {
   const ids = new Set<string>();
   if (!fileExists(dbPath)) return ids;
   try {
-    const db = openDatabase(path.dirname(dbPath));
+    const db = existingDb ?? openDatabase(path.dirname(dbPath));
     try {
       const rows = db.prepare('SELECT DISTINCT card_id FROM paths').all() as Array<{ card_id: string }>;
       for (const row of rows) {
         if (row.card_id) ids.add(row.card_id);
       }
     } finally {
-      closeDatabase();
+      if (!existingDb) closeDatabase();
     }
   } catch { /* ignore — fall back to empty set */ }
   return ids;

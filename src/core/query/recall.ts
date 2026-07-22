@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
+import type Database from 'better-sqlite3';
 import { readFile, fileExists } from '../fs';
 import { openDatabase, createSchema, getRecentRuntimeEvents } from '../db';
 import { getCurrentBranch } from '../git';
@@ -56,6 +57,7 @@ export function recallQuery(pmemPath: string, options?: {
   since?: string;
   recent?: number;
   noTraces?: boolean;
+  db?: Database.Database;
 }): RecallQueryResult {
   const indexContent = readFile(path.join(pmemPath, 'index.md'));
   const stateContent = readFile(path.join(pmemPath, 'state.md'));
@@ -185,8 +187,8 @@ export function recallQuery(pmemPath: string, options?: {
   }
 
   try {
-    const db = openDatabase(pmemPath);
-    createSchema(db);
+    const db = options?.db ?? openDatabase(pmemPath);
+    if (!options?.db) createSchema(db);
 
     let sinceThreshold: string | null = null;
     if (options?.since) {

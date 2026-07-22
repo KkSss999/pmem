@@ -5,7 +5,7 @@ import { contextQuery } from '../core/query/context';
 import { relatedQuery } from '../core/query/related';
 import { statusQuery } from '../core/query/status';
 import { captureCore } from '../core/capture';
-import { closeDatabase, createSchema, openDatabase } from '../core/db';
+import { createSchema, forgetMemory, openOwnedDatabase } from '../core/db';
 import { loadRuntimeConfig } from './config';
 import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
@@ -24,7 +24,7 @@ export class Pmem implements PmemInstance {
   static async open(opts: PmemOpenOptions): Promise<Pmem> {
     const config = loadRuntimeConfig(opts.root, opts.preset, opts.config);
     const pmemPath = toPmemPath(opts.root);
-    const db = openDatabase(pmemPath);
+    const db = openOwnedDatabase(pmemPath);
     createSchema(db);
     return new Pmem(opts.root, pmemPath, config, db);
   }
@@ -45,45 +45,45 @@ export class Pmem implements PmemInstance {
   async ask(query: string, opts?: AskOptions): Promise<AskResultV03> {
     this.assertOpen();
     try {
-      return askQuery(this.pmemPath, query, { ...opts, now: opts?.now ?? Date.now() });
+      return askQuery(this.pmemPath, query, { ...opts, now: opts?.now ?? Date.now(), db: this.db });
     } finally {
-      this.ensureRuntimeDb();
+      // Pmem owns this DB; read helpers must not close it.
     }
   }
 
   async recall(opts?: RecallOptions): Promise<RecallQueryResult> {
     this.assertOpen();
     try {
-      return recallQuery(this.pmemPath, opts);
+      return recallQuery(this.pmemPath, { ...opts, db: this.db });
     } finally {
-      this.ensureRuntimeDb();
+      // Pmem owns this DB; read helpers must not close it.
     }
   }
 
   async context(task: string, budget?: number): Promise<ContextQueryResult> {
     this.assertOpen();
     try {
-      return contextQuery(this.pmemPath, task, budget);
+      return contextQuery(this.pmemPath, task, budget, this.db);
     } finally {
-      this.ensureRuntimeDb();
+      // Pmem owns this DB; read helpers must not close it.
     }
   }
 
   async related(id: string, opts?: RelatedOptions): Promise<RelatedResult> {
     this.assertOpen();
     try {
-      return relatedQuery(this.pmemPath, id, opts);
+      return relatedQuery(this.pmemPath, id, { ...opts, db: this.db });
     } finally {
-      this.ensureRuntimeDb();
+      // Pmem owns this DB; read helpers must not close it.
     }
   }
 
   async status(opts?: StatusOptions): Promise<StatusResult> {
     this.assertOpen();
     try {
-      return statusQuery(this.pmemPath, opts);
+      return statusQuery(this.pmemPath, { ...opts, db: this.db });
     } finally {
-      this.ensureRuntimeDb();
+      // Pmem owns this DB; read helpers must not close it.
     }
   }
 
@@ -97,6 +97,7 @@ export class Pmem implements PmemInstance {
       file: change.file,
       metadata: change.metadata,
     };
+    const requiresConfirmation = this.policy.requiresConfirmation(proposal);
     const event = this.events.append({
       type: 'observe',
       scope,
@@ -113,7 +114,7 @@ export class Pmem implements PmemInstance {
       type: event.type,
       scope: event.scope,
       created_at: event.created_at,
-      requires_confirmation: this.policy.requiresConfirmation(proposal),
+      requires_confirmation: requiresConfirmation,
     };
   }
 
@@ -121,27 +122,48 @@ export class Pmem implements PmemInstance {
     this.assertOpen();
     const target = this.events.find(request.id);
     const scope = target?.scope ?? this.scope.resolve('', { metadata: request.metadata });
-    const event = this.events.append({
+    const requiresConfirmation = this.policy.requiresConfirmation({
       type: 'forget',
       scope,
-      created_at: request.at,
-      payload: {
-        target_id: request.id,
-        reason: request.reason,
-        metadata: request.metadata,
-      },
+      summary: request.reason,
+      metadata: request.metadata,
     });
+    const durable = forgetMemory(this.db, request.id, {
+      reason: request.reason,
+      branch: scope.startsWith('branch:') ? scope.slice('branch:'.length) : null,
+      sessionId: null,
+    });
+    const event = durable.success
+      ? this.events.find(String(durable.eventId)) ?? this.events.append({
+          id: String(durable.eventId),
+          type: 'forget',
+          scope,
+          created_at: request.at,
+          payload: {
+            target_id: request.id,
+            reason: request.reason,
+            metadata: request.metadata,
+            durable: true,
+          },
+        })
+      : this.events.append({
+          type: 'forget',
+          scope,
+          created_at: request.at,
+          payload: {
+            target_id: request.id,
+            reason: request.reason,
+            metadata: request.metadata,
+            durable: false,
+            error: durable.message,
+          },
+        });
     return {
       id: event.id,
       type: event.type,
       scope: event.scope,
       created_at: event.created_at,
-      requires_confirmation: this.policy.requiresConfirmation({
-        type: 'forget',
-        scope,
-        summary: request.reason,
-        metadata: request.metadata,
-      }),
+      requires_confirmation: requiresConfirmation,
     };
   }
 
@@ -149,8 +171,11 @@ export class Pmem implements PmemInstance {
     this.assertOpen();
     const captureSummary = summary || opts.summary || '';
     const scope = this.scope.resolve('', { summary: captureSummary, metadata: opts as Record<string, unknown> });
-    this.events.append({ type: 'commit', scope, payload: { summary: captureSummary, options: opts } });
-    return captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined });
+    const result = captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined });
+    if (result.success) {
+      this.events.append({ type: 'commit', scope, payload: { summary: captureSummary, options: opts, tracePath: result.tracePath } });
+    }
+    return result;
   }
 
   async endSession(result: SessionResult): Promise<void> {
@@ -162,7 +187,7 @@ export class Pmem implements PmemInstance {
 
   async close(): Promise<void> {
     if (this.closed) return;
-    closeDatabase(this.db);
+    this.db.close();
     this.closed = true;
   }
 
@@ -170,16 +195,6 @@ export class Pmem implements PmemInstance {
     if (this.closed) throw new Error('Pmem instance is already closed.');
   }
 
-  private ensureRuntimeDb(): void {
-    if (this.closed) return;
-    try {
-      this.db.prepare('SELECT 1').get();
-    } catch {
-      this.db = openDatabase(this.pmemPath);
-      createSchema(this.db);
-      this.events = new EventStore(this.db, this.config.working.ttl);
-    }
-  }
 }
 
 export * from './types';

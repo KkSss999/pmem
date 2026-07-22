@@ -93,3 +93,20 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
     await memory.close();
   }
 });
+
+
+test('two same-root Pmem instances keep independent DB handles after one closes', async () => {
+  const root = makeProject();
+  const first = await Pmem.open({ root });
+  const second = await Pmem.open({ root });
+  try {
+    await first.close();
+    const receipt = await second.observe({ summary: 'still usable after first close' });
+    assert.equal(receipt.type, 'observe');
+    const recall = await second.recall({ noTraces: true });
+    assert.equal(recall.project, 'runtime-test');
+  } finally {
+    await first.close();
+    await second.close();
+  }
+});

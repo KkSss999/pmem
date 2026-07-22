@@ -7,16 +7,15 @@ export const CORE_SCHEMA_VERSION = '0.4';
 
 let _db: Database.Database | null = null;
 
-export function openDatabase(pmemPath: string): Database.Database {
-  if (_db) return _db;
+function openSqliteDatabase(pmemPath: string): Database.Database {
   ensureDir(pmemPath);
   const dbPath = path.join(pmemPath, 'pmem.db');
   try {
-    _db = new Database(dbPath);
-    _db.pragma('journal_mode = WAL');
-    _db.pragma('foreign_keys = ON');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    return db;
   } catch (err: any) {
-    _db = null;
     if (err?.code === 'SQLITE_NOTADB') {
       const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
         `Back up the file if needed, then run: pmem rebuild --full`;
@@ -24,10 +23,29 @@ export function openDatabase(pmemPath: string): Database.Database {
     }
     throw err;
   }
+}
+
+export function openDatabase(pmemPath: string): Database.Database {
+  if (_db) return _db;
+  try {
+    _db = openSqliteDatabase(pmemPath);
+  } catch (err) {
+    _db = null;
+    throw err;
+  }
   return _db;
 }
 
-export function closeDatabase(): void {
+export function openOwnedDatabase(pmemPath: string): Database.Database {
+  return openSqliteDatabase(pmemPath);
+}
+
+export function closeDatabase(db?: Database.Database): void {
+  if (db) {
+    try { db.close(); } catch {}
+    if (db === _db) _db = null;
+    return;
+  }
   if (_db) {
     _db.close();
     _db = null;
@@ -139,21 +157,27 @@ export function createSchema(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_type TEXT NOT NULL,
+      event_type TEXT,
       memory_id TEXT,
       branch TEXT,
       payload TEXT,
       created_at TEXT NOT NULL,
       session_id TEXT,
-      success INTEGER NOT NULL DEFAULT 1
+      success INTEGER NOT NULL DEFAULT 1,
+      type TEXT,
+      scope TEXT,
+      payload_json TEXT,
+      expires_at TEXT
     );
   `);
 
-  try {
-    db.exec(`
-      ALTER TABLE events ADD COLUMN branch TEXT;
-    `);
-  } catch {}
+  for (const column of [
+    'event_type TEXT', 'memory_id TEXT', 'branch TEXT', 'payload TEXT',
+    'session_id TEXT', 'success INTEGER NOT NULL DEFAULT 1',
+    'type TEXT', 'scope TEXT', 'payload_json TEXT', 'expires_at TEXT'
+  ]) {
+    try { db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
+  }
 
   setSchemaVersion(db, CORE_SCHEMA_VERSION);
 }
@@ -433,29 +457,34 @@ export interface RuntimeEventRow {
 }
 
 export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInput): number {
+  const payload = event.payload === undefined ? null : JSON.stringify(event.payload);
   const result = db.prepare(
-    "INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(
     event.eventType,
     event.memoryId ?? null,
     event.branch ?? null,
-    event.payload === undefined ? null : JSON.stringify(event.payload),
+    payload,
     new Date().toISOString(),
     event.sessionId ?? null,
-    event.success === false ? 0 : 1
+    event.success === false ? 0 : 1,
+    toMemoryEventTypeForCore(event.eventType),
+    event.branch ? `branch:${event.branch}` : 'project',
+    payload,
+    null
   );
   return Number(result.lastInsertRowid);
 }
 
 export function getRecentRuntimeEvents(db: Database.Database, limit: number = 10): RuntimeEventRow[] {
   return db.prepare(
-    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events ORDER BY created_at DESC, id DESC LIMIT ?"
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?"
   ).all(limit) as RuntimeEventRow[];
 }
 
 export function getRuntimeEventsForMemory(db: Database.Database, memoryId: string): RuntimeEventRow[] {
   return db.prepare(
-    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, id DESC"
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, rowid DESC"
   ).all(memoryId) as RuntimeEventRow[];
 }
 
@@ -582,3 +611,11 @@ export function forgetMemory(db: Database.Database, memoryId: string, options: {
   });
   return tx();
 }
+
+function toMemoryEventTypeForCore(eventType: string): string {
+  if (eventType === 'memory.capture.committed') return 'commit';
+  if (eventType === 'memory.forget.tombstone') return 'forget';
+  if (eventType === 'memory.observe') return 'observe';
+  return 'observe';
+}
+
