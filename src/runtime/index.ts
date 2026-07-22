@@ -131,7 +131,7 @@ export class Pmem implements PmemInstance {
     const durable = forgetMemory(this.db, request.id, {
       reason: request.reason,
       branch: scope.startsWith('branch:') ? scope.slice('branch:'.length) : null,
-      sessionId: null,
+      sessionId: scope.startsWith('session:') ? scope.slice('session:'.length) : null,
     });
     const event = durable.success
       ? this.events.find(String(durable.eventId)) ?? this.events.append({

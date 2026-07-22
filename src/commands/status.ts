@@ -54,14 +54,25 @@ export async function statusCommand(options: { since?: string; format?: string }
   }
 
   let pmem: Pmem | null = null;
-  const result = await (async () => {
-    try {
-      pmem = await Pmem.open({ root: cwd });
-      return await pmem.status({ since: options.since });
-    } finally {
-      if (pmem) await pmem.close();
+  let result;
+  try {
+    result = await (async () => {
+      try {
+        pmem = await Pmem.open({ root: cwd });
+        return await pmem.status({ since: options.since });
+      } finally {
+        if (pmem) await pmem.close();
+      }
+    })();
+  } catch (err: any) {
+    if (err?.message?.includes('not a valid SQLite database')) {
+      console.error(err.message);
+    } else {
+      console.error(`Status query failed: ${err?.message || err}`);
+      console.error('Run `pmem rebuild --full` to rebuild the database.');
     }
-  })();
+    process.exit(2);
+  }
 
   if (format === 'json') {
     console.log(JSON.stringify(result, null, 2));

@@ -78,8 +78,8 @@ program
   .description('Safely forget a memory card by tombstoning it in the runtime index')
   .option('--confirm', 'Confirm the durable tombstone operation')
   .option('-r, --reason <text>', 'Reason for forgetting this memory')
-  .action((memoryId: string, options) => {
-    forgetCommand(memoryId, { confirm: options.confirm, reason: options.reason });
+  .action(async (memoryId: string, options) => {
+    await forgetCommand(memoryId, { confirm: options.confirm, reason: options.reason });
   });
 
 

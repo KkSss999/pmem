@@ -17,14 +17,25 @@ export async function contextCommand(task: string, options: { budget?: number; f
 
   // 1. Run core context query through integrated runtime API
   let pmem: Pmem | null = null;
-  const result = await (async () => {
-    try {
-      pmem = await Pmem.open({ root: cwd });
-      return await pmem.context(task, budget);
-    } finally {
-      if (pmem) await pmem.close();
+  let result;
+  try {
+    result = await (async () => {
+      try {
+        pmem = await Pmem.open({ root: cwd });
+        return await pmem.context(task, budget);
+      } finally {
+        if (pmem) await pmem.close();
+      }
+    })();
+  } catch (err: any) {
+    if (err?.message?.includes('not a valid SQLite database')) {
+      console.error(err.message);
+    } else {
+      console.error(`Context query failed: ${err?.message || err}`);
+      console.error('Run `pmem rebuild --full` to rebuild the database.');
     }
-  })();
+    process.exit(2);
+  }
 
   // 2. Save task metadata to session.json
   const sessionPath = path.join(pmemPath, 'session.json');

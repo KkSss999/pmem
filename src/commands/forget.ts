@@ -1,9 +1,8 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
-import { openDatabase, createSchema, closeDatabase, forgetMemory, getActiveSession } from '../core/db';
-import { getCurrentBranch } from '../core/git';
+import { Pmem } from '../runtime';
 
-export function forgetCommand(memoryId: string, options: { reason?: string; confirm?: boolean } = {}): void {
+export async function forgetCommand(memoryId: string, options: { reason?: string; confirm?: boolean } = {}): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
 
@@ -20,26 +19,19 @@ export function forgetCommand(memoryId: string, options: { reason?: string; conf
     return;
   }
 
+  const memory = await Pmem.open({ root: cwd });
   try {
-    const db = openDatabase(pmemPath);
-    createSchema(db);
-    const activeSession = getActiveSession(db);
-    const result = forgetMemory(db, memoryId, {
-      reason: options.reason,
-      branch: getCurrentBranch(cwd),
-      sessionId: activeSession?.id,
+    const result = await memory.forget({
+      id: memoryId,
+      reason: options.reason ?? 'CLI forget command',
+      at: new Date().toISOString(),
     });
-    closeDatabase();
-
-    if (!result.success) {
-      console.error(`Error: ${result.message}`);
-      process.exit(2);
-    }
-    console.log(result.message);
-    if (result.eventId !== undefined) console.log(`Tombstone event: ${result.eventId}`);
+    console.log(`Memory forgotten: ${memoryId}`);
+    console.log(`Tombstone event: ${result.id}`);
   } catch (err: any) {
-    try { closeDatabase(); } catch {}
     console.error(`Error: ${err.message}`);
     process.exit(2);
+  } finally {
+    await memory.close();
   }
 }
