@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { fileExists } from '../fs';
+import type Database from 'better-sqlite3';
 import { openDatabase, createSchema } from '../db';
 import { loadManifest, resolveConfig } from '../manifest';
 import { parseIntent } from './engine/intent';
@@ -55,15 +56,15 @@ const CHANNEL_TO_MATCH_TYPE: Record<string, MatchType> = {
   graph: 'graph_expansion',
 };
 
-export function askQuery(pmemPath: string, query: string, options: AskOptions = {}): AskResultV03 {
+export function askQuery(pmemPath: string, query: string, options: AskOptions & { db?: Database.Database } = {}): AskResultV03 {
   const dbPath = path.join(pmemPath, 'pmem.db');
 
   if (!fileExists(dbPath)) {
     throw new Error('No SQLite database found. Run `pmem rebuild` first.');
   }
 
-  const db = openDatabase(pmemPath);
-  createSchema(db);
+  const db = options.db ?? openDatabase(pmemPath);
+  if (!options.db) createSchema(db);
 
   const manifest = loadManifest(pmemPath);
   const config = manifest

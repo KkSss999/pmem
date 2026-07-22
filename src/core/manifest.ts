@@ -1,6 +1,7 @@
 import * as yaml from 'js-yaml';
 import { Manifest, ManifestV03, InitMode, ResolvedConfig } from '../types';
 import * as fs from './fs';
+import { DOMAIN_PRESETS } from './domainPresets';
 
 // v0.7.0: v0.6.4 id_pattern whitelist — the exact types accepted at runtime.
 // Sourced from src/core/manifest.ts:113 (card_policy.id_pattern regex).
@@ -29,15 +30,19 @@ export const V064_DEFAULT_CREATABLE_TYPES = ['decision', 'module', 'task', 'feat
  */
 export function resolveConfig(manifest: Manifest): ResolvedConfig {
   const schema = (manifest as ManifestV03).schema;
+  const legacyDomain = manifest.project?.domain;
+  const preset = legacyDomain ? DOMAIN_PRESETS[legacyDomain] : undefined;
 
-  const card_types = schema?.card_types ?? [...V064_DEFAULT_TYPES];
+  const card_types = schema?.card_types ?? preset?.card_types ?? [...V064_DEFAULT_TYPES];
 
-  // type_dirs: built-in preset types must explicitly list directories;
-  // custom types (not in any preset) fall back to `${type}s`.
+  // type_dirs: schema wins; documented legacy project.domain presets remain
+  // readable without mutating old manifests; custom types fall back to `${type}s`.
   const type_dirs: Record<string, string> = {};
   for (const t of card_types) {
     if (schema?.type_dirs?.[t]) {
       type_dirs[t] = schema.type_dirs[t];
+    } else if (preset?.type_dirs?.[t]) {
+      type_dirs[t] = preset.type_dirs[t];
     } else {
       type_dirs[t] = `${t}s`;
     }
@@ -46,21 +51,24 @@ export function resolveConfig(manifest: Manifest): ResolvedConfig {
   return {
     card_types,
     type_dirs,
-    foundational_types: schema?.foundational_types ?? ['module'],
-    evidence_types: schema?.evidence_types ?? ['decision', 'trace'],
-    default_type: schema?.default_type ?? 'trace',
+    foundational_types: schema?.foundational_types ?? preset?.foundational_types ?? ['module'],
+    evidence_types: schema?.evidence_types ?? preset?.evidence_types ?? ['decision', 'trace'],
+    default_type: schema?.default_type ?? preset?.default_type ?? 'trace',
     merge_target_types: (manifest as ManifestV03).distill?.merge_target_types ?? [...V064_DEFAULT_MERGE_TYPES],
 
     // creatable_types: types accepted by `pmem new`.
     // - If schema.creatable_types is defined → use it.
+    // - If legacy project.domain names a documented preset → use that preset.
     // - Otherwise (compat fallback):
-    //   - If schema.card_types is defined → all card_types minus non-creatable utility types ('integration', 'project', 'assumption', 'resource')
+    //   - If schema.card_types is defined → all card_types minus non-creatable utility types
     //   - Otherwise → v0.6.4 default creatable types
     creatable_types: schema?.creatable_types
       ? schema.creatable_types
-      : (schema?.card_types
-          ? card_types.filter(t => t !== 'integration' && t !== 'project' && t !== 'assumption' && t !== 'resource')
-          : [...V064_DEFAULT_CREATABLE_TYPES]),
+      : (preset?.creatable_types
+          ? preset.creatable_types
+          : (schema?.card_types
+              ? card_types.filter(t => t !== 'integration' && t !== 'project' && t !== 'assumption' && t !== 'resource')
+              : [...V064_DEFAULT_CREATABLE_TYPES])),
   };
 }
 

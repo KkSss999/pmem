@@ -1,4 +1,5 @@
 import * as path from 'path';
+import type Database from 'better-sqlite3';
 import { fileExists } from '../fs';
 import { openDatabase, createSchema, closeDatabase } from '../db';
 import { recallQuery } from './recall';
@@ -6,7 +7,13 @@ import { askQuery } from './ask';
 import { statusQuery } from './status';
 import type { ContextQueryResult, ContextCardInfo } from '../../types';
 
-export function contextQuery(pmemPath: string, task: string, budget = 4000): ContextQueryResult {
+export function contextQuery(
+  pmemPath: string,
+  task: string,
+  budget = 4000,
+  dbOverride?: Database.Database,
+  cwd: string = process.cwd(),
+): ContextQueryResult {
   const dbPath = path.join(pmemPath, 'pmem.db');
   
   // Set up defaults
@@ -32,7 +39,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
 
   // 1. Recall
   try {
-    const recall = recallQuery(pmemPath, { budget });
+    const recall = recallQuery(pmemPath, { budget, db: dbOverride, cwd });
     result.project_name = recall.project;
     result.project_stage = recall.stage;
     result.current_focus = recall.focus;
@@ -46,6 +53,20 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
 
     if (recall.recent_traces) {
       result.recent_session_memory = recall.recent_traces.map(t => t.summary);
+    }
+    if (recall.recent_events && recall.recent_events.length > 0) {
+      const eventSummaries = recall.recent_events.map(e => {
+        let payloadSummary = '';
+        if (e.payload) {
+          try {
+            const parsed = JSON.parse(e.payload);
+            payloadSummary = parsed.summary || parsed.reason || '';
+          } catch {}
+        }
+        const branch = e.branch ? ` [${e.branch}]` : '';
+        return `${e.event_type}${branch}${e.memory_id ? ` ${e.memory_id}` : ''}${payloadSummary ? ` — ${payloadSummary}` : ''}`;
+      });
+      result.recent_session_memory = [...(result.recent_session_memory ?? []), ...eventSummaries];
     }
 
     const decsSet = new Set<string>();
@@ -80,7 +101,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
   let askMatched: any[] = [];
   if (fileExists(dbPath)) {
     try {
-      const ask = askQuery(pmemPath, task, { explain: true, limit: 12 });
+      const ask = askQuery(pmemPath, task, { explain: true, limit: 12, db: dbOverride });
       askMatched = ask.matched || [];
     } catch (err: any) {
       result.warnings.push(`Ask query failed: ${err.message}`);
@@ -91,7 +112,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
 
   // 3. Status
   try {
-    const status = statusQuery(pmemPath);
+    const status = statusQuery(pmemPath, { db: dbOverride, cwd });
     result.changed_files = (status.changes || []).map(c => ({
       path: c.path,
       status: c.status
@@ -103,8 +124,8 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
   // Database-dependent context enrichment
   if (fileExists(dbPath)) {
     try {
-      const db = openDatabase(pmemPath);
-      createSchema(db);
+      const db = dbOverride ?? openDatabase(pmemPath);
+      if (!dbOverride) createSchema(db);
 
       // Populate relevant_memory with titles and summaries
       for (const m of askMatched.slice(0, 10)) {
@@ -163,7 +184,7 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
     } catch (err: any) {
       result.warnings.push(`Database context query enrichment failed: ${err.message}`);
     } finally {
-      closeDatabase();
+      if (!dbOverride) closeDatabase();
     }
   }
 

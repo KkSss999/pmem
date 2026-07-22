@@ -13,8 +13,10 @@ import {
   insertUpdateLog,
   getActiveSession,
   closeDatabase,
-  insertDirtyFlag
+  insertDirtyFlag,
+  insertRuntimeEvent
 } from './db';
+import { getCurrentBranch } from './git';
 import { statusQuery } from './query/status';
 import type { PmemSessionData } from '../types';
 import { buildTraceSummary } from './traceSummary';
@@ -26,6 +28,7 @@ export interface CaptureOptions {
   next?: string;
   full?: boolean;
   force?: boolean;
+  cwd?: string;
 }
 
 export interface CaptureResult {
@@ -36,7 +39,7 @@ export interface CaptureResult {
 }
 
 export function captureCore(pmemPath: string, options: CaptureOptions = {}): CaptureResult {
-  const cwd = process.cwd();
+  const cwd = options.cwd ?? process.cwd();
   
   if (!fileExists(pmemPath)) {
     return {
@@ -48,7 +51,7 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
   // 1. Detect changed files
   let status;
   try {
-    status = statusQuery(pmemPath);
+    status = statusQuery(pmemPath, { cwd });
   } catch (err: any) {
     return {
       success: false,
@@ -80,15 +83,25 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     })();
 
     if (isGit) {
+      let hasHead = false;
+      try {
+        execSync('git rev-parse --verify HEAD', { cwd, stdio: 'ignore' });
+        hasHead = true;
+      } catch {
+        hasHead = false;
+      }
+
       const statusOutput = execSync(
         "git status --porcelain --untracked-files=all -- . ':!.pmem'",
         { cwd, encoding: 'utf8', timeout: 5000 }
       );
 
-      const diffOutput = execSync(
-        "git diff HEAD -- . ':!.pmem'",
-        { cwd, encoding: 'utf8', timeout: 5000 }
-      );
+      const diffOutput = hasHead
+        ? execSync(
+            "git diff HEAD -- . ':!.pmem'",
+            { cwd, encoding: 'utf8', timeout: 5000 }
+          )
+        : '';
 
       const untrackedHashes = changedFiles
         .filter(f => f.status.includes('?') || f.status === '??')
@@ -335,12 +348,9 @@ ${listItems(traceSummary.next)}
       // Resolve project level dirty flag
       resolveDirtyFlags(db, 'project', '.pmem');
 
-      // Log update to SQLite
-      const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
-      const traceCardId = `trace.${today}-${todayNum}`;
-      insertUpdateLog(db, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
-
-      // Commit transaction
+      // Log update/event to SQLite only after capture artifacts and rebuild succeeded.
+      // Commit dirty-flag bookkeeping before rebuild because rebuild uses its own
+      // transactions on the shared runtime database connection.
       db.prepare('COMMIT').run();
       transactionActive = false;
       closeDatabase();
@@ -388,11 +398,53 @@ ${listItems(traceSummary.next)}
 
   // 9. Run rebuild (incremental or full)
   try {
-    rebuildCommand({ full: options.full === true });
+    rebuildCommand({ full: options.full === true, cwd });
   } catch (err: any) {
+    if (db && transactionActive) {
+      try { db.prepare('ROLLBACK').run(); } catch {}
+      transactionActive = false;
+      try { closeDatabase(); } catch {}
+    }
     return {
       success: false,
       message: `Failed rebuild: ${err.message}`,
+      tracePath: traceFile
+    };
+  }
+
+  try {
+    const eventDb = openDatabase(pmemPath);
+    createSchema(eventDb);
+    const eventTx = eventDb.transaction(() => {
+      const activeSession = getActiveSession(eventDb);
+      const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
+      const traceCardId = `trace.${today}-${todayNum}`;
+      const branch = getCurrentBranch(cwd);
+      insertUpdateLog(eventDb, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
+      insertRuntimeEvent(eventDb, {
+        eventType: 'memory.capture.committed',
+        memoryId: traceCardId,
+        branch,
+        sessionId: activeSession?.id,
+        payload: {
+          trace_path: path.relative(cwd, traceFile),
+          summary: traceSummary.summary,
+          changed_files: changedFiles.map(f => f.path),
+          diff_hash: diffHash,
+        },
+        success: true,
+      });
+    });
+    eventTx();
+    closeDatabase();
+  } catch (err: any) {
+    try { closeDatabase(); } catch {}
+    if (fileExists(traceFile)) {
+      try { fs.unlinkSync(traceFile); } catch {}
+    }
+    return {
+      success: false,
+      message: `Failed SQLite commit: ${err.message}`,
       tracePath: traceFile
     };
   }
@@ -408,7 +460,7 @@ ${listItems(traceSummary.next)}
 
   // 10. Run lightweight verify
   try {
-    verifyCommand({ fix: false, fixLocks: false, fixStale: false, relaxed: true, noExit: true });
+    verifyCommand({ fix: false, fixLocks: false, fixStale: false, relaxed: true, noExit: true, cwd });
   } catch (err: any) {
     // Verification warning only, do not fail capture
   }

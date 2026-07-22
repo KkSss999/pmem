@@ -217,11 +217,30 @@ describe('resolveConfig', () => {
     assert.strictEqual(JSON.stringify(manifest), snapshot);
   });
 
-  it('v0.6.4 fallback card_types matches id_pattern whitelist (10 types)', () => {
-    assert.deepStrictEqual(V064_DEFAULT_TYPES, [
-      'project', 'module', 'feature', 'task', 'decision',
-      'trace', 'risk', 'assumption', 'resource', 'integration',
-    ]);
+  it('uses legacy project.domain preset semantics when schema is absent', () => {
+    const manifest = getDefaultManifest('legacy-novel');
+    manifest.project.domain = 'novel';
+    const cfg = resolveConfig(manifest);
+    assert.ok(cfg.card_types.includes('character'));
+    assert.strictEqual(cfg.type_dirs.character, 'characters');
+    assert.deepStrictEqual(cfg.foundational_types, ['character', 'chapter']);
+    assert.deepStrictEqual(cfg.creatable_types, ['character', 'chapter', 'world', 'arc', 'decision', 'trace']);
+  });
+
+  it('schema fields override legacy project.domain preset semantics', () => {
+    const manifest = getDefaultManifest('custom-research');
+    manifest.project.domain = 'research';
+    (manifest as any).schema = {
+      card_types: ['custom', 'trace'],
+      type_dirs: { custom: 'custom-memory' },
+      foundational_types: ['custom'],
+      creatable_types: ['custom'],
+    };
+    const cfg = resolveConfig(manifest);
+    assert.deepStrictEqual(cfg.card_types, ['custom', 'trace']);
+    assert.strictEqual(cfg.type_dirs.custom, 'custom-memory');
+    assert.deepStrictEqual(cfg.foundational_types, ['custom']);
+    assert.deepStrictEqual(cfg.creatable_types, ['custom']);
   });
 });
 

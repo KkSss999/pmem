@@ -11,8 +11,8 @@ import { parseFrontmatter } from '../core/yaml';
 
 const PMEM_DIR = '.pmem';
 
-export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixStale?: boolean; relaxed?: boolean; noExit?: boolean }): void {
-  const cwd = process.cwd();
+export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixStale?: boolean; relaxed?: boolean; noExit?: boolean; cwd?: string }): void {
+  const cwd = options.cwd ?? process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
   if (!fileExists(pmemPath)) {

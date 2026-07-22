@@ -801,7 +801,7 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
   // fails (e.g. not in a git repo, or pmem not initialized), default to false.
   let needsRebuild = false;
   try {
-    needsRebuild = statusQuery(pmemPath).needs_rebuild;
+    needsRebuild = statusQuery(pmemPath, { cwd: path.resolve(pmemPath, '..') }).needs_rebuild;
   } catch {
     needsRebuild = false;
   }

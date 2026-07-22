@@ -1,4 +1,5 @@
 import * as path from 'path';
+import type Database from 'better-sqlite3';
 import { fileExists } from '../fs';
 import { openDatabase, createSchema, getEdgesForCard } from '../db';
 import type { CardRow, EdgeRow } from '../../types';
@@ -31,6 +32,7 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
   depth?: number;
   type?: string;
   source?: 'explicit' | 'inferred' | 'mention' | 'all';
+  db?: Database.Database;
 }): RelatedResult {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) {
@@ -42,8 +44,8 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
     ? options.source
     : undefined;
 
-  const db = openDatabase(pmemPath);
-  createSchema(db);
+  const db = options?.db ?? openDatabase(pmemPath);
+  if (!options?.db) createSchema(db);
 
   const card = db.prepare(
     'SELECT * FROM cards WHERE id = ? AND is_deleted = 0'

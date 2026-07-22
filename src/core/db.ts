@@ -3,18 +3,19 @@ import * as path from 'path';
 import { ensureDir } from './fs';
 import type { EdgeRow } from '../types';
 
+export const CORE_SCHEMA_VERSION = '0.4';
+
 let _db: Database.Database | null = null;
 
-export function openDatabase(pmemPath: string): Database.Database {
-  if (_db) return _db;
+function openSqliteDatabase(pmemPath: string): Database.Database {
   ensureDir(pmemPath);
   const dbPath = path.join(pmemPath, 'pmem.db');
   try {
-    _db = new Database(dbPath);
-    _db.pragma('journal_mode = WAL');
-    _db.pragma('foreign_keys = ON');
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    return db;
   } catch (err: any) {
-    _db = null;
     if (err?.code === 'SQLITE_NOTADB') {
       const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
         `Back up the file if needed, then run: pmem rebuild --full`;
@@ -22,10 +23,29 @@ export function openDatabase(pmemPath: string): Database.Database {
     }
     throw err;
   }
+}
+
+export function openDatabase(pmemPath: string): Database.Database {
+  if (_db) return _db;
+  try {
+    _db = openSqliteDatabase(pmemPath);
+  } catch (err) {
+    _db = null;
+    throw err;
+  }
   return _db;
 }
 
-export function closeDatabase(): void {
+export function openOwnedDatabase(pmemPath: string): Database.Database {
+  return openSqliteDatabase(pmemPath);
+}
+
+export function closeDatabase(db?: Database.Database): void {
+  if (db) {
+    try { db.close(); } catch {}
+    if (db === _db) _db = null;
+    return;
+  }
   if (_db) {
     _db.close();
     _db = null;
@@ -134,7 +154,32 @@ export function createSchema(db: Database.Database): void {
       success INTEGER NOT NULL,
       error TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT,
+      memory_id TEXT,
+      branch TEXT,
+      payload TEXT,
+      created_at TEXT NOT NULL,
+      session_id TEXT,
+      success INTEGER NOT NULL DEFAULT 1,
+      type TEXT,
+      scope TEXT,
+      payload_json TEXT,
+      expires_at TEXT
+    );
   `);
+
+  for (const column of [
+    'event_type TEXT', 'memory_id TEXT', 'branch TEXT', 'payload TEXT',
+    'session_id TEXT', 'success INTEGER NOT NULL DEFAULT 1',
+    'type TEXT', 'scope TEXT', 'payload_json TEXT', 'expires_at TEXT'
+  ]) {
+    try { db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
+  }
+
+  setSchemaVersion(db, CORE_SCHEMA_VERSION);
 }
 
 export function hasFTS5(db: Database.Database): boolean {
@@ -302,6 +347,7 @@ export function clearAllTables(db: Database.Database): void {
     DELETE FROM dirty_flags;
     DELETE FROM update_log;
     DELETE FROM sessions;
+    DELETE FROM events;
   `);
 }
 
@@ -390,6 +436,58 @@ export function insertUpdateLog(db: Database.Database, action: string, summary?:
   );
 }
 
+export interface RuntimeEventInput {
+  eventType: string;
+  memoryId?: string | null;
+  branch?: string | null;
+  payload?: unknown;
+  sessionId?: string | null;
+  success?: boolean;
+}
+
+export interface RuntimeEventRow {
+  id: number;
+  event_type: string;
+  memory_id: string | null;
+  branch: string | null;
+  payload: string | null;
+  created_at: string;
+  session_id: string | null;
+  success: number;
+}
+
+export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInput): number {
+  const payload = event.payload === undefined ? null : JSON.stringify(event.payload);
+  const result = db.prepare(
+    "INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(
+    event.eventType,
+    event.memoryId ?? null,
+    event.branch ?? null,
+    payload,
+    new Date().toISOString(),
+    event.sessionId ?? null,
+    event.success === false ? 0 : 1,
+    toMemoryEventTypeForCore(event.eventType),
+    event.branch ? `branch:${event.branch}` : 'project',
+    payload,
+    null
+  );
+  return Number(result.lastInsertRowid);
+}
+
+export function getRecentRuntimeEvents(db: Database.Database, limit: number = 10): RuntimeEventRow[] {
+  return db.prepare(
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?"
+  ).all(limit) as RuntimeEventRow[];
+}
+
+export function getRuntimeEventsForMemory(db: Database.Database, memoryId: string): RuntimeEventRow[] {
+  return db.prepare(
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, rowid DESC"
+  ).all(memoryId) as RuntimeEventRow[];
+}
+
 export function getRecentUpdateLogs(db: Database.Database, limit: number = 10): Array<{ action: string; summary: string | null; created_at: string; success: number }> {
   return db.prepare(
     "SELECT action, summary, created_at, success FROM update_log ORDER BY created_at DESC LIMIT ?"
@@ -468,3 +566,56 @@ export function deleteOrphanEdges(db: Database.Database): number {
        OR to_id   NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
   `).run().changes;
 }
+
+export interface ForgetResult {
+  success: boolean;
+  memoryId: string;
+  eventId?: number;
+  message: string;
+}
+
+export function forgetMemory(db: Database.Database, memoryId: string, options: { reason?: string; branch?: string | null; sessionId?: string | null } = {}): ForgetResult {
+  const tx = db.transaction((): ForgetResult => {
+    const card = db.prepare("SELECT id, is_deleted FROM cards WHERE id = ?").get(memoryId) as { id: string; is_deleted: number } | undefined;
+    if (!card) {
+      return { success: false, memoryId, message: `Memory not found: ${memoryId}` };
+    }
+    if (card.is_deleted === 1) {
+      const eventId = insertRuntimeEvent(db, {
+        eventType: 'memory.forget.tombstone',
+        memoryId,
+        branch: options.branch ?? null,
+        sessionId: options.sessionId ?? null,
+        payload: { reason: options.reason ?? null, already_deleted: true },
+        success: true,
+      });
+      return { success: true, memoryId, eventId, message: `Memory already forgotten: ${memoryId}` };
+    }
+
+    db.prepare("UPDATE cards SET is_deleted = 1, updated_at = ? WHERE id = ?").run(new Date().toISOString(), memoryId);
+    db.prepare("DELETE FROM edges WHERE from_id = ? OR to_id = ?").run(memoryId, memoryId);
+    deleteCardAliases(db, memoryId);
+    deleteCardTags(db, memoryId);
+    deleteCardPaths(db, memoryId);
+    deleteCardFts(db, memoryId);
+    resolveDirtyFlags(db, 'card', memoryId);
+    const eventId = insertRuntimeEvent(db, {
+      eventType: 'memory.forget.tombstone',
+      memoryId,
+      branch: options.branch ?? null,
+      sessionId: options.sessionId ?? null,
+      payload: { reason: options.reason ?? null },
+      success: true,
+    });
+    return { success: true, memoryId, eventId, message: `Memory forgotten: ${memoryId}` };
+  });
+  return tx();
+}
+
+function toMemoryEventTypeForCore(eventType: string): string {
+  if (eventType === 'memory.capture.committed') return 'commit';
+  if (eventType === 'memory.forget.tombstone') return 'forget';
+  if (eventType === 'memory.observe') return 'observe';
+  return 'observe';
+}
+

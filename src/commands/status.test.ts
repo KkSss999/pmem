@@ -279,6 +279,8 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
 
     const out = JSON.parse(r.stdout);
     assert.strictEqual(out.needs_rebuild, false, 'needs_rebuild should be false when no memory files are new/modified');
+    assert.strictEqual(out.state, 'source_changes_only', 'nonempty unrelated source changes should not be reported as no_changes');
+    assert.strictEqual(out.suggested_action, 'review source changes; no related memory cards found');
 
     // And no card should be marked as new_card or modified_card.
     const memChanges = (out.affected_cards as Array<{ reason: string }>)

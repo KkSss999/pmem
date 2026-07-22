@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { formatOutput } from '../core/format';
-import { askQuery } from '../core/query/ask';
+import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
 
 const PMEM_DIR = '.pmem';
@@ -11,7 +11,7 @@ export interface AskCommandOptions {
   limit?: number;
 }
 
-export function askCommand(query: string, format: CliFormat = 'compact', options: AskCommandOptions = {}): void {
+export async function askCommand(query: string, format: CliFormat = 'compact', options: AskCommandOptions = {}): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const dbPath = path.join(pmemPath, 'pmem.db');
@@ -27,8 +27,10 @@ export function askCommand(query: string, format: CliFormat = 'compact', options
   }
 
   let result;
+  let pmem: Pmem | null = null;
   try {
-    result = askQuery(pmemPath, query, {
+    pmem = await Pmem.open({ root: cwd });
+    result = await pmem.ask(query, {
       explain: options.explain,
       limit: options.limit,
     });
@@ -40,6 +42,8 @@ export function askCommand(query: string, format: CliFormat = 'compact', options
     console.log(`Ask query failed: ${err?.message || err}`);
     console.log('Run `pmem rebuild --full` to rebuild the database.');
     return;
+  } finally {
+    if (pmem) await pmem.close();
   }
 
   const askMessage = result.matched.length > 0

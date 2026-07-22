@@ -2,7 +2,7 @@
 id: decision.project_rag_os_positioning_20260626
 type: decision
 title: "pmem Positioning: Project RAG OS"
-status: active
+status: superseded
 tags: [positioning, rag, project-memory, agent-crud, roadmap]
 created: "2026-06-26"
 updated: "2026-06-26T12:15:00.000Z"
@@ -13,12 +13,15 @@ depends_on:
   - decision.dogfood_pmem_for_pmem_development_20260602
 related_to:
   - task.post_v0_7_optimization_roadmap_20260602
-  - feature.v1_0_project_rag_os_20260626
+  - feature.v1_0_agentic_memory_runtime_20260722
+  - decision.pmem_two_layer_architecture_20260722
   - decision.structure_first_hybrid_recall_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
-last_verified: "2026-06-26T12:19:26.213Z"
+last_verified: "2026-07-22T00:00:00.000Z"
 ---
 # pmem Positioning: Project RAG OS
+
+> **Superseded by `decision.pmem_two_layer_architecture_20260722`.** v1.0 定位已更新为两层架构（Product + Runtime），Project RAG OS 的核心洞察（结构化卡片、图索引、Agent CRUD）被保留并下沉为 Runtime 层能力。
 
 ## Decision
 

@@ -2,12 +2,19 @@
 
 ## 产品定位
 
-> **面向 AI Agent 的图结构项目记忆运行时。**
+> **面向 AI Agent 的两层项目记忆系统。**
 >
-> 一个 CLI 工具 + 文件协议 + 图索引系统，让任意 AI coding agent 以极少 token 恢复项目上下文、查找相关记忆、溯源决策依据、规划下一步、回写记忆。
+> **上层**：开箱即用的项目记忆产品（CLI + Skills + MCP），普通开发者和 Agent 框架的直接入口。
+> **下层**：可嵌入的 Agentic Memory Runtime（SDK / Runtime API），供 Agent 框架作者和深度基础设施开发者编程调用。
+>
+> 让任意 AI coding agent 以极少 token 恢复项目上下文、查找相关记忆、溯源决策依据、规划下一步、回写记忆。
 
 简称：`pmem`（Project Memory for Agents）
 CLI：`pmem`
+
+### 设计原则
+
+> **默认极简，内部强大；项目记忆开箱即用，Agentic 能力按需开放。**
 
 ---
 
@@ -24,6 +31,9 @@ CLI：`pmem`
 | v0.6.1 | Actionable Update Suggestions | `update --suggest` 去重、分级、compact 摘要、verify 语义对齐 |
 | v0.7.0 | Universal Agent Memory | 将 pmem 扩展为面向任何 domain 的通用 Agent 记忆运行时，支持自定义卡片类型 |
 | v0.7.1 | Agent UX & Precision Tuning | 优化脏标记精确路径匹配、引入一键 verify 自动修复和快捷同步指令，改进大型卡片限制警告 |
+| v0.8 | Hybrid Recall Engine | 多路召回 + 融合排序 + L0-L3 分层渲染，把"能存"升级为"能按任务精准恢复" |
+| v1.0 | Agentic Memory Runtime | 两层架构——上层产品不变，下层 Runtime SDK 可嵌入；统一 CLI/MCP/SDK 查询路径 |
+| v1.1 | System Memory Release | OS 级 Memory Infrastructure：安全模型、多 Agent 并发、崩溃恢复、Miao 深度集成（独立 adapter） |
 
 ---
 
@@ -382,6 +392,11 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 能用      防损坏    强一致    自动化    Beta上线  Agent原生  建议可行动  真实摩擦修复  关系自动发现  收尾
 10 cmd    14 cmd    16 cmd    18 cmd    产品化    低摩擦     去重分级   +锁/重命名    +6语言扫描  +字节级
 文件模式   文件模式   +SQLite   +集成     +体验     +程序化调用 +摘要     +exit code    +误报防护   +事务
+
+v0.7.0 ──→ v0.7.1 ──→ v0.8 ────→ v1.0 ────→ v1.1
+通用记忆   精确打磨   混合召回    两层架构   System Memory
++presets   +路径匹配  +融合排序   Runtime SDK  安全+并发+容错
++自定义卡  +一键修复  +分层渲染   统一查询     Miao集成
 ```
 
 ---
@@ -460,6 +475,15 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 - **v0.7.0:** ✅ 已完成（Universal Agent Memory）
   - 设计决策：`docs/v0.7.0 pre-design.md`
 - **v0.7.1:** ✅ 已完成（Agent UX & Precision Tuning）
+- **v0.8:** ✅ 已发布（Hybrid Recall Engine）
+  - 设计决策：`docs/v0.8 pre-design.md`
+- **v1.0:** 🎯 当前目标（Agentic Memory Runtime）
+  - 设计决策：`docs/v1.0 pre-design.md`
+  - 开发计划：`docs/v1.0 dev-plan.md`
+  - 架构决策：`decision.pmem_two_layer_architecture_20260722`
+- **v1.1:** 📋 已规划（System Memory Release）
+  - 设计决策：`docs/v1.1 pre-design.md`
+  - 架构决策：`decision.v1_1_system_memory_release_20260722`
 
 ---
 
@@ -476,14 +500,248 @@ v0.1 ───→ v0.2 ───→ v0.3 ───→ v0.4 ───→ v0.5 ─
 
 ---
 
+## v0.8 — Hybrid Recall Engine ✅ 已发布
+
+**主题：** 把"能存项目记忆"升级为"能按任务精准恢复项目上下文"。
+
+v0.8 是 v1.0 Agentic Memory Runtime 的关键铺垫——其 unified query engine 直接成为 v1.0 Runtime 的 query 层。
+
+| 功能 | 说明 |
+|------|------|
+| 多路并行召回 | exact id / alias / tag / source_files 路径 / FTS5 bm25 字段加权，常态启用不再只做 fallback |
+| 图扩展 | 对 top 种子做 1-hop 扩展（可配 2-hop），继承分 = 种子分 × edge_confidence × 距离衰减 |
+| 融合打分 | base × type_weight × recency_factor × staleness_penalty × status_factor，跨路去重取最高分 |
+| L0-L3 分层渲染 | L0 永不裁剪，L1-L3 按预算从低分到高分裁剪 |
+| explain 输出 | 每条召回附带 reasons 数组 + factors 明细 |
+| 意图解析 | 识别查询中的 card-id、文件路径、类型词、CJK/英文 token |
+| 代码去重 | CLI commands/ask.ts 删除重复实现，统一调 core/query/ask.ts |
+| 确定性 | 同分 tie-break 按 card id 字典序，Date.now() 只取一次传入纯函数 |
+
+详细设计：`docs/v0.8 pre-design.md`
+
+### v0.8 → v1.0 关系
+
+- v0.8 unified query engine → v1.0 Runtime 的 query 层
+- v0.8 L0-L3 分层渲染 → `memory.recall()` 的输出格式
+- v0.8 explain/reasons → Runtime 召回解释接口
+
+---
+
+## v1.0 — Agentic Memory Runtime 🎯 当前目标
+
+**主题：** 将 pmem 拆分为两层架构，让现有能力下沉成稳定内核，同时保留极简的 Coding Agent 使用体验。
+
+### 两层架构
+
+```text
+上层（Product）: CLI + Skills + MCP
+  → pmem init / pmem ask / pmem recall / pmem sync / pmem verify
+  → 零配置，software preset 开箱即用
+  → 普通开发者 + Agent 框架的直接入口
+
+下层（Runtime）: SDK / Runtime API
+  → Pmem.open({ root, preset }) → memory.ask() / memory.observe() / memory.recall()
+  → Policy engine, scope management, event store, storage providers
+  → Agent 框架作者和深度基础设施开发者的编程入口
+```
+
+### v1.0 核心约束（不可妥协）
+
+| 原则 | 说明 |
+|------|------|
+| **CLI 不破坏** | `pmem ask/recall/context/capture/sync/verify` 继续有效，底层可重构 |
+| **Markdown 不破坏** | `.pmem/**/*.md` 仍是 canonical，可读、可编辑、可 Git 管理 |
+| **SQLite 仍可重建** | `pmem rebuild` 从 Markdown 完全重建，SQLite 是运行时状态不是唯一事实源 |
+| **MCP 与 SDK 同语义** | CLI/MCP/SDK 三者调用同一核心函数，不是三套实现 |
+| **默认配置保持简单** | `pmem init` 即得 software preset，复杂能力渐进暴露 |
+
+### v1.0 新增能力
+
+| 能力 | 说明 |
+|------|------|
+| Runtime API | `Pmem.open({ root, preset })` — 初始化 Runtime，返回 memory 对象 |
+| Policy Engine | scope 管理、生命周期规则、确认策略，由 preset 自动配置 |
+| Event Store | working memory（会话级 TTL）+ episodic capture（SQLite backed） |
+| Storage Provider 接口 | 默认 SQLite + Markdown，接口可替换 |
+| Unified Query Service | CLI / MCP / SDK 三条路径统一调用 `src/core/` 下同一实现 |
+| memory.observe() | 观察变更，自动决定 scope、是否生成 trace、是否命中重复 |
+| memory.endSession() | 结束会话，自动判断是否蒸馏、哪些内容过期 |
+| Preset 系统 | `software`（旗舰）、`research`、`novel`，自定义 preset 机制 |
+
+### 三种集成深度（全部保留）
+
+| 深度 | 接入方式 | 适用对象 | 复杂度 |
+|------|----------|----------|--------|
+| 零代码 | Skills / Rules（`pmem install --skills`） | Claude Code、Codex、Gemini CLI、Cursor | 极低 |
+| 标准协议 | MCP（`pmem mcp`） | 支持 MCP 的 Agent 框架 | 低 |
+| 深度嵌入 | SDK（`Pmem.open()`） | Miao、OpenClaw-like、自研 Agent 系统 | 中 |
+
+### Software Preset（一等公民）
+
+```yaml
+preset: software
+
+memory:
+  default_scope: project
+  branch_aware: true
+
+  working:
+    ttl: 12h
+
+  episodic:
+    capture: automatic
+
+  durable:
+    format: markdown
+    confirmation: required
+```
+
+完整能力：Git diff 感知、branch scope、source file path 检索、module/decision/feature/task 卡片类型、dirty card 生命周期、trace capture、context restoration、Agent rules、Coding Agent Skills。
+
+### 适配层架构
+
+```text
+Claude Code Skill ─┐
+Codex Skill ───────┤
+Gemini Skill ──────┤
+Cursor Rules ──────┤
+MCP Server ────────┤
+OpenClaw Adapter ──┤
+Miao Adapter ──────┤
+LangGraph Adapter ─┤
+                   ▼
+             pmem Runtime API
+                   ▼
+          SQLite / Markdown / Graph
+```
+
+### 交付内容
+
+v1.0 一次性交付：
+
+- **Runtime Core**：`Pmem.open()`、scope 管理、policy engine、event store、working memory（会话级 TTL）、storage provider 接口
+- **Unified Query**：CLI/MCP/SDK 三条路径统一调同一 core 函数，消除 commands/ 和 core/ 重复
+- **Adapter Layer**：MCP server 改为调用 Runtime API，Skills 更新，SDK 公开文档 + 类型定义
+- **Preset System**：software/research/novel preset，自定义 preset 机制
+- **Migration**：v0.8 → v1.0 迁移路径，CLI 兼容性验证，现有测试全绿 |
+
+### 产品形态矩阵
+
+| 使用者 | 接入方式 | 复杂度 |
+|--------|----------|--------|
+| 普通开发者 | CLI + Skills | 极低 |
+| 支持 MCP 的 Agent | MCP | 低 |
+| Agent 框架作者 | SDK | 中 |
+| 深度基础设施开发者 | Runtime / Provider API | 高 |
+
+### 不做（防范围蔓延）
+
+- ❌ 把 pmem 变成泛化个人聊天记忆数据库
+- ❌ 要求普通用户理解 namespace / event store / scope inheritance
+- ❌ 强制用户从 Markdown 迁移到黑箱数据库
+- ❌ 为每个 Agent 框架单独维护一套召回和更新逻辑
+- ❌ 暴露 storage provider 切换给终端用户
+
+详细设计：`docs/v1.0 pre-design.md`
+开发计划：`docs/v1.0 dev-plan.md`
+
+---
+
+## v1.1 — System Memory Release 🎯 下一版本
+
+**主题：** 将 pmem 从单项目 Memory Runtime 升级为 OS 级 System Memory Infrastructure。Miao Agentic OS Kernel 是旗舰使用者和联合验证平台。
+
+### 三条红线
+
+| 红线 | 说明 |
+|------|------|
+| **pmem Core 不依赖 Miao** | `Miao depends on pmem`，反过来不行 |
+| **先定义通用 System Memory Protocol** | Miao 是第一个实现和验证者，不是协议本身 |
+| **Miao 专属逻辑全部位于 Adapter** | `pmem-miao` 独立包，核心零侵入 |
+
+### 正确关系
+
+```text
+Miao Agentic OS Kernel
+        │
+        │ Kernel Memory Adapter (integrations/miao/)
+        ▼
+pmem System Memory Runtime
+        ▲
+        │ Stable Runtime API / ABI
+        │
+第三方 Agent Runtime、桌面软件、服务端 Agent、嵌入式 Agent
+```
+
+### v1.1 新增能力
+
+| 能力 | 说明 |
+|------|------|
+| **Security Model** | namespace isolation（9 级）、capability-based access（12 种）、trust label（7 级）、sensitivity label（5 级）、secret scanning、memory poisoning defense |
+| **System Runtime** | 常驻 `pmemd`（Rust prototype）、Unix Socket IPC、async write pipeline、backpressure + quota + priority queue |
+| **Reliability** | append-only event log、WAL + atomic transactions、索引永远可重建、graceful degradation（单组件故障不拖垮系统） |
+| **Multi-Agent Concurrency** | private/shared scope、branch memory、conflict detection、shared task blackboard、per-Agent quotas |
+| **Miao Integration** | 独立 `integrations/miao/` 包（adapter/capability-map/event-bridge/policy-preset/context-provider/lifecycle-hooks） |
+| **Third-Party Compatibility** | language-neutral protocol、TS/Rust/Python clients、MCP adapter、conformance suite |
+| **Package Split** | `pmem-core` / `pmem-sqlite` / `pmem-fts` / `pmem-graph` / `pmem-vector` / `pmem-embedding-local` / `pmem-sync` / `pmem-mcp` / `pmem-miao` |
+
+### 性能 SLO
+
+| 操作 | 目标 |
+|------|------|
+| Working memory read P95 | < 5 ms |
+| Exact memory get P95 | < 10 ms |
+| Warm lexical recall P95 | < 30 ms |
+| Hybrid recall P95 | < 100 ms |
+| Observation append P95 | < 10 ms |
+| Policy evaluation P95 | < 20 ms |
+| 空闲基础内存 | < 30–50 MB |
+| 无向量组件基础安装体积 | 尽量 < 20–30 MB |
+
+### 项目记忆 vs System Memory
+
+| 维度 | v1.0 项目记忆 | v1.1 System Memory |
+|------|--------------|-------------------|
+| 用户 | 一个项目目录 | 多用户、多 Agent、多应用 |
+| 进程 | 随命令启动退出 | 长期运行、常驻 |
+| 信任 | 调用者基本可信 | Agent 可能产生恶意记忆 |
+| 并发 | 低频率、单用户 | 多 Agent 并发读写 |
+| 隔离 | 无需 | namespace + capability 隔离 |
+| 容错 | 偶尔 rebuild | 崩溃恢复、优雅降级 |
+| 资源 | 无限制 | 配额、背压、优先级 |
+
+### 交付内容
+
+v1.1 一次性交付：
+
+- **System Security Model**：principal identity、namespace isolation（9 级）、capability-based permission（12 种）、trust label（7 级）、sensitivity label（5 级）、audit event、secret scanning、memory poisoning defense
+- **System Runtime**：常驻 `pmemd`（Rust prototype）、Unix Socket IPC、async write pipeline、backpressure + quota + priority queue、graceful degradation
+- **Reliability**：append-only event log、crash consistency、WAL、snapshot、recovery、corruption injection tests、power-loss simulation
+- **Multi-Agent Memory**：private/shared scope、branch memory、conflict detection、shared task blackboard、per-Agent quotas
+- **Miao Integration**：独立 `integrations/miao/` 包（adapter / capability-map / event-bridge / policy-preset / context-provider / lifecycle-hooks）
+- **Third-Party Compatibility**：language-neutral protocol、TS/Rust/Python clients、MCP adapter、conformance suite、standalone integration sample
+
+### 验收场景
+
+1. **多 Agent 隔离**：A/B 同时运行，私有不互见，capability 撤销立即生效
+2. **记忆污染防护**：恶意网页 → observation 可进但不能成系统指令，recall 标记 untrusted
+3. **资源攻击**：单 Agent 疯狂写入 → quota + backpressure，其他 Agent 不受影响
+4. **突然崩溃**：写入中强制终止 → 无半条记忆，event log 恢复，索引可重建
+5. **降级运行**：vector provider 故障 → 自动回退 FTS+graph，系统继续工作
+6. **第三方接入**：Python Agent 通过标准协议接入，不需要任何 Miao 组件
+
+详细设计：`docs/v1.1 pre-design.md`
+
+---
+
 ## 未决事项
 
 以下问题留待后续版本讨论：
 
-- MCP Server vs HTTP API 的选择
 - 多项目 / workspace 支持
 - 记忆共享与协作机制
 - 记忆权限模型
 - 多语言 CLI 支持
-- telemetry 的范围和隐私策略（v0.6 继续不做）
+- telemetry 的范围和隐私策略
 - 是否支持嵌入到 VS Code / JetBrains 插件
+- HTTP API（已明确：MCP 是标准协议接口，HTTP 非 v1.0 目标）

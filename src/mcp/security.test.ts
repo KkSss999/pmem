@@ -6,6 +6,7 @@ import * as os from 'node:os';
 
 // Import the functions under test directly
 import { validatePathScope, enforceBudget, addContentTrust } from './security';
+import { MCP_SCHEMA_VERSION, MCP_SERVER_NAME, PACKAGE_VERSION } from '../version';
 import { recallQuery } from '../core/query/recall';
 import { askQuery } from '../core/query/ask';
 import { relatedQuery } from '../core/query/related';
@@ -210,8 +211,24 @@ status: active
     it('accepts valid .pmem under CWD', () => {
       const cwd = process.cwd();
       const validPath = path.join(cwd, '.pmem');
-      // Should not throw
       assert.doesNotThrow(() => validatePathScope(validPath));
+    });
+
+    it('accepts a valid .pmem under an explicit runtime root even when process.cwd differs', () => {
+      fs.mkdirSync(TEMP_ROOT, { recursive: true });
+      const root = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-root-'));
+      const validPath = path.join(root, '.pmem');
+      fs.mkdirSync(validPath, { recursive: true });
+      assert.doesNotThrow(() => validatePathScope(validPath, root));
+    });
+
+    it('rejects a sibling .pmem when an explicit runtime root is provided', () => {
+      fs.mkdirSync(TEMP_ROOT, { recursive: true });
+      const root = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-root-'));
+      const sibling = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-sibling-'));
+      fs.mkdirSync(path.join(root, '.pmem'), { recursive: true });
+      fs.mkdirSync(path.join(sibling, '.pmem'), { recursive: true });
+      assert.throws(() => validatePathScope(path.join(sibling, '.pmem'), root), /Path scope violation/);
     });
   });
 
@@ -444,6 +461,14 @@ Core entry point.
       assert.ok(!json.includes("console.log"), 'Should not contain source code strings');
       // Should reference the card's own file path (not source file content)
       assert.ok(json.includes('module.core.md'), 'Should contain card file path');
+    });
+  });
+
+  describe('MCP version constants', () => {
+    it('uses package version for MCP server identity and response schema version', () => {
+      assert.strictEqual(MCP_SERVER_NAME, 'pmem-rt');
+      assert.strictEqual(PACKAGE_VERSION, '1.0.0');
+      assert.strictEqual(MCP_SCHEMA_VERSION, PACKAGE_VERSION);
     });
   });
 

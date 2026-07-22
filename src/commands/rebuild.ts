@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, setSchemaVersion, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
+import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
@@ -13,6 +13,7 @@ interface RebuildOptions {
   changed?: boolean;
   full?: boolean;
   card?: string;
+  cwd?: string;
 }
 
 interface ParsedCard {
@@ -23,7 +24,8 @@ interface ParsedCard {
 }
 
 export function rebuildCommand(options: RebuildOptions = {}): void {
-  const pmemPath = path.join(process.cwd(), PMEM_DIR);
+  const cwd = options.cwd ?? process.cwd();
+  const pmemPath = path.join(cwd, PMEM_DIR);
 
   // v0.7.6 FIX-1 (issue #9): hold `.pmem/.lock` for the duration of the
   // rebuild so a concurrent `pmem verify` waits (or reports `active_lock`)
@@ -32,7 +34,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   // `pmem update --confirm` (which already holds the lock) it just runs
   // the body without an extra acquire/release round trip.
   withLock(pmemPath, () => {
-    rebuildLocked(pmemPath, options);
+    rebuildLocked(pmemPath, options, cwd);
   }, { timeoutMs: 30000, onTimeout: 'error' });
 }
 
@@ -40,8 +42,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
  * The actual rebuild body, run inside the `.pmem/.lock` critical section
  * (see FIX-1 in `rebuildCommand`).
  */
-function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
-  const cwd = process.cwd();
+function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = process.cwd()): void {
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     if (fileExists(pmemPath)) {
@@ -54,7 +55,10 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions): void {
 
   const db = openDatabase(pmemPath);
   createSchema(db);
-  setSchemaVersion(db, manifest.pmem.schema_version);
+  // Core runtime schema is versioned independently in createSchema(). The
+  // manifest version remains the source card protocol and should not downgrade
+  // the DB schema (events table rebuild behavior is append-only for incremental
+  // rebuilds and clear+recreate on --full via clearAllTables()).
 
   const isFull = options.full === true;
   const isSingleCard = typeof options.card === 'string';
