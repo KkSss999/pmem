@@ -3,15 +3,15 @@ import * as fs from 'fs';
 
 /**
  * Validate that pmemPath is within (or equal to) the expected .pmem directory
- * under CWD. Resolves symlinks to prevent escape via symlink indirection.
+ * under the Runtime project root. Resolves symlinks to prevent escape via
+ * symlink indirection.
  *
  * CRITICAL: Uses realpath + path.sep comparison, NOT bare startsWith(),
  * to prevent prefix-confusion attacks (e.g. .pmem-evil/ passing a
  * startsWith('.pmem/') check).
  */
-export function validatePathScope(pmemPath: string): void {
-  const cwd = process.cwd();
-  const expectedRoot = path.join(cwd, '.pmem');
+export function validatePathScope(pmemPath: string, runtimeRoot: string = process.cwd()): void {
+  const expectedRoot = path.join(runtimeRoot, '.pmem');
 
   let realPmemPath: string;
   let allowedRoot: string;
@@ -128,9 +128,9 @@ export function addContentTrust(result: any): any {
 /**
  * Validate MCP capture inputs for security constraints (lengths, boundaries).
  */
-export function validateCaptureInputs(pmemPath: string, summary?: string, next?: string): void {
+export function validateCaptureInputs(pmemPath: string, summary?: string, next?: string, runtimeRoot?: string): void {
   // Validate path scope first
-  validatePathScope(pmemPath);
+  validatePathScope(pmemPath, runtimeRoot);
 
   // Validate lengths to prevent denial of service (DoS)
   if (summary && summary.length > 2000) {

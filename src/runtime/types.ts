@@ -68,6 +68,15 @@ export interface Observation {
   at?: string;
 }
 
+export interface ForgetRequest {
+  /** Event or memory identifier to tombstone. */
+  id: string;
+  /** Human-readable reason retained in the append-only audit event. */
+  reason: string;
+  metadata?: Record<string, unknown>;
+  at?: string;
+}
+
 export interface Receipt {
   id: string;
   type: MemoryEventType;
@@ -119,6 +128,7 @@ export interface PmemInstance {
   status(opts?: StatusOptions): Promise<StatusResult>;
 
   observe(change: Observation): Promise<Receipt>;
+  forget(request: ForgetRequest): Promise<Receipt>;
   capture(summary: string, opts?: CaptureOptions): Promise<CaptureResult>;
   endSession(result: SessionResult): Promise<void>;
 

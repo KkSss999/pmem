@@ -35,6 +35,13 @@ export class EventStore {
     return complete;
   }
 
+  find(id: string): MemoryEvent | null {
+    const row = this.db.prepare(
+      'SELECT id, type, scope, created_at, payload_json, expires_at FROM events WHERE id = ?'
+    ).get(id) as EventRow | undefined;
+    return row ? toEvent(row) : null;
+  }
+
   replay(since?: string): MemoryEvent[] {
     const rows = since
       ? this.db.prepare('SELECT id, type, scope, created_at, payload_json, expires_at FROM events WHERE created_at >= ? ORDER BY created_at ASC, rowid ASC').all(since) as EventRow[]

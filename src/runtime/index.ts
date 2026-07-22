@@ -10,7 +10,7 @@ import { loadRuntimeConfig } from './config';
 import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
-import { toPmemPath, type CaptureOptions, type CaptureResult, type ContextQueryResult, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type SessionResult, type StatusOptions, type StatusResult } from './types';
+import { toPmemPath, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type SessionResult, type StatusOptions, type StatusResult } from './types';
 import type { AskOptions, AskResultV03 } from '../core/query/ask';
 
 export class Pmem implements PmemInstance {
@@ -114,6 +114,34 @@ export class Pmem implements PmemInstance {
       scope: event.scope,
       created_at: event.created_at,
       requires_confirmation: this.policy.requiresConfirmation(proposal),
+    };
+  }
+
+  async forget(request: ForgetRequest): Promise<Receipt> {
+    this.assertOpen();
+    const target = this.events.find(request.id);
+    const scope = target?.scope ?? this.scope.resolve('', { metadata: request.metadata });
+    const event = this.events.append({
+      type: 'forget',
+      scope,
+      created_at: request.at,
+      payload: {
+        target_id: request.id,
+        reason: request.reason,
+        metadata: request.metadata,
+      },
+    });
+    return {
+      id: event.id,
+      type: event.type,
+      scope: event.scope,
+      created_at: event.created_at,
+      requires_confirmation: this.policy.requiresConfirmation({
+        type: 'forget',
+        scope,
+        summary: request.reason,
+        metadata: request.metadata,
+      }),
     };
   }
 

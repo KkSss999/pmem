@@ -27,7 +27,7 @@ export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readon
   }
 
   // Security: validate path scope before starting
-  validatePathScope(pmemPath);
+  validatePathScope(pmemPath, cwd);
 
   const runtime = await Pmem.open({ root: cwd });
   await startMcpServer(runtime, writeMode);

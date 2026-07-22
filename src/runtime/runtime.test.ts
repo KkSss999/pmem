@@ -79,6 +79,16 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
     const receipt = await memory.observe({ file: 'src/runtime/index.ts', summary: 'runtime observed' });
     assert.equal(receipt.type, 'observe');
     assert.equal(receipt.requires_confirmation, true);
+    const tombstone = await memory.forget({ id: receipt.id, reason: 'runtime forgotten' });
+    assert.equal(tombstone.type, 'forget');
+    assert.equal(tombstone.scope, receipt.scope);
+    const db = new Database(path.join(root, '.pmem', 'pmem.db'));
+    try {
+      const events = new EventStore(db, '1h');
+      assert.equal(events.replay().at(-1)?.payload.target_id, receipt.id);
+    } finally {
+      db.close();
+    }
   } finally {
     await memory.close();
   }

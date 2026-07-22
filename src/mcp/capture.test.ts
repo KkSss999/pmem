@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import { contextQuery } from '../core/query/context';
 import { captureCore } from '../core/capture';
 import { validateCaptureInputs } from './security';
-import { handleMcpTool } from './server';
+import { handleMcpTool, listMcpTools } from './server';
 import { Pmem } from '../runtime';
 
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-capture-test-${Date.now()}`);
@@ -248,20 +248,100 @@ source_files: [src/index.ts]
       const recall = await handleMcpTool(runtime, 'readonly', 'pmem_recall', {});
       assert.strictEqual(recall.isError, undefined);
       const recallBody = JSON.parse(recall.content[0].text);
-      assert.strictEqual(recallBody.schema_version, '0.7.6-a');
+      assert.strictEqual(recallBody.schema_version, '1.0');
       assert.strictEqual(recallBody.project, 'capture-workspace');
 
       const ask = await handleMcpTool(runtime, 'readonly', 'pmem_ask', { query: 'core' });
       assert.strictEqual(ask.isError, undefined);
       const askBody = JSON.parse(ask.content[0].text);
-      assert.strictEqual(askBody.schema_version, '0.7.6-a');
+      assert.strictEqual(askBody.schema_version, '1.0');
       assert.ok(Array.isArray(askBody.matched));
 
       const context = await handleMcpTool(runtime, 'readonly', 'pmem_context', { task: 'core module' });
       assert.strictEqual(context.isError, undefined);
       const contextBody = JSON.parse(context.content[0].text);
-      assert.strictEqual(contextBody.schema_version, '0.7.6-a');
+      assert.strictEqual(contextBody.schema_version, '1.0');
       assert.strictEqual(contextBody.task, 'core module');
+    });
+
+    it('preserves read-only defaults and lists write tools only in append-only mode', () => {
+      const readonlyNames = listMcpTools('readonly').map(tool => tool.name);
+      assert.deepStrictEqual(readonlyNames, ['pmem_recall', 'pmem_ask', 'pmem_related', 'pmem_status', 'pmem_context']);
+
+      const appendOnlyNames = listMcpTools('append-only').map(tool => tool.name);
+      assert.ok(appendOnlyNames.includes('pmem_capture'));
+      assert.ok(appendOnlyNames.includes('pmem_observe'));
+      assert.ok(appendOnlyNames.includes('pmem_forget'));
+    });
+
+    it('gates observe and forget in readonly mode', async () => {
+      for (const [name, args] of [
+        ['pmem_observe', { summary: 'blocked' }],
+        ['pmem_forget', { id: 'memory-id', reason: 'blocked' }],
+      ] as const) {
+        const response = await handleMcpTool(runtime, 'readonly', name, args);
+        assert.strictEqual(response.isError, true);
+        assert.match(response.content[0].text, /append-only write mode/);
+      }
+    });
+
+    it('routes structured observe and forget events through Runtime', async () => {
+      const at = '2026-07-22T12:34:56.000Z';
+      const observe = await handleMcpTool(runtime, 'append-only', 'pmem_observe', {
+        file: 'src/index.ts',
+        summary: 'Observed an MCP adapter change',
+        action: 'modified',
+        metadata: { source: 'test' },
+        at,
+      });
+      assert.strictEqual(observe.isError, undefined);
+      const observed = JSON.parse(observe.content[0].text);
+      assert.strictEqual(observed.schema_version, '1.0');
+      assert.strictEqual(observed.type, 'observe');
+      assert.strictEqual(observed.created_at, at);
+      assert.strictEqual(observed.content_trust, undefined);
+      assert.strictEqual(typeof observed.requires_confirmation, 'boolean');
+
+      const forget = await handleMcpTool(runtime, 'append-only', 'pmem_forget', {
+        id: observed.id,
+        reason: 'Superseded by a later observation',
+        metadata: { actor: 'test' },
+      });
+      assert.strictEqual(forget.isError, undefined);
+      const forgotten = JSON.parse(forget.content[0].text);
+      assert.strictEqual(forgotten.schema_version, '1.0');
+      assert.strictEqual(forgotten.type, 'forget');
+      assert.strictEqual(forgotten.scope, observed.scope);
+      assert.strictEqual(forgotten.content_trust, undefined);
+    });
+
+    it('validates structured write tool inputs', async () => {
+      const invalidObserve = await handleMcpTool(runtime, 'append-only', 'pmem_observe', {
+        summary: '',
+        unexpected: true,
+      });
+      assert.strictEqual(invalidObserve.isError, true);
+      assert.match(invalidObserve.content[0].text, /unknown parameter/);
+
+      const invalidForget = await handleMcpTool(runtime, 'append-only', 'pmem_forget', {
+        id: 'x',
+        reason: 'forget',
+        at: 'tomorrow',
+      });
+      assert.strictEqual(invalidForget.isError, true);
+      assert.match(invalidForget.content[0].text, /ISO-8601/);
+    });
+
+    it('uses the Runtime root for programmatic MCP calls outside process.cwd', async () => {
+      const previous = process.cwd();
+      process.chdir(os.tmpdir());
+      try {
+        const response = await handleMcpTool(runtime, 'readonly', 'pmem_recall', {});
+        assert.strictEqual(response.isError, undefined);
+        assert.strictEqual(JSON.parse(response.content[0].text).project, 'capture-workspace');
+      } finally {
+        process.chdir(previous);
+      }
     });
 
     it('keeps pmem_capture gated by write mode and routes append-only capture through runtime', async () => {
@@ -275,7 +355,7 @@ source_files: [src/index.ts]
       });
       assert.strictEqual(appendOnly.isError, undefined);
       const body = JSON.parse(appendOnly.content[0].text);
-      assert.strictEqual(body.schema_version, '0.7.6-a');
+      assert.strictEqual(body.schema_version, '1.0');
       assert.strictEqual(body.content_trust, undefined, 'top-level capture result is not card content');
       assert.ok(body.success);
     });

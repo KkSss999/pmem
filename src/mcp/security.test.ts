@@ -210,8 +210,24 @@ status: active
     it('accepts valid .pmem under CWD', () => {
       const cwd = process.cwd();
       const validPath = path.join(cwd, '.pmem');
-      // Should not throw
       assert.doesNotThrow(() => validatePathScope(validPath));
+    });
+
+    it('accepts a valid .pmem under an explicit runtime root even when process.cwd differs', () => {
+      fs.mkdirSync(TEMP_ROOT, { recursive: true });
+      const root = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-root-'));
+      const validPath = path.join(root, '.pmem');
+      fs.mkdirSync(validPath, { recursive: true });
+      assert.doesNotThrow(() => validatePathScope(validPath, root));
+    });
+
+    it('rejects a sibling .pmem when an explicit runtime root is provided', () => {
+      fs.mkdirSync(TEMP_ROOT, { recursive: true });
+      const root = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-root-'));
+      const sibling = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-sibling-'));
+      fs.mkdirSync(path.join(root, '.pmem'), { recursive: true });
+      fs.mkdirSync(path.join(sibling, '.pmem'), { recursive: true });
+      assert.throws(() => validatePathScope(path.join(sibling, '.pmem'), root), /Path scope violation/);
     });
   });
 
