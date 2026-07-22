@@ -1,10 +1,10 @@
 # pmem-rt — MCP Runtime for AI Agents
 
-pmem-rt is the **read-only MCP (Model Context Protocol) adapter** inside pmem. It lets AI coding agents (Claude Code, Codex, Cursor, and any MCP-compatible client) use pmem as a low-latency project memory backend directly in their tool loop — no shelling out, no token-heavy `pmem recall` printouts every turn.
+pmem-rt is the **MCP (Model Context Protocol) adapter** inside pmem. It lets AI coding agents (Claude Code, Codex, Cursor, and any MCP-compatible client) use pmem as a low-latency project memory backend directly in their tool loop — no shelling out, no token-heavy `pmem recall` printouts every turn. It defaults to read-only mode and can expose append-only capture when explicitly enabled.
 
 ## What It Provides
 
-`pmem mcp` starts a stdio MCP server with 4 tools:
+`pmem mcp` starts a stdio MCP server (`pmem-rt`) with 5 read-only tools:
 
 | Tool | What it does | When to call |
 |------|-------------|--------------|
@@ -12,8 +12,9 @@ pmem-rt is the **read-only MCP (Model Context Protocol) adapter** inside pmem. I
 | `pmem_ask` | 6-step search: exact ID → alias → tag → graph expansion → FTS5 → LIKE fallback | Find specific memory before touching a module |
 | `pmem_related` | Graph neighbors of a card, grouped by edge type with direction/confidence | Understand dependencies before a change |
 | `pmem_status` | Changed files → affected memory cards (git-based or mtime fallback) | After editing code — see what memory needs updating |
+| `pmem_context` | Budget-aware task context: current focus, must-read paths, relevant cards, recommended next steps | Before a task — collect focused working context |
 
-All tools are **read-only** — they cannot create, edit, or delete cards. Writes continue through the CLI (`pmem update --confirm`, `pmem sync`, etc.).
+By default, tools are **read-only** — they cannot create, edit, or delete cards. Writes continue through the CLI (`pmem update --confirm`, `pmem sync`, etc.). If you start `pmem mcp --write=append-only`, the server also exposes `pmem_capture`, which may append trace cards and update managed blocks in `next.md` only.
 
 ## Quick Start (3 Steps)
 
@@ -101,7 +102,7 @@ Every card returned by MCP tools carries `content_trust: "untrusted_project_data
 
 | Protection | Mechanism |
 |-----------|-----------|
-| **Read-only** | No tool can mutate `.pmem/`, SQLite, or source files |
+| **Read-only by default** | `pmem mcp` tools do not intentionally mutate `.pmem/`, SQLite, or source files; append-only `pmem_capture` is available only with `--write=append-only` |
 | **Path scope** | Server only reads from `cwd/.pmem/` — symlink escape and prefix confusion (`.pmem-evil/`) blocked via `realpath + path.sep` comparison |
 | **No source leaks** | `source_files` returned as paths only, never file contents |
 | **Output budget** | 4000-token cap per tool call; over-cap responses set `truncated: true` |
@@ -110,7 +111,7 @@ Every card returned by MCP tools carries `content_trust: "untrusted_project_data
 
 ## Schema Version
 
-Each response includes `schema_version: "0.7.2"` — future MCP tool additions or response shape changes will bump this version so agents can adapt.
+Each response includes `schema_version` equal to the installed pmem package version (for v1.0.0, `"1.0.0"`) — future MCP tool additions or response shape changes will bump the package version so agents can adapt.
 
 ## Installing pmem Skills (Optional)
 

@@ -59,8 +59,18 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     isGit = true;
   } catch {}
 
-  const fileStats = new Map<string, { additions: number; deletions: number }>();
+  let hasHead = false;
   if (isGit) {
+    try {
+      execSync('git rev-parse --verify HEAD', { cwd, stdio: 'ignore' });
+      hasHead = true;
+    } catch {
+      hasHead = false;
+    }
+  }
+
+  const fileStats = new Map<string, { additions: number; deletions: number }>();
+  if (hasHead) {
     try {
       const numstatOutput = execSync("git diff --numstat HEAD -- . ':!.pmem'", { cwd, encoding: 'utf8', timeout: 5000 });
       const numstatLines = numstatOutput.split('\n');
@@ -102,7 +112,7 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     }
 
     let headContent = '';
-    if (isGit && cf.status !== 'A' && cf.status !== '??') {
+    if (hasHead && cf.status !== 'A' && cf.status !== '??') {
       try {
         headContent = execSync(`git show HEAD:${cf.path}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 });
       } catch {}

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { PACKAGE_VERSION } from './version';
 import { initCommand } from './commands/init';
 import { rebuildCommand } from './commands/rebuild';
 import { recallCommand } from './commands/recall';
@@ -33,13 +32,10 @@ import { relationsCommand } from './commands/relations';
 
 const program = new Command();
 
-// Read version dynamically from package.json (single source of truth)
-const pkg = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8'));
-
 program
   .name('pmem')
   .description('Project Memory for AI Agents — graph-based project memory runtime')
-  .version(pkg.version);
+  .version(PACKAGE_VERSION);
 
 program
   .command('status')

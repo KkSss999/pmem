@@ -82,15 +82,25 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     })();
 
     if (isGit) {
+      let hasHead = false;
+      try {
+        execSync('git rev-parse --verify HEAD', { cwd, stdio: 'ignore' });
+        hasHead = true;
+      } catch {
+        hasHead = false;
+      }
+
       const statusOutput = execSync(
         "git status --porcelain --untracked-files=all -- . ':!.pmem'",
         { cwd, encoding: 'utf8', timeout: 5000 }
       );
 
-      const diffOutput = execSync(
-        "git diff HEAD -- . ':!.pmem'",
-        { cwd, encoding: 'utf8', timeout: 5000 }
-      );
+      const diffOutput = hasHead
+        ? execSync(
+            "git diff HEAD -- . ':!.pmem'",
+            { cwd, encoding: 'utf8', timeout: 5000 }
+          )
+        : '';
 
       const untrackedHashes = changedFiles
         .filter(f => f.status.includes('?') || f.status === '??')

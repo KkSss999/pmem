@@ -370,6 +370,37 @@ source_files: [src/index.ts]
       assert.strictEqual(result.skipped, true);
     });
 
+    it('captures in an unborn git repository without surfacing HEAD bad revision errors', () => {
+      const unbornDir = path.join(TEMP_ROOT, 'unborn-git-workspace');
+      const unbornPmemDir = path.join(unbornDir, '.pmem');
+      fs.mkdirSync(path.join(unbornPmemDir, 'modules'), { recursive: true });
+      fs.mkdirSync(path.join(unbornDir, 'src'), { recursive: true });
+
+      const { execSync } = require('child_process');
+      execSync('git init -q', { cwd: unbornDir });
+      execSync('git config user.email "test@example.com"', { cwd: unbornDir });
+      execSync('git config user.name "test"', { cwd: unbornDir });
+
+      fs.writeFileSync(path.join(unbornPmemDir, 'manifest.yml'), fs.readFileSync(path.join(pmemDir, 'manifest.yml'), 'utf8'));
+      fs.writeFileSync(path.join(unbornPmemDir, 'index.md'), fs.readFileSync(path.join(pmemDir, 'index.md'), 'utf8'));
+      fs.writeFileSync(path.join(unbornPmemDir, 'state.md'), fs.readFileSync(path.join(pmemDir, 'state.md'), 'utf8'));
+      fs.writeFileSync(path.join(unbornPmemDir, 'next.md'), fs.readFileSync(path.join(pmemDir, 'next.md'), 'utf8'));
+      fs.writeFileSync(path.join(unbornPmemDir, 'modules', 'module.core.md'), fs.readFileSync(path.join(pmemDir, 'modules', 'module.core.md'), 'utf8'));
+      fs.writeFileSync(path.join(unbornDir, 'src', 'index.ts'), 'console.log("unborn change");\n');
+
+      const previousCwd = process.cwd();
+      process.chdir(unbornDir);
+      try {
+        const result = captureCore('.pmem', { summary: 'Unborn repository capture', next: 'Commit baseline' });
+        assert.ok(result.success, result.message);
+        assert.ok(!/bad revision 'HEAD'|ambiguous argument 'HEAD'/.test(result.message));
+        assert.ok(result.tracePath);
+        assert.ok(fs.existsSync(result.tracePath));
+      } finally {
+        process.chdir(previousCwd);
+      }
+    });
+
     it('writes trace and updates next.md inside managed block when force=true', () => {
       const result = captureCore('.pmem', {
         summary: 'Force sync capture',

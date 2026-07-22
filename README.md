@@ -450,7 +450,7 @@ Installed integration templates are available under `.pmem/integrations/`.
 
 ## MCP Runtime (pmem-rt)
 
-pmem ships with a stdio MCP server so AI agents can interact with pmem directly in their tool loop.
+pmem ships with a stdio MCP server (`pmem-rt`, versioned from the package version) so AI agents can interact with pmem directly in their tool loop.
 
 ### Read-Only Mode (default)
 
@@ -475,7 +475,7 @@ pmem mcp --write=append-only
 | `pmem_context` | readonly | Get task-aware context package |
 | `pmem_capture` | append-only | Append trace and update managed next.md block |
 
-All read-only tools are safe to execute with no side effects. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`.
+All read-only tools are safe to execute with no intentional writes. In `append-only` mode, the agent can call `pmem_capture` to create new traces and update `next.md` managed blocks, while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`; MCP responses include `schema_version` derived from the pmem package version.
 
 → [Full MCP integration guide](docs/pmem-rt.md)
 

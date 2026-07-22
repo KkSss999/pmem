@@ -174,7 +174,7 @@ export function statusQuery(pmemPath: string, options?: {
     }),
     needs_rebuild: needsRebuild,
     state,
-    suggested_action: buildSuggestedAction(affectedCards.size, needsRebuild),
+    suggested_action: buildSuggestedAction(affectedCards.size, needsRebuild, changes.length),
   };
 }
 
@@ -199,13 +199,14 @@ function deriveState(
   if (needsRebuild || hasMemoryChange) {
     return hasSourceChange ? 'mixed' : 'memory_changes_detected';
   }
-  if (hasSourceChange) return 'source_changes_only';
+  if (hasSourceChange || changeCount > 0) return 'source_changes_only';
   return 'no_changes';
 }
 
-function buildSuggestedAction(affectedCount: number, needsRebuild: boolean): string | null {
+function buildSuggestedAction(affectedCount: number, needsRebuild: boolean, changeCount = 0): string | null {
   if (needsRebuild) return 'pmem rebuild';
   if (affectedCount > 0) return 'pmem mark-dirty --auto';
+  if (changeCount > 0) return 'review source changes; no related memory cards found';
   return null;
 }
 

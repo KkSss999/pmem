@@ -6,6 +6,7 @@ import * as os from 'node:os';
 
 // Import the functions under test directly
 import { validatePathScope, enforceBudget, addContentTrust } from './security';
+import { MCP_SCHEMA_VERSION, MCP_SERVER_NAME, PACKAGE_VERSION } from '../version';
 import { recallQuery } from '../core/query/recall';
 import { askQuery } from '../core/query/ask';
 import { relatedQuery } from '../core/query/related';
@@ -460,6 +461,14 @@ Core entry point.
       assert.ok(!json.includes("console.log"), 'Should not contain source code strings');
       // Should reference the card's own file path (not source file content)
       assert.ok(json.includes('module.core.md'), 'Should contain card file path');
+    });
+  });
+
+  describe('MCP version constants', () => {
+    it('uses package version for MCP server identity and response schema version', () => {
+      assert.strictEqual(MCP_SERVER_NAME, 'pmem-rt');
+      assert.strictEqual(PACKAGE_VERSION, '1.0.0');
+      assert.strictEqual(MCP_SCHEMA_VERSION, PACKAGE_VERSION);
     });
   });
 
