@@ -1,4 +1,5 @@
 import type { Pmem } from '../runtime';
+import { MCP_SCHEMA_VERSION, MCP_SERVER_NAME } from '../version';
 import { validatePathScope, enforceBudget, addContentTrust, validateCaptureInputs } from './security';
 
 export type McpWriteMode = 'readonly' | 'append-only';
@@ -121,7 +122,6 @@ export const FORGET_TOOL: any = {
 };
 
 const MAX_MCP_RESPONSE_TOKENS = 4000;
-const MCP_SCHEMA_VERSION = '1.0';
 
 export function listMcpTools(writeMode: McpWriteMode): any[] {
   return writeMode === 'append-only'
@@ -330,7 +330,7 @@ export async function startMcpServer(runtime: Pmem, writeMode: McpWriteMode = 'r
   const toolsList = listMcpTools(writeMode);
 
   const server = new Server(
-    { name: 'pmem-rt', version: MCP_SCHEMA_VERSION },
+    { name: MCP_SERVER_NAME, version: MCP_SCHEMA_VERSION },
     { capabilities: { tools: {} } }
   );
 
