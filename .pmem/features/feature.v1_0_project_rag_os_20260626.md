@@ -2,19 +2,25 @@
 id: feature.v1_0_agentic_memory_runtime_20260722
 type: feature
 title: "v1.0 Agentic Memory Runtime"
-status: draft
-tags: [v1.0, agentic-memory-runtime, two-layer, sdk, mcp, software-preset]
+status: completed
+tags: [v1.0, agentic-memory-runtime, two-layer, sdk, mcp, software-preset, released]
 created: "2026-07-22"
-updated: "2026-07-22T00:00:00.000Z"
+updated: "2026-07-22T11:30:00.000Z"
+last_verified: "2026-07-22T11:30:00.000Z"
 source_files:
   - .pmem/manifest.yml
   - docs/v1.0 pre-design.md
+  - src/runtime/index.ts
+  - src/sdk/index.ts
+  - src/mcp/server.ts
 depends_on:
   - decision.pmem_two_layer_architecture_20260722
 related_to:
   - feature.v0_8_hybrid_recall_engine_20260626
   - decision.pmem_rt_v1_thin_mcp_adapter_20260606
+  - feature.v1_1_system_memory_release_20260722
 ---
+
 # v1.0 Agentic Memory Runtime
 
 ## Goal
@@ -65,10 +71,23 @@ related_to:
 
 ## Acceptance
 
-1. 现有 CLI 命令（ask/recall/context/capture/sync/verify）全部保留，行为一致
-2. `.pmem/**/*.md` 仍然是可读、可编辑、可 Git 管理的 canonical 数据
-3. SQLite 仍然是运行时状态，`pmem rebuild` 可完全从 Markdown 重建
-4. CLI / MCP / SDK 三者调用同一核心函数，不是三套实现
-5. `pmem init` 默认创建 software preset，零配置即可用于 Coding Agent
-6. 新 Runtime 能力（scope、policy、event store）不暴露给终端用户
-7. 所有现有测试通过，v0.8 → v1.0 有清晰迁移路径
+| # | Criteria | Status |
+|---|----------|--------|
+| 1 | 现有 CLI 命令全部保留，行为一致 | ✅ |
+| 2 | `.pmem/**/*.md` 仍是可读、可编辑、可 Git 管理的 canonical 数据 | ✅ |
+| 3 | SQLite 仍是运行时状态，`pmem rebuild` 可完全从 Markdown 重建 | ✅ |
+| 4 | CLI / MCP / SDK 三者调用同一核心函数 | ✅ |
+| 5 | `pmem init` 默认创建 software preset，零配置 | ✅ |
+| 6 | 新 Runtime 能力不暴露给终端用户 | ✅ |
+| 7 | 所有现有测试通过（310/310），E2E 全绿，CI 全绿 | ✅ |
+| 8 | SDK 类型完整导出（AskResult, RecallResult, CaptureResult, 等） | ✅ |
+| 9 | MCP 工具 schema 加固（additionalProperties: false, 路径校验） | ✅ |
+| 10 | 独立 SQLite 实例 + 多实例隔离验证 | ✅ |
+| 11 | cross-CWD Runtime root 隔离验证 | ✅ |
+| 12 | branch-aware working events 验证 | ✅ |
+
+## Release
+
+- **PR**: [#15](https://github.com/KkSss999/pmem/pull/15) — merged 2026-07-22T11:30 UTC
+- **Post-merge fixes**: commit `a439d2d` — SDK type exports, MCP security hardening, CLI robustness
+- **Next**: v1.1 System Memory release (see [[feature.v1_1_system_memory_release_20260722]])
