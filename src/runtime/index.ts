@@ -119,9 +119,10 @@ export class Pmem implements PmemInstance {
 
   async capture(summary: string, opts: CaptureOptions = {}): Promise<CaptureResult> {
     this.assertOpen();
-    const scope = this.scope.resolve('', { summary, metadata: opts as Record<string, unknown> });
-    this.events.append({ type: 'commit', scope, payload: { summary, options: opts } });
-    return captureCore(this.pmemPath, { ...opts, summary });
+    const captureSummary = summary || opts.summary || '';
+    const scope = this.scope.resolve('', { summary: captureSummary, metadata: opts as Record<string, unknown> });
+    this.events.append({ type: 'commit', scope, payload: { summary: captureSummary, options: opts } });
+    return captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined });
   }
 
   async endSession(result: SessionResult): Promise<void> {

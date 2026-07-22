@@ -1,11 +1,5 @@
-import * as path from 'path';
+import type { Pmem } from '../runtime';
 import { validatePathScope, enforceBudget, addContentTrust, validateCaptureInputs } from './security';
-import { recallQuery } from '../core/query/recall';
-import { askQuery } from '../core/query/ask';
-import { relatedQuery } from '../core/query/related';
-import { statusQuery } from '../core/query/status';
-import { contextQuery } from '../core/query/context';
-import { captureCore } from '../core/capture';
 
 const BASE_TOOLS: any[] = [
   {
@@ -91,7 +85,114 @@ Note: Updates next.md only inside pmem-managed blocks. Does not write to core ca
   }
 };
 
-export async function startMcpServer(pmemPath: string, writeMode: 'readonly' | 'append-only' = 'readonly'): Promise<void> {
+export async function handleMcpTool(runtime: Pmem, writeMode: 'readonly' | 'append-only', name: string, rawArgs?: Record<string, any>): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
+  const args = (rawArgs || {}) as Record<string, any>;
+
+  // Security: validate path scope on every call
+  validatePathScope(runtime.pmemPath);
+
+  try {
+    let result: any;
+
+    switch (name) {
+      case 'pmem_recall': {
+        result = await runtime.recall({
+          since: args.since as string | undefined,
+        });
+        break;
+      }
+      case 'pmem_ask': {
+        if (!args.query) {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: "query" parameter is required for pmem_ask.' }],
+            isError: true,
+          };
+        }
+        result = await runtime.ask(args.query as string);
+        break;
+      }
+      case 'pmem_related': {
+        if (!args.id) {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: "id" parameter is required for pmem_related.' }],
+            isError: true,
+          };
+        }
+        result = await runtime.related(args.id as string, {
+          depth: args.depth as number | undefined,
+          type: args.type as string | undefined,
+          source: args.source as 'explicit' | 'inferred' | 'mention' | 'all' | undefined,
+        });
+        break;
+      }
+      case 'pmem_status': {
+        result = await runtime.status({
+          since: args.since as string | undefined,
+        });
+        break;
+      }
+      case 'pmem_context': {
+        if (!args.task) {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: "task" parameter is required for pmem_context.' }],
+            isError: true,
+          };
+        }
+        result = await runtime.context(args.task as string, args.budget as number | undefined);
+        break;
+      }
+      case 'pmem_capture': {
+        if (writeMode !== 'append-only') {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: pmem_capture is only available in append-only write mode. Start MCP server with --write=append-only.' }],
+            isError: true,
+          };
+        }
+
+        // Security validation of inputs
+        validateCaptureInputs(runtime.pmemPath, args.summary, args.next);
+
+        const captureResult = await runtime.capture(args.summary ?? '', {
+          auto: true,
+          next: args.next,
+          full: false,
+          force: false
+        });
+
+        if (!captureResult.success) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: ${captureResult.message}` }],
+            isError: true
+          };
+        }
+
+        result = captureResult;
+        break;
+      }
+      default:
+        return {
+          content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }],
+          isError: true,
+        };
+    }
+
+    // Post-processing: budget enforcement + content trust + schema version
+    result = enforceBudget(result, 4000);
+    result = addContentTrust(result);
+    result.schema_version = '0.7.6-a';
+
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+    };
+  } catch (err: any) {
+    return {
+      content: [{ type: 'text' as const, text: `Error: ${err.message}` }],
+      isError: true,
+    };
+  }
+}
+
+export async function startMcpServer(runtime: Pmem, writeMode: 'readonly' | 'append-only' = 'readonly'): Promise<void> {
   // Dynamic imports — MCP SDK is ESM-only, pmem project is CJS
   const { Server } = await import('@modelcontextprotocol/sdk/server/index.js');
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
@@ -118,115 +219,23 @@ export async function startMcpServer(pmemPath: string, writeMode: 'readonly' | '
   // Register tool execution
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: rawArgs } = request.params;
-    const args = (rawArgs || {}) as Record<string, any>;
-
-    // Security: validate path scope on every call
-    validatePathScope(pmemPath);
-
-    try {
-      let result: any;
-
-      switch (name) {
-        case 'pmem_recall': {
-          result = recallQuery(pmemPath, {
-            since: args.since as string | undefined,
-          });
-          break;
-        }
-        case 'pmem_ask': {
-          if (!args.query) {
-            return {
-              content: [{ type: 'text' as const, text: 'Error: "query" parameter is required for pmem_ask.' }],
-              isError: true,
-            };
-          }
-          result = askQuery(pmemPath, args.query as string);
-          break;
-        }
-        case 'pmem_related': {
-          if (!args.id) {
-            return {
-              content: [{ type: 'text' as const, text: 'Error: "id" parameter is required for pmem_related.' }],
-              isError: true,
-            };
-          }
-          result = relatedQuery(pmemPath, args.id as string, {
-            depth: args.depth as number | undefined,
-            type: args.type as string | undefined,
-            source: args.source as 'explicit' | 'inferred' | 'mention' | 'all' | undefined,
-          });
-          break;
-        }
-        case 'pmem_status': {
-          result = statusQuery(pmemPath, {
-            since: args.since as string | undefined,
-          });
-          break;
-        }
-        case 'pmem_context': {
-          if (!args.task) {
-            return {
-              content: [{ type: 'text' as const, text: 'Error: "task" parameter is required for pmem_context.' }],
-              isError: true,
-            };
-          }
-          result = contextQuery(pmemPath, args.task as string, args.budget as number | undefined);
-          break;
-        }
-        case 'pmem_capture': {
-          if (writeMode !== 'append-only') {
-            return {
-              content: [{ type: 'text' as const, text: 'Error: pmem_capture is only available in append-only write mode. Start MCP server with --write=append-only.' }],
-              isError: true,
-            };
-          }
-          
-          // Security validation of inputs
-          validateCaptureInputs(pmemPath, args.summary, args.next);
-
-          const captureResult = captureCore(pmemPath, {
-            auto: true,
-            summary: args.summary,
-            next: args.next,
-            full: false,
-            force: false
-          });
-
-          if (!captureResult.success) {
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${captureResult.message}` }],
-              isError: true
-            };
-          }
-
-          result = captureResult;
-          break;
-        }
-        default:
-          return {
-            content: [{ type: 'text' as const, text: `Unknown tool: ${name}` }],
-            isError: true,
-          };
-      }
-
-      // Post-processing: budget enforcement + content trust + schema version
-      result = enforceBudget(result, 4000);
-      result = addContentTrust(result);
-      result.schema_version = '0.7.6-a';
-
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-      };
-    } catch (err: any) {
-      return {
-        content: [{ type: 'text' as const, text: `Error: ${err.message}` }],
-        isError: true,
-      };
-    }
+    return handleMcpTool(runtime, writeMode, name, rawArgs as Record<string, any> | undefined);
   });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  const closeRuntime = async () => {
+    try {
+      await runtime.close();
+    } catch {
+      // Do not write to stdout: it is the MCP protocol channel.
+    }
+  };
+
+  process.once('beforeExit', () => { void closeRuntime(); });
+  process.once('SIGINT', () => { void closeRuntime().finally(() => process.exit(130)); });
+  process.once('SIGTERM', () => { void closeRuntime().finally(() => process.exit(143)); });
 
   // Block until stdin closes — stderr is for logging, stdout is the MCP channel
 }

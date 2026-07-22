@@ -6,6 +6,8 @@ import * as os from 'node:os';
 import { contextQuery } from '../core/query/context';
 import { captureCore } from '../core/capture';
 import { validateCaptureInputs } from './security';
+import { handleMcpTool } from './server';
+import { Pmem } from '../runtime';
 
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-capture-test-${Date.now()}`);
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
@@ -227,6 +229,55 @@ source_files: [src/index.ts]
       const paths = result.must_read.map(m => m.path);
       assert.ok(paths.includes('.pmem/state.md'));
       assert.ok(paths.includes('.pmem/next.md'));
+    });
+  });
+
+
+  describe('MCP Runtime API routing', () => {
+    let runtime: Pmem;
+
+    before(async () => {
+      runtime = await Pmem.open({ root: testDir });
+    });
+
+    after(async () => {
+      await runtime.close();
+    });
+
+    it('routes read tools through one Pmem runtime and preserves MCP response metadata', async () => {
+      const recall = await handleMcpTool(runtime, 'readonly', 'pmem_recall', {});
+      assert.strictEqual(recall.isError, undefined);
+      const recallBody = JSON.parse(recall.content[0].text);
+      assert.strictEqual(recallBody.schema_version, '0.7.6-a');
+      assert.strictEqual(recallBody.project, 'capture-workspace');
+
+      const ask = await handleMcpTool(runtime, 'readonly', 'pmem_ask', { query: 'core' });
+      assert.strictEqual(ask.isError, undefined);
+      const askBody = JSON.parse(ask.content[0].text);
+      assert.strictEqual(askBody.schema_version, '0.7.6-a');
+      assert.ok(Array.isArray(askBody.matched));
+
+      const context = await handleMcpTool(runtime, 'readonly', 'pmem_context', { task: 'core module' });
+      assert.strictEqual(context.isError, undefined);
+      const contextBody = JSON.parse(context.content[0].text);
+      assert.strictEqual(contextBody.schema_version, '0.7.6-a');
+      assert.strictEqual(contextBody.task, 'core module');
+    });
+
+    it('keeps pmem_capture gated by write mode and routes append-only capture through runtime', async () => {
+      const readonly = await handleMcpTool(runtime, 'readonly', 'pmem_capture', { summary: 'Readonly blocked' });
+      assert.strictEqual(readonly.isError, true);
+      assert.match(readonly.content[0].text, /append-only write mode/);
+
+      const appendOnly = await handleMcpTool(runtime, 'append-only', 'pmem_capture', {
+        summary: 'Runtime MCP capture',
+        next: 'Verify runtime capture routing'
+      });
+      assert.strictEqual(appendOnly.isError, undefined);
+      const body = JSON.parse(appendOnly.content[0].text);
+      assert.strictEqual(body.schema_version, '0.7.6-a');
+      assert.strictEqual(body.content_trust, undefined, 'top-level capture result is not card content');
+      assert.ok(body.success);
     });
   });
 

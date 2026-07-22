@@ -2,6 +2,7 @@ import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { validatePathScope } from '../mcp/security';
 import { startMcpServer } from '../mcp/server';
+import { Pmem } from '../runtime';
 
 /**
  * Start a read-only stdio MCP server for agent tool integration.
@@ -28,6 +29,7 @@ export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readon
   // Security: validate path scope before starting
   validatePathScope(pmemPath);
 
-  await startMcpServer(pmemPath, writeMode);
+  const runtime = await Pmem.open({ root: cwd });
+  await startMcpServer(runtime, writeMode);
 }
 
