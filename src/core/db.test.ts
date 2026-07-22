@@ -1,4 +1,7 @@
 import { describe, it, before, after } from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert';
 import Database from 'better-sqlite3';
 import {
@@ -18,6 +21,10 @@ import {
   getActiveSession,
   insertUpdateLog,
   getRecentUpdateLogs,
+  openDatabase,
+  closeDatabase,
+  getDatabase,
+  closeAllDatabases,
 } from './db';
 import type { CardRow, EdgeRow } from '../types';
 
@@ -64,6 +71,62 @@ function makeEdge(overrides: Partial<EdgeRow> = {}): EdgeRow {
     ...overrides,
   };
 }
+
+
+describe('database handle lifecycle', () => {
+  it('keeps different .pmem roots open as independent databases', () => {
+    const rootA = mkdtempSync(path.join(tmpdir(), 'pmem-db-a-'));
+    const rootB = mkdtempSync(path.join(tmpdir(), 'pmem-db-b-'));
+
+    try {
+      const dbA = openDatabase(rootA);
+      const dbB = openDatabase(rootB);
+
+      assert.notStrictEqual(dbA, dbB);
+      createSchema(dbA);
+      createSchema(dbB);
+
+      upsertCard(dbA, makeCard({ id: 'card.a', title: 'Root A', file_path: '/a/card.md' }));
+      upsertCard(dbB, makeCard({ id: 'card.b', title: 'Root B', file_path: '/b/card.md' }));
+
+      assert.strictEqual((dbA.prepare('SELECT COUNT(*) AS count FROM cards').get() as { count: number }).count, 1);
+      assert.strictEqual((dbB.prepare('SELECT COUNT(*) AS count FROM cards').get() as { count: number }).count, 1);
+      assert.strictEqual((dbA.prepare('SELECT title FROM cards WHERE id = ?').get('card.a') as { title: string }).title, 'Root A');
+      assert.strictEqual((dbB.prepare('SELECT title FROM cards WHERE id = ?').get('card.b') as { title: string }).title, 'Root B');
+      assert.strictEqual(getDatabase(rootA), dbA);
+      assert.strictEqual(getDatabase(rootB), dbB);
+    } finally {
+      closeAllDatabases();
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  it('closing one .pmem root does not close another open database', () => {
+    const rootA = mkdtempSync(path.join(tmpdir(), 'pmem-db-a-'));
+    const rootB = mkdtempSync(path.join(tmpdir(), 'pmem-db-b-'));
+
+    try {
+      const dbA = openDatabase(rootA);
+      const dbB = openDatabase(rootB);
+      createSchema(dbA);
+      createSchema(dbB);
+
+      closeDatabase(rootA);
+
+      assert.strictEqual(dbA.open, false);
+      assert.strictEqual(dbB.open, true);
+      upsertCard(dbB, makeCard({ id: 'card.b', title: 'Still Open', file_path: '/b/still-open.md' }));
+      assert.strictEqual((dbB.prepare('SELECT title FROM cards WHERE id = ?').get('card.b') as { title: string }).title, 'Still Open');
+      assert.strictEqual(getDatabase(rootA), null);
+      assert.strictEqual(getDatabase(rootB), dbB);
+    } finally {
+      closeAllDatabases();
+      rmSync(rootA, { recursive: true, force: true });
+      rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('createSchema', () => {
   it('creates all 10 tables without error', () => {

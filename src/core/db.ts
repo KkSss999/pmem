@@ -3,18 +3,33 @@ import * as path from 'path';
 import { ensureDir } from './fs';
 import type { EdgeRow } from '../types';
 
-let _db: Database.Database | null = null;
+const openDatabases = new Map<string, Database.Database>();
+let lastOpenedDbPath: string | null = null;
+
+function databasePathForPmemPath(pmemPath: string): string {
+  return path.resolve(pmemPath, 'pmem.db');
+}
 
 export function openDatabase(pmemPath: string): Database.Database {
-  if (_db) return _db;
   ensureDir(pmemPath);
-  const dbPath = path.join(pmemPath, 'pmem.db');
+  const dbPath = databasePathForPmemPath(pmemPath);
+  const existing = openDatabases.get(dbPath);
+  if (existing) {
+    lastOpenedDbPath = dbPath;
+    return existing;
+  }
+
+  let db: Database.Database | null = null;
   try {
-    _db = new Database(dbPath);
-    _db.pragma('journal_mode = WAL');
-    _db.pragma('foreign_keys = ON');
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    openDatabases.set(dbPath, db);
+    lastOpenedDbPath = dbPath;
   } catch (err: any) {
-    _db = null;
+    if (db) {
+      db.close();
+    }
     if (err?.code === 'SQLITE_NOTADB') {
       const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
         `Back up the file if needed, then run: pmem rebuild --full`;
@@ -22,18 +37,63 @@ export function openDatabase(pmemPath: string): Database.Database {
     }
     throw err;
   }
-  return _db;
+  return db;
 }
 
-export function closeDatabase(): void {
-  if (_db) {
-    _db.close();
-    _db = null;
+export function closeDatabase(target?: string | Database.Database): void {
+  if (typeof target === 'string') {
+    const dbPath = databasePathForPmemPath(target);
+    const db = openDatabases.get(dbPath);
+    if (db) {
+      db.close();
+      openDatabases.delete(dbPath);
+      if (lastOpenedDbPath === dbPath) {
+        lastOpenedDbPath = null;
+      }
+    }
+    return;
+  }
+
+  if (target) {
+    for (const [dbPath, db] of openDatabases.entries()) {
+      if (db === target) {
+        db.close();
+        openDatabases.delete(dbPath);
+        if (lastOpenedDbPath === dbPath) {
+          lastOpenedDbPath = null;
+        }
+        return;
+      }
+    }
+    if (target.open) {
+      target.close();
+    }
+    return;
+  }
+
+  if (lastOpenedDbPath) {
+    const db = openDatabases.get(lastOpenedDbPath);
+    if (db) {
+      db.close();
+      openDatabases.delete(lastOpenedDbPath);
+    }
+    lastOpenedDbPath = null;
   }
 }
 
-export function getDatabase(): Database.Database | null {
-  return _db;
+export function closeAllDatabases(): void {
+  for (const db of openDatabases.values()) {
+    db.close();
+  }
+  openDatabases.clear();
+  lastOpenedDbPath = null;
+}
+
+export function getDatabase(pmemPath?: string): Database.Database | null {
+  if (pmemPath) {
+    return openDatabases.get(databasePathForPmemPath(pmemPath)) ?? null;
+  }
+  return lastOpenedDbPath ? openDatabases.get(lastOpenedDbPath) ?? null : null;
 }
 
 export function createSchema(db: Database.Database): void {
