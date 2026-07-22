@@ -1,7 +1,8 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, fileExists } from '../fs';
-import { openDatabase, createSchema } from '../db';
+import { openDatabase, createSchema, getRecentRuntimeEvents } from '../db';
+import { getCurrentBranch } from '../git';
 import { loadManifest, resolveConfig } from '../manifest';
 import { parseTraceCard } from '../traceParse';
 import type { CardRow } from '../../types';
@@ -17,6 +18,7 @@ export interface RecallQueryResult {
   mustRead: string[];
   dirty_flags_count: number;
   recent_updates: Array<{ action: string; summary: string | null; created_at: string }>;
+  recent_events?: Array<{ event_type: string; memory_id: string | null; branch: string | null; created_at: string; payload: string | null }>;
   active_modules: string[];
   active_foundation: string[];
 
@@ -126,6 +128,7 @@ export function recallQuery(pmemPath: string, options?: {
     mustRead: [],
     dirty_flags_count: 0,
     recent_updates: [],
+    recent_events: [],
     active_modules: [],
     active_foundation: [],
     recent_traces: [],
@@ -220,6 +223,18 @@ export function recallQuery(pmemPath: string, options?: {
       "SELECT action, summary, created_at FROM update_log ORDER BY created_at DESC LIMIT 5"
     ).all() as Array<{ action: string; summary: string | null; created_at: string }>;
     result.recent_updates = recentUpdates;
+
+    const currentBranch = getCurrentBranch(process.cwd());
+    result.recent_events = getRecentRuntimeEvents(db, 20)
+      .filter(e => !e.branch || !currentBranch || e.branch === currentBranch)
+      .slice(0, 5)
+      .map(e => ({
+        event_type: e.event_type,
+        memory_id: e.memory_id,
+        branch: e.branch,
+        created_at: e.created_at,
+        payload: e.payload,
+      }));
 
     // Load active architecture modules
     const modules = db.prepare(

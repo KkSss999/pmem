@@ -25,6 +25,7 @@ import { milestoneCommand } from './commands/milestone';
 import { mcpCommand } from './commands/mcp';
 import { contextCommand } from './commands/context';
 import { captureCommand } from './commands/capture';
+import { forgetCommand } from './commands/forget';
 import { moduleInferCommand } from './commands/module';
 import { decisionInferCommand } from './commands/decision';
 import { relationsCommand } from './commands/relations';
@@ -74,6 +75,15 @@ program
       full: options.full,
       force: options.force
     });
+  });
+
+program
+  .command('forget <memoryId>')
+  .description('Safely forget a memory card by tombstoning it in the runtime index')
+  .option('--confirm', 'Confirm the durable tombstone operation')
+  .option('-r, --reason <text>', 'Reason for forgetting this memory')
+  .action((memoryId: string, options) => {
+    forgetCommand(memoryId, { confirm: options.confirm, reason: options.reason });
   });
 
 

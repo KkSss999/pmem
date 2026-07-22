@@ -47,6 +47,20 @@ export function contextQuery(pmemPath: string, task: string, budget = 4000): Con
     if (recall.recent_traces) {
       result.recent_session_memory = recall.recent_traces.map(t => t.summary);
     }
+    if (recall.recent_events && recall.recent_events.length > 0) {
+      const eventSummaries = recall.recent_events.map(e => {
+        let payloadSummary = '';
+        if (e.payload) {
+          try {
+            const parsed = JSON.parse(e.payload);
+            payloadSummary = parsed.summary || parsed.reason || '';
+          } catch {}
+        }
+        const branch = e.branch ? ` [${e.branch}]` : '';
+        return `${e.event_type}${branch}${e.memory_id ? ` ${e.memory_id}` : ''}${payloadSummary ? ` — ${payloadSummary}` : ''}`;
+      });
+      result.recent_session_memory = [...(result.recent_session_memory ?? []), ...eventSummaries];
+    }
 
     const decsSet = new Set<string>();
     const lowercaseDecs = new Set<string>();

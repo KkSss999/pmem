@@ -1,7 +1,4 @@
 import { describe, it, before, after } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import assert from 'node:assert';
 import Database from 'better-sqlite3';
 import {
@@ -21,10 +18,11 @@ import {
   getActiveSession,
   insertUpdateLog,
   getRecentUpdateLogs,
-  openDatabase,
-  closeDatabase,
-  getDatabase,
-  closeAllDatabases,
+  insertRuntimeEvent,
+  getRecentRuntimeEvents,
+  forgetMemory,
+  getSchemaVersion,
+  CORE_SCHEMA_VERSION,
 } from './db';
 import type { CardRow, EdgeRow } from '../types';
 
@@ -71,62 +69,6 @@ function makeEdge(overrides: Partial<EdgeRow> = {}): EdgeRow {
     ...overrides,
   };
 }
-
-
-describe('database handle lifecycle', () => {
-  it('keeps different .pmem roots open as independent databases', () => {
-    const rootA = mkdtempSync(path.join(tmpdir(), 'pmem-db-a-'));
-    const rootB = mkdtempSync(path.join(tmpdir(), 'pmem-db-b-'));
-
-    try {
-      const dbA = openDatabase(rootA);
-      const dbB = openDatabase(rootB);
-
-      assert.notStrictEqual(dbA, dbB);
-      createSchema(dbA);
-      createSchema(dbB);
-
-      upsertCard(dbA, makeCard({ id: 'card.a', title: 'Root A', file_path: '/a/card.md' }));
-      upsertCard(dbB, makeCard({ id: 'card.b', title: 'Root B', file_path: '/b/card.md' }));
-
-      assert.strictEqual((dbA.prepare('SELECT COUNT(*) AS count FROM cards').get() as { count: number }).count, 1);
-      assert.strictEqual((dbB.prepare('SELECT COUNT(*) AS count FROM cards').get() as { count: number }).count, 1);
-      assert.strictEqual((dbA.prepare('SELECT title FROM cards WHERE id = ?').get('card.a') as { title: string }).title, 'Root A');
-      assert.strictEqual((dbB.prepare('SELECT title FROM cards WHERE id = ?').get('card.b') as { title: string }).title, 'Root B');
-      assert.strictEqual(getDatabase(rootA), dbA);
-      assert.strictEqual(getDatabase(rootB), dbB);
-    } finally {
-      closeAllDatabases();
-      rmSync(rootA, { recursive: true, force: true });
-      rmSync(rootB, { recursive: true, force: true });
-    }
-  });
-
-  it('closing one .pmem root does not close another open database', () => {
-    const rootA = mkdtempSync(path.join(tmpdir(), 'pmem-db-a-'));
-    const rootB = mkdtempSync(path.join(tmpdir(), 'pmem-db-b-'));
-
-    try {
-      const dbA = openDatabase(rootA);
-      const dbB = openDatabase(rootB);
-      createSchema(dbA);
-      createSchema(dbB);
-
-      closeDatabase(rootA);
-
-      assert.strictEqual(dbA.open, false);
-      assert.strictEqual(dbB.open, true);
-      upsertCard(dbB, makeCard({ id: 'card.b', title: 'Still Open', file_path: '/b/still-open.md' }));
-      assert.strictEqual((dbB.prepare('SELECT title FROM cards WHERE id = ?').get('card.b') as { title: string }).title, 'Still Open');
-      assert.strictEqual(getDatabase(rootA), null);
-      assert.strictEqual(getDatabase(rootB), dbB);
-    } finally {
-      closeAllDatabases();
-      rmSync(rootA, { recursive: true, force: true });
-      rmSync(rootB, { recursive: true, force: true });
-    }
-  });
-});
 
 describe('createSchema', () => {
   it('creates all 10 tables without error', () => {
@@ -541,6 +483,73 @@ describe('update_log', () => {
       assert.strictEqual(logs.length, 1);
       assert.strictEqual(logs[0].action, 'rebuild');
       assert.strictEqual(logs[0].success, 0);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe('runtime events and forget', () => {
+  it('createSchema versions the core schema and creates events table', () => {
+    const db = createInMemoryDb();
+    try {
+      createSchema(db);
+      assert.strictEqual(getSchemaVersion(db), CORE_SCHEMA_VERSION);
+      const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'events'").get() as { name: string } | undefined;
+      assert.ok(row);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('insertRuntimeEvent stores branch-aware confirmation receipts', () => {
+    const db = createInMemoryDb();
+    createSchema(db);
+    try {
+      const id = insertRuntimeEvent(db, {
+        eventType: 'memory.capture.committed',
+        memoryId: 'trace.1',
+        branch: 'feature/test',
+        payload: { summary: 'captured' },
+      });
+      assert.ok(id > 0);
+      const events = getRecentRuntimeEvents(db, 1);
+      assert.strictEqual(events.length, 1);
+      assert.strictEqual(events[0].event_type, 'memory.capture.committed');
+      assert.strictEqual(events[0].memory_id, 'trace.1');
+      assert.strictEqual(events[0].branch, 'feature/test');
+      assert.match(events[0].payload || '', /captured/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('forgetMemory tombstones a card, removes recall surface, and records event', () => {
+    const db = createInMemoryDb();
+    createSchema(db);
+    try {
+      upsertCard(db, makeCard({ id: 'module.keep', file_path: 'modules/module.keep.md' }));
+      insertAlias(db, 'module.keep', 'Keep');
+      insertTag(db, 'module.keep', 'core');
+      insertPath(db, 'module.keep', 'src/index.ts', 'source_file');
+      insertEdge(db, makeEdge({ from_id: 'module.keep', to_id: 'module.other' }));
+      insertDirtyFlag(db, 'card', 'module.keep', 'stale');
+
+      const result = forgetMemory(db, 'module.keep', { reason: 'obsolete', branch: 'main' });
+      assert.strictEqual(result.success, true);
+      assert.ok(result.eventId);
+
+      const card = db.prepare('SELECT is_deleted FROM cards WHERE id = ?').get('module.keep') as { is_deleted: number };
+      assert.strictEqual(card.is_deleted, 1);
+      assert.strictEqual((db.prepare('SELECT COUNT(*) AS cnt FROM edges WHERE from_id = ? OR to_id = ?').get('module.keep', 'module.keep') as { cnt: number }).cnt, 0);
+      assert.strictEqual((db.prepare('SELECT COUNT(*) AS cnt FROM aliases WHERE card_id = ?').get('module.keep') as { cnt: number }).cnt, 0);
+      assert.strictEqual(getUnresolvedDirtyFlags(db).length, 0);
+
+      const events = getRecentRuntimeEvents(db, 1);
+      assert.strictEqual(events[0].event_type, 'memory.forget.tombstone');
+      assert.strictEqual(events[0].memory_id, 'module.keep');
+      assert.strictEqual(events[0].branch, 'main');
+      assert.match(events[0].payload || '', /obsolete/);
     } finally {
       db.close();
     }

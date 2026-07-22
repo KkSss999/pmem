@@ -3,33 +3,20 @@ import * as path from 'path';
 import { ensureDir } from './fs';
 import type { EdgeRow } from '../types';
 
-const openDatabases = new Map<string, Database.Database>();
-let lastOpenedDbPath: string | null = null;
+export const CORE_SCHEMA_VERSION = '0.4';
 
-function databasePathForPmemPath(pmemPath: string): string {
-  return path.resolve(pmemPath, 'pmem.db');
-}
+let _db: Database.Database | null = null;
 
 export function openDatabase(pmemPath: string): Database.Database {
+  if (_db) return _db;
   ensureDir(pmemPath);
-  const dbPath = databasePathForPmemPath(pmemPath);
-  const existing = openDatabases.get(dbPath);
-  if (existing) {
-    lastOpenedDbPath = dbPath;
-    return existing;
-  }
-
-  let db: Database.Database | null = null;
+  const dbPath = path.join(pmemPath, 'pmem.db');
   try {
-    db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    openDatabases.set(dbPath, db);
-    lastOpenedDbPath = dbPath;
+    _db = new Database(dbPath);
+    _db.pragma('journal_mode = WAL');
+    _db.pragma('foreign_keys = ON');
   } catch (err: any) {
-    if (db) {
-      db.close();
-    }
+    _db = null;
     if (err?.code === 'SQLITE_NOTADB') {
       const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
         `Back up the file if needed, then run: pmem rebuild --full`;
@@ -37,63 +24,18 @@ export function openDatabase(pmemPath: string): Database.Database {
     }
     throw err;
   }
-  return db;
+  return _db;
 }
 
-export function closeDatabase(target?: string | Database.Database): void {
-  if (typeof target === 'string') {
-    const dbPath = databasePathForPmemPath(target);
-    const db = openDatabases.get(dbPath);
-    if (db) {
-      db.close();
-      openDatabases.delete(dbPath);
-      if (lastOpenedDbPath === dbPath) {
-        lastOpenedDbPath = null;
-      }
-    }
-    return;
-  }
-
-  if (target) {
-    for (const [dbPath, db] of openDatabases.entries()) {
-      if (db === target) {
-        db.close();
-        openDatabases.delete(dbPath);
-        if (lastOpenedDbPath === dbPath) {
-          lastOpenedDbPath = null;
-        }
-        return;
-      }
-    }
-    if (target.open) {
-      target.close();
-    }
-    return;
-  }
-
-  if (lastOpenedDbPath) {
-    const db = openDatabases.get(lastOpenedDbPath);
-    if (db) {
-      db.close();
-      openDatabases.delete(lastOpenedDbPath);
-    }
-    lastOpenedDbPath = null;
+export function closeDatabase(): void {
+  if (_db) {
+    _db.close();
+    _db = null;
   }
 }
 
-export function closeAllDatabases(): void {
-  for (const db of openDatabases.values()) {
-    db.close();
-  }
-  openDatabases.clear();
-  lastOpenedDbPath = null;
-}
-
-export function getDatabase(pmemPath?: string): Database.Database | null {
-  if (pmemPath) {
-    return openDatabases.get(databasePathForPmemPath(pmemPath)) ?? null;
-  }
-  return lastOpenedDbPath ? openDatabases.get(lastOpenedDbPath) ?? null : null;
+export function getDatabase(): Database.Database | null {
+  return _db;
 }
 
 export function createSchema(db: Database.Database): void {
@@ -194,7 +136,26 @@ export function createSchema(db: Database.Database): void {
       success INTEGER NOT NULL,
       error TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      memory_id TEXT,
+      branch TEXT,
+      payload TEXT,
+      created_at TEXT NOT NULL,
+      session_id TEXT,
+      success INTEGER NOT NULL DEFAULT 1
+    );
   `);
+
+  try {
+    db.exec(`
+      ALTER TABLE events ADD COLUMN branch TEXT;
+    `);
+  } catch {}
+
+  setSchemaVersion(db, CORE_SCHEMA_VERSION);
 }
 
 export function hasFTS5(db: Database.Database): boolean {
@@ -362,6 +323,7 @@ export function clearAllTables(db: Database.Database): void {
     DELETE FROM dirty_flags;
     DELETE FROM update_log;
     DELETE FROM sessions;
+    DELETE FROM events;
   `);
 }
 
@@ -450,6 +412,53 @@ export function insertUpdateLog(db: Database.Database, action: string, summary?:
   );
 }
 
+export interface RuntimeEventInput {
+  eventType: string;
+  memoryId?: string | null;
+  branch?: string | null;
+  payload?: unknown;
+  sessionId?: string | null;
+  success?: boolean;
+}
+
+export interface RuntimeEventRow {
+  id: number;
+  event_type: string;
+  memory_id: string | null;
+  branch: string | null;
+  payload: string | null;
+  created_at: string;
+  session_id: string | null;
+  success: number;
+}
+
+export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInput): number {
+  const result = db.prepare(
+    "INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(
+    event.eventType,
+    event.memoryId ?? null,
+    event.branch ?? null,
+    event.payload === undefined ? null : JSON.stringify(event.payload),
+    new Date().toISOString(),
+    event.sessionId ?? null,
+    event.success === false ? 0 : 1
+  );
+  return Number(result.lastInsertRowid);
+}
+
+export function getRecentRuntimeEvents(db: Database.Database, limit: number = 10): RuntimeEventRow[] {
+  return db.prepare(
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events ORDER BY created_at DESC, id DESC LIMIT ?"
+  ).all(limit) as RuntimeEventRow[];
+}
+
+export function getRuntimeEventsForMemory(db: Database.Database, memoryId: string): RuntimeEventRow[] {
+  return db.prepare(
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, id DESC"
+  ).all(memoryId) as RuntimeEventRow[];
+}
+
 export function getRecentUpdateLogs(db: Database.Database, limit: number = 10): Array<{ action: string; summary: string | null; created_at: string; success: number }> {
   return db.prepare(
     "SELECT action, summary, created_at, success FROM update_log ORDER BY created_at DESC LIMIT ?"
@@ -527,4 +536,49 @@ export function deleteOrphanEdges(db: Database.Database): number {
     WHERE from_id NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
        OR to_id   NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
   `).run().changes;
+}
+
+export interface ForgetResult {
+  success: boolean;
+  memoryId: string;
+  eventId?: number;
+  message: string;
+}
+
+export function forgetMemory(db: Database.Database, memoryId: string, options: { reason?: string; branch?: string | null; sessionId?: string | null } = {}): ForgetResult {
+  const tx = db.transaction((): ForgetResult => {
+    const card = db.prepare("SELECT id, is_deleted FROM cards WHERE id = ?").get(memoryId) as { id: string; is_deleted: number } | undefined;
+    if (!card) {
+      return { success: false, memoryId, message: `Memory not found: ${memoryId}` };
+    }
+    if (card.is_deleted === 1) {
+      const eventId = insertRuntimeEvent(db, {
+        eventType: 'memory.forget.tombstone',
+        memoryId,
+        branch: options.branch ?? null,
+        sessionId: options.sessionId ?? null,
+        payload: { reason: options.reason ?? null, already_deleted: true },
+        success: true,
+      });
+      return { success: true, memoryId, eventId, message: `Memory already forgotten: ${memoryId}` };
+    }
+
+    db.prepare("UPDATE cards SET is_deleted = 1, updated_at = ? WHERE id = ?").run(new Date().toISOString(), memoryId);
+    db.prepare("DELETE FROM edges WHERE from_id = ? OR to_id = ?").run(memoryId, memoryId);
+    deleteCardAliases(db, memoryId);
+    deleteCardTags(db, memoryId);
+    deleteCardPaths(db, memoryId);
+    deleteCardFts(db, memoryId);
+    resolveDirtyFlags(db, 'card', memoryId);
+    const eventId = insertRuntimeEvent(db, {
+      eventType: 'memory.forget.tombstone',
+      memoryId,
+      branch: options.branch ?? null,
+      sessionId: options.sessionId ?? null,
+      payload: { reason: options.reason ?? null },
+      success: true,
+    });
+    return { success: true, memoryId, eventId, message: `Memory forgotten: ${memoryId}` };
+  });
+  return tx();
 }

@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { contextQuery } from '../core/query/context';
 import { captureCore } from '../core/capture';
+import { openDatabase, getRecentRuntimeEvents, insertRuntimeEvent, closeDatabase } from '../core/db';
+import { getCurrentBranch } from '../core/git';
 import { validateCaptureInputs } from './security';
 import { handleMcpTool, listMcpTools } from './server';
 import { Pmem } from '../runtime';
@@ -388,6 +390,13 @@ source_files: [src/index.ts]
       assert.ok(traceContent.includes('diff_hash:'));
       assert.ok(traceContent.includes('# Capture: Force sync capture'));
 
+      const db = openDatabase('.pmem');
+      const events = getRecentRuntimeEvents(db, 1);
+      closeDatabase();
+      assert.strictEqual(events[0].event_type, 'memory.capture.committed');
+      assert.ok(events[0].memory_id?.startsWith('trace.'));
+      assert.match(events[0].payload || '', /Force sync capture/);
+
       const secondResult = captureCore('.pmem', {
         summary: 'Force sync capture',
         next: 'Write test assertions',
@@ -395,6 +404,53 @@ source_files: [src/index.ts]
       });
       assert.ok(secondResult.success);
       assert.strictEqual(secondResult.skipped, true, 'Should skip duplicate diff_hash trace writing');
+    });
+
+    it('does not emit a capture commit event when rebuild fails', () => {
+      const indexesPath = path.join('.pmem', 'indexes');
+      fs.rmSync(indexesPath, { recursive: true, force: true });
+      fs.writeFileSync(indexesPath, 'not a directory');
+      const beforeDb = openDatabase('.pmem');
+      const beforeCount = getRecentRuntimeEvents(beforeDb, 100).filter(e => e.event_type === 'memory.capture.committed').length;
+      closeDatabase();
+      try {
+        const result = captureCore('.pmem', {
+          summary: 'This capture should fail rebuild',
+          next: 'Restore indexes directory',
+          force: true
+        });
+        assert.strictEqual(result.success, false);
+      } finally {
+        fs.rmSync(indexesPath, { force: true });
+        fs.mkdirSync(indexesPath, { recursive: true });
+      }
+      const afterDb = openDatabase('.pmem');
+      const afterCount = getRecentRuntimeEvents(afterDb, 100).filter(e => e.event_type === 'memory.capture.committed').length;
+      closeDatabase();
+      assert.strictEqual(afterCount, beforeCount);
+    });
+
+    it('context retrieval includes current-branch events and hides other branches', () => {
+      const currentBranch = getCurrentBranch(process.cwd()) || 'main';
+      const db = openDatabase('.pmem');
+      insertRuntimeEvent(db, {
+        eventType: 'memory.observation',
+        memoryId: 'module.core',
+        branch: currentBranch,
+        payload: { summary: 'current branch observation' },
+      });
+      insertRuntimeEvent(db, {
+        eventType: 'memory.observation',
+        memoryId: 'module.core',
+        branch: 'other-branch',
+        payload: { summary: 'hidden branch observation' },
+      });
+      closeDatabase();
+
+      const result = contextQuery('.pmem', 'core branch observation');
+      const joined = (result.recent_session_memory || []).join('\n');
+      assert.match(joined, /current branch observation/);
+      assert.doesNotMatch(joined, /hidden branch observation/);
     });
 
     it('sanitizes summary name to prevent path traversal in trace creation', () => {
