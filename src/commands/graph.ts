@@ -1,104 +1,70 @@
 import * as path from 'path';
 import { readFile, fileExists } from '../core/fs';
-import { openDatabase, createSchema, getEdgesForCard } from '../core/db';
 import type { CardRow, EdgeRow, CliFormat } from '../types';
 import { loadManifest, resolveConfig } from '../core/manifest';
+import { Pmem } from '../runtime';
 
 const PMEM_DIR = '.pmem';
 
-export function relatedCommand(id: string, options?: {
+type RelatedCommandResult = Awaited<ReturnType<Pmem['related']>>;
+
+export async function relatedCommand(id: string, options?: {
   depth?: number;
   type?: string;
   format?: CliFormat;
   source?: 'explicit' | 'inferred' | 'mention' | 'all';
-}): void {
+}): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const depth = options?.depth ?? 1;
   const edgeTypeFilter = options?.type;
   const fmt = options?.format ?? 'compact';
-  const sourceFilter = (options?.source && options.source !== 'all')
-    ? options.source
-    : undefined;
 
-  const db = openDatabase(pmemPath);
-  createSchema(db);
-
-  const card = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(id) as CardRow | undefined;
-  if (!card) {
-    if (fmt === 'json') {
-      console.log(JSON.stringify({ error: `Node "${id}" not found` }, null, 2));
-    } else {
-      console.log(`Node "${id}" not found in database.`);
-      console.log(`Try: pmem ask "${id}" to search for related nodes.`);
+  let result: RelatedCommandResult;
+  let pmem: Pmem | null = null;
+  try {
+    pmem = await Pmem.open({ root: cwd });
+    result = await pmem.related(id, {
+      depth,
+      type: edgeTypeFilter,
+      source: options?.source,
+    });
+  } catch (err: any) {
+    if (err?.message === `Node "${id}" not found in database.`) {
+      if (fmt === 'json') {
+        console.log(JSON.stringify({ error: `Node "${id}" not found` }, null, 2));
+      } else {
+        console.log(`Node "${id}" not found in database.`);
+        console.log(`Try: pmem ask "${id}" to search for related nodes.`);
+      }
+      return;
     }
-    return;
+    throw err;
+  } finally {
+    if (pmem) await pmem.close();
   }
 
-  let directEdges = getEdgesForCard(db, id, sourceFilter) as EdgeRow[];
-  if (edgeTypeFilter) {
-    directEdges = directEdges.filter(e => e.type === edgeTypeFilter);
-  }
-
-  const getCard = (cardId: string): CardRow | undefined => {
-    return db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(cardId) as CardRow | undefined;
-  };
+  const directEdges = Object.entries(result.edges_by_type).flatMap(([type, items]) =>
+    items.map(item => ({ type, ...item }))
+  );
 
   if (fmt === 'json') {
-    const edgesByType: Record<string, Array<{
-      direction: 'out' | 'in';
-      target_id: string;
-      target_title: string;
-      source: string;
-      confidence: number;
-    }>> = {};
-
-    for (const edge of directEdges) {
-      const isOut = edge.from_id === id;
-      const targetId = isOut ? edge.to_id : edge.from_id;
-      const targetCard = getCard(targetId);
-
-      if (!edgesByType[edge.type]) {
-        edgesByType[edge.type] = [];
-      }
-      edgesByType[edge.type].push({
-        direction: isOut ? 'out' : 'in',
-        target_id: targetId,
-        target_title: targetCard?.title ?? targetId,
-        source: edge.source,
-        confidence: edge.confidence,
-      });
-    }
-
-    const highConfidence: typeof edgesByType[string] = [];
-    const needsReview: typeof edgesByType[string] = [];
-
-    for (const items of Object.values(edgesByType)) {
-      for (const item of items) {
-        if (item.source === 'inferred' && item.confidence < 0.7) {
-          needsReview.push(item);
-        } else {
-          highConfidence.push(item);
-        }
-      }
-    }
-
     console.log(JSON.stringify({
-      card: { id: card.id, type: card.type, title: card.title, status: card.status, file: card.file_path },
-      total_edges: directEdges.length,
-      high_confidence: highConfidence,
-      needs_review: needsReview,
-      edges_by_type: edgesByType,
+      card: result.card,
+      total_edges: result.total_edges,
+      high_confidence: result.high_confidence,
+      needs_review: result.needs_review,
+      edges_by_type: result.edges_by_type,
     }, null, 2));
     return;
   }
 
   // Compact output
-  console.log(`${card.id}`);
-  console.log(`Type: ${card.type}`);
-  console.log(`Title: ${card.title}`);
-  if (card.status) {
-    console.log(`Status: ${card.status}`);
+  console.log(`${result.card.id}`);
+  console.log(`Type: ${result.card.type}`);
+  console.log(`Title: ${result.card.title}`);
+  if (result.card.status) {
+    console.log(`Status: ${result.card.status}`);
   }
 
   if (directEdges.length === 0) {
@@ -106,40 +72,22 @@ export function relatedCommand(id: string, options?: {
     return;
   }
 
-  const grouped = new Map<string, { targetId: string; targetTitle: string; direction: 'out' | 'in'; source: string; confidence: number }[]>();
-  for (const edge of directEdges) {
-    const isOut = edge.from_id === id;
-    const targetId = isOut ? edge.to_id : edge.from_id;
-    const targetCard = getCard(targetId);
-    const targetTitle = targetCard ? targetCard.title : targetId;
-
-    if (!grouped.has(edge.type)) {
-      grouped.set(edge.type, []);
-    }
-    grouped.get(edge.type)!.push({
-      targetId,
-      targetTitle,
-      direction: isOut ? 'out' : 'in',
-      source: edge.source,
-      confidence: edge.confidence,
-    });
-  }
-
   console.log('\nDirect Relations:');
-  for (const [edgeType, targets] of grouped) {
+  for (const [edgeType, targets] of Object.entries(result.edges_by_type)) {
     for (const t of targets) {
       const prefix = t.direction === 'in' ? '←' : '';
       const srcTag = t.source === 'inferred' ? ` [${t.source}, ${t.confidence.toFixed(1)}]` : '';
-      console.log(`  ${prefix}${edgeType}: ${t.targetId} (${t.targetTitle})${srcTag}`);
+      console.log(`  ${prefix}${edgeType}: ${t.target_id} (${t.target_title})${srcTag}`);
     }
   }
 
-  // BFS for multi-hop traversal when depth > 1
+  // BFS for multi-hop traversal when depth > 1. Preserve the legacy summary-only
+  // CLI output while routing direct read APIs through Pmem Runtime.
   if (depth > 1) {
     const visited = new Set<string>([id]);
     let frontier = new Set<string>();
     for (const edge of directEdges) {
-      const neighborId = edge.from_id === id ? edge.to_id : edge.from_id;
+      const neighborId = edge.target_id;
       if (!visited.has(neighborId)) {
         visited.add(neighborId);
         frontier.add(neighborId);
@@ -152,23 +100,32 @@ export function relatedCommand(id: string, options?: {
       const frontierArr = Array.from(frontier);
       const nextFrontier = new Set<string>();
 
-      const placeholders = frontierArr.map(() => '?').join(',');
-      let edgeQuery = `SELECT * FROM edges WHERE (from_id IN (${placeholders}) OR to_id IN (${placeholders}))`;
-      const params: unknown[] = [...frontierArr, ...frontierArr];
-      if (edgeTypeFilter) {
-        edgeQuery += ' AND type = ?';
-        params.push(edgeTypeFilter);
-      }
+      let hopPmem: Pmem | null = null;
+      try {
+        hopPmem = await Pmem.open({ root: cwd });
+        for (const frontierId of frontierArr) {
+          let hopResult: RelatedCommandResult;
+          try {
+            hopResult = await hopPmem.related(frontierId, {
+              type: edgeTypeFilter,
+              source: options?.source,
+            });
+          } catch {
+            continue;
+          }
 
-      const hopEdges = db.prepare(edgeQuery).all(...params) as EdgeRow[];
-      totalExtendedEdges += hopEdges.length;
-
-      for (const edge of hopEdges) {
-        const neighborId = frontier.has(edge.from_id) ? edge.to_id : edge.from_id;
-        if (!visited.has(neighborId)) {
-          visited.add(neighborId);
-          nextFrontier.add(neighborId);
+          const hopEdges = Object.values(hopResult.edges_by_type).flat();
+          totalExtendedEdges += hopEdges.length;
+          for (const edge of hopEdges) {
+            const neighborId = edge.target_id;
+            if (!visited.has(neighborId)) {
+              visited.add(neighborId);
+              nextFrontier.add(neighborId);
+            }
+          }
         }
+      } finally {
+        if (hopPmem) await hopPmem.close();
       }
 
       frontier = nextFrontier;
@@ -186,6 +143,9 @@ export function traceCommand(id: string): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
+  // trace is a read-only graph command, but no integrated runtime trace API exists
+  // yet; keep the existing SQL path to preserve CLI semantics.
+  const { openDatabase, createSchema } = require('../core/db');
   const db = openDatabase(pmemPath);
   createSchema(db);
 

@@ -1,15 +1,15 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
-import { recallQuery } from '../core/query/recall';
 import { formatOutput } from '../core/format';
+import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
 
-export function recallCommand(
+export async function recallCommand(
   budget: number = 2000,
   format: CliFormat = 'compact',
   since?: string,
   options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep' }
-): void {
+): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
 
@@ -18,8 +18,10 @@ export function recallCommand(
     return;
   }
 
+  let pmem: Pmem | null = null;
   try {
-    const result = recallQuery(pmemPath, {
+    pmem = await Pmem.open({ root: cwd });
+    const result = await pmem.recall({
       budget,
       since,
       recent: options?.recent,
@@ -35,5 +37,7 @@ export function recallCommand(
   } catch (err: any) {
     console.error(`Error: ${err.message}`);
     process.exit(2);
+  } finally {
+    if (pmem) await pmem.close();
   }
 }

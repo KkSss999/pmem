@@ -1,9 +1,9 @@
 import * as path from 'path';
 import { fileExists, writeFile } from '../core/fs';
-import { contextQuery } from '../core/query/context';
+import { Pmem } from '../runtime';
 import type { PmemSessionData } from '../types';
 
-export function contextCommand(task: string, options: { budget?: number; format?: string }): void {
+export async function contextCommand(task: string, options: { budget?: number; format?: string }): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
 
@@ -15,8 +15,16 @@ export function contextCommand(task: string, options: { budget?: number; format?
   const budget = options.budget ? Number(options.budget) : 4000;
   const format = options.format || 'compact';
 
-  // 1. Run core context query
-  const result = contextQuery(pmemPath, task, budget);
+  // 1. Run core context query through integrated runtime API
+  let pmem: Pmem | null = null;
+  const result = await (async () => {
+    try {
+      pmem = await Pmem.open({ root: cwd });
+      return await pmem.context(task, budget);
+    } finally {
+      if (pmem) await pmem.close();
+    }
+  })();
 
   // 2. Save task metadata to session.json
   const sessionPath = path.join(pmemPath, 'session.json');

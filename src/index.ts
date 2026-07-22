@@ -45,8 +45,8 @@ program
   .description('Detect changed files and affected memory cards')
   .option('-s, --since <timestamp>', 'Check changes since timestamp')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
-  .action((options) => {
-    statusCommand({ since: options.since, format: options.format });
+  .action(async (options) => {
+    await statusCommand({ since: options.since, format: options.format });
   });
 
 program
@@ -54,8 +54,8 @@ program
   .description('Retrieve consolidated context for a given task')
   .option('-b, --budget <tokens>', 'Token budget for context retrieval', '4000')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
-  .action((task: string, options) => {
-    contextCommand(task, { budget: options.budget ? parseInt(options.budget, 10) : undefined, format: options.format });
+  .action(async (task: string, options) => {
+    await contextCommand(task, { budget: options.budget ? parseInt(options.budget, 10) : undefined, format: options.format });
   });
 
 program
@@ -108,8 +108,8 @@ program
   .option('--recent <count>', 'Number of recent traces to read', '5')
   .option('--no-traces', 'Do not load recent traces')
   .option('--mode <mode>', 'Recall mode (brief, normal, deep)', 'normal')
-  .action((options) => {
-    recallCommand(parseInt(options.budget, 10), options.format, options.since, {
+  .action(async (options) => {
+    await recallCommand(parseInt(options.budget, 10), options.format, options.since, {
       recent: options.recent ? parseInt(options.recent, 10) : undefined,
       noTraces: options.traces === false,
       mode: ['brief', 'normal', 'deep'].includes(options.mode) ? options.mode : 'normal'
@@ -122,13 +122,13 @@ program
   .option('-f, --format <format>', 'Output format (compact, json, paths, pack)', 'compact')
   .option('--explain', 'Show per-result reasons and scoring factors')
   .option('--limit <n>', 'Max results to return', '20')
-  .action((query: string, options) => {
+  .action(async (query: string, options) => {
     const parsedLimit = options.limit ? parseInt(options.limit, 10) : undefined;
     if (parsedLimit !== undefined && (!Number.isFinite(parsedLimit) || parsedLimit < 1)) {
       console.error('Error: --limit must be a positive integer.');
       process.exit(2);
     }
-    askCommand(query, options.format, {
+    await askCommand(query, options.format, {
       explain: options.explain === true,
       limit: parsedLimit,
     });
@@ -141,8 +141,8 @@ program
   .option('-t, --type <type>', 'Filter by edge type (e.g. depends_on)')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .option('--source <source>', 'Filter by edge source (explicit, inferred, mention, all)', 'all')
-  .action((id: string, options) => {
-    relatedCommand(id, {
+  .action(async (id: string, options) => {
+    await relatedCommand(id, {
       depth: parseInt(options.depth, 10),
       type: options.type,
       format: options.format,
@@ -164,8 +164,8 @@ program
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .option('--source <source>', 'Filter by edge source (explicit, inferred, mention, manual, all)', 'all')
   .option('--limit <n>', 'Limit edges per direction (default: all)')
-  .action((id: string, options) => {
-    relationsCommand(id, {
+  .action(async (id: string, options) => {
+    await relationsCommand(id, {
       type: options.type,
       format: options.format,
       source: options.source,
@@ -441,4 +441,7 @@ decisionCmd
     });
   });
 
-program.parse();
+program.parseAsync().catch((err) => {
+  console.error(err?.message || err);
+  process.exit(2);
+});
