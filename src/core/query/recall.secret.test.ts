@@ -47,4 +47,27 @@ describe('recall secret-sensitivity filtering', () => {
     assert.ok(!ids.includes('decision.secret'), 'secret decision must NOT be present');
     db.close();
   });
+
+  it('does not leak secret foundational card paths via mustRead/active_foundation', () => {
+    const { pmemPath } = makeProject();
+    const dbPath = path.join(pmemPath, 'pmem.db');
+    const db = new Database(dbPath);
+    createSchema(db);
+    // module is a foundational type — its path would normally be pushed into mustRead.
+    const secretModule = {
+      id: 'module.secret', type: 'module', title: 'Secret Module', status: 'active', priority: null,
+      file_path: '.pmem/modules/secret.md', summary: 's', schema_version: null, card_version: 1,
+      created_at: null, updated_at: new Date().toISOString(), last_verified_at: null,
+      file_hash: 'h', frontmatter_hash: 'fm', body_hash: 'b',
+      token_count: 1, section_count: 1, is_deleted: 0, is_candidate: 0, sensitivity: 'secret',
+    } as CardRow;
+    upsertCard(db, secretModule);
+
+    const result = recallQuery(pmemPath, { db, noTraces: true });
+    const leakPath = '.pmem/modules/secret.md';
+    assert.ok(!(result.mustRead ?? []).includes(leakPath), 'secret module path must not be in mustRead');
+    assert.ok(!(result.active_foundation ?? []).includes(leakPath), 'secret module path must not be in active_foundation');
+    assert.ok(!(result.active_modules ?? []).includes(leakPath), 'secret module path must not be in active_modules');
+    db.close();
+  });
 });

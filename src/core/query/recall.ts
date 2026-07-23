@@ -226,13 +226,15 @@ export function recallQuery(pmemPath: string, options?: {
       }
     }
 
-    const activeCards = sinceThreshold
+    const activeCardsRaw = sinceThreshold
       ? db.prepare(
           "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0 AND updated_at >= ?"
         ).all(sinceThreshold) as CardRow[]
       : db.prepare(
           "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
         ).all() as CardRow[];
+    // v1.1: never surface secret-sensitivity cards (even their file paths) in recall.
+    const activeCards = activeCardsRaw.filter(c => (c as any).sensitivity !== 'secret');
 
     const foundationalCards = activeCards.filter(c => foundationalTypes.includes(c.type));
     result.active_foundation = foundationalCards.map(c => c.file_path);
