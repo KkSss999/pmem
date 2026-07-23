@@ -54,6 +54,12 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
   if (!card) {
     throw new Error(`Node "${id}" not found in database.`);
   }
+  // v1.1: a secret-sensitivity card must never surface in agent context.
+  // Treat it as invisible (indistinguishable from absent) rather than
+  // leaking its title/path/edges.
+  if ((card as any).sensitivity === 'secret') {
+    throw new Error(`Node "${id}" not found in database.`);
+  }
 
   let directEdges = getEdgesForCard(db, id, sourceFilter) as EdgeRow[];
   if (edgeTypeFilter) {
@@ -68,11 +74,17 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
 
   const edgesByType: Record<string, RelatedEdgeItem[]> = {};
 
+  let visibleEdgeCount = 0;
   for (const edge of directEdges) {
     const isOut = edge.from_id === id;
     const targetId = isOut ? edge.to_id : edge.from_id;
     const targetCard = getCard(targetId);
 
+    // v1.1: skip edges pointing at secret-sensitivity cards so their
+    // title/type/status/existence is not leaked via the relation graph.
+    if (targetCard && (targetCard as any).sensitivity === 'secret') continue;
+
+    visibleEdgeCount++;
     if (!edgesByType[edge.type]) {
       edgesByType[edge.type] = [];
     }
@@ -108,7 +120,7 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
       status: card.status,
       file: card.file_path,
     },
-    total_edges: directEdges.length,
+    total_edges: visibleEdgeCount,
     edges_by_type: edgesByType,
     high_confidence: highConfidence,
     needs_review: needsReview,
