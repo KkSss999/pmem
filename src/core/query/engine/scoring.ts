@@ -26,6 +26,10 @@ export interface ScoreFactors {
   recency: number;
   staleness: number;
   status: number;
+  /** Confidence boost/penalty factor (1.0 = no confidence data, >1.0 = high, <1.0 = low). */
+  confidence: number;
+  /** Superseded penalty factor (1.0 = not superseded, <1.0 = superseded). */
+  superseded: number;
 }
 
 export interface ScoredCandidate {
@@ -72,6 +76,12 @@ const RECENCY_HALF_LIFE_DAYS = 90;
 const DIRTY_PENALTY = 0.8;
 const UNVERIFIED_PENALTY = 0.9;
 
+const HIGH_CONFIDENCE_THRESHOLD = 0.8;
+const LOW_CONFIDENCE_THRESHOLD = 0.3;
+const HIGH_CONFIDENCE_BOOST = 1.15;
+const LOW_CONFIDENCE_PENALTY = 0.85;
+const SUPERSEDED_PENALTY_FACTOR = 0.7;
+
 const STATUS_FACTORS: Record<string, number> = {
   superseded: 0.5,
   archived: 0.5,
@@ -110,12 +120,28 @@ export function stalenessPenalty(card: CardRow, dirtyCardIds: Set<string>): { pe
     penalty *= UNVERIFIED_PENALTY;
     stale = true;
   }
+  if ((card as any).superseded_by) {
+    stale = true;
+  }
   return { penalty, stale };
 }
 
 export function statusFactor(status: string | null): number {
   if (!status) return 1.0;
   return STATUS_FACTORS[status.toLowerCase()] ?? 1.0;
+}
+
+export function confidenceFactor(confidence: number | null | undefined): number {
+  if (confidence == null) return 1.0;
+  if (confidence > HIGH_CONFIDENCE_THRESHOLD) return HIGH_CONFIDENCE_BOOST;
+  if (confidence < LOW_CONFIDENCE_THRESHOLD) return LOW_CONFIDENCE_PENALTY;
+  return 1.0;
+}
+
+export function supersededFactor(supersededBy: string | string[] | null | undefined): number {
+  if (!supersededBy) return 1.0;
+  if (Array.isArray(supersededBy) && supersededBy.length === 0) return 1.0;
+  return SUPERSEDED_PENALTY_FACTOR;
 }
 
 export function typeWeight(type: string, overrides?: Record<string, number>): number {
@@ -159,10 +185,15 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
     const rf = recencyFactor(cand.card.updated_at, opts.now);
     const { penalty, stale } = stalenessPenalty(cand.card, opts.dirtyCardIds);
     const sf = statusFactor(cand.card.status);
+    const cf = confidenceFactor((cand.card as any).confidence);
+    const supf = supersededFactor((cand.card as any).superseded_by);
     results.push({
       ...cand,
-      score: round4(cand.base * tw * rf * penalty * sf),
-      factors: { type_weight: tw, recency: round4(rf), staleness: round4(penalty), status: sf },
+      score: round4(cand.base * tw * rf * penalty * sf * cf * supf),
+      factors: {
+        type_weight: tw, recency: round4(rf), staleness: round4(penalty), status: sf,
+        confidence: round4(cf), superseded: round4(supf),
+      },
       stale,
     });
   }

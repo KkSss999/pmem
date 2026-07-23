@@ -1,5 +1,7 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
+import { openDatabase } from '../core/db';
+import { getDistillUrgency } from '../runtime/policy';
 import { Pmem } from '../runtime';
 
 export async function captureCommand(options: {
@@ -38,6 +40,19 @@ export async function captureCommand(options: {
       console.log(result.message);
       if (result.tracePath) {
         console.log(`Trace card written: ${path.relative(cwd, result.tracePath)}`);
+      }
+
+      // Auto-distill suggestion
+      const distillDb = openDatabase(pmemPath);
+      try {
+        const traceRow = distillDb.prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0").get() as { count: number };
+        const traceCount = traceRow?.count ?? 0;
+        const urgency = getDistillUrgency(traceCount);
+        if (urgency !== 'none') {
+          console.log(`ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`);
+        }
+      } catch {
+        // Silently ignore DB errors — distill is a suggestion only
       }
     }
   } finally {

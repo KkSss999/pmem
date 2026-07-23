@@ -7,6 +7,13 @@ export interface NextState {
   context?: string[];
 }
 
+export interface StructuredNextItem {
+  step: string;
+  priority?: 'P0' | 'P1' | 'P2';
+  owner?: string;
+  criteria: string[];
+}
+
 export function readNext(pmemPath: string): NextState {
   const nextPath = path.join(pmemPath, 'next.md');
   if (!fileExists(nextPath)) {
@@ -179,6 +186,91 @@ ${managedEnd}`;
   writeFile(nextPath, updatedContent.trim() + '\n');
 
   return merged;
+}
+
+/**
+ * Parse structured task queue items from next.md content.
+ *
+ * Extracts priority tags ([P0]/[P1]/[P2]), owner mentions (@username),
+ * and acceptance criteria (sub-bullets) from the "Recommended Next Step"
+ * section of the managed block.
+ *
+ * Returns an empty array if no next steps are found. Backward compatible
+ * with plain-text next steps (no structured format).
+ */
+export function parseStructuredNext(content: string): StructuredNextItem[] {
+  const items: StructuredNextItem[] = [];
+
+  const managedStart = '<!-- pmem:next:start -->';
+  const managedEnd = '<!-- pmem:next:end -->';
+
+  let block = '';
+  const startIdx = content.indexOf(managedStart);
+  const endIdx = content.indexOf(managedEnd);
+
+  if (startIdx >= 0 && endIdx > startIdx) {
+    block = content.substring(startIdx + managedStart.length, endIdx).trim();
+  } else {
+    block = content;
+  }
+
+  const lines = block.split('\n');
+  let inNextStep = false;
+  let currentItem: StructuredNextItem | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith('## ')) {
+      if (inNextStep && currentItem) items.push(currentItem);
+      currentItem = null;
+      inNextStep = trimmed.toLowerCase().includes('recommended next step');
+      continue;
+    }
+
+    if (!inNextStep) continue;
+    if (!trimmed) continue;
+
+    const leadingSpaces = (line.match(/^(\s*)/)?.[1]?.length ?? 0);
+    const bulletMatch = trimmed.match(/^([-*]\s+|(\d+)[.)]\s+)/);
+
+    if (bulletMatch) {
+      if (leadingSpaces === 0) {
+        if (currentItem) items.push(currentItem);
+
+        const stepText = trimmed.substring(bulletMatch[0].length).trim();
+
+        let priority: 'P0' | 'P1' | 'P2' | undefined;
+        const priorityMatch = stepText.match(/\[P([012])\]/i);
+        if (priorityMatch) {
+          priority = `P${priorityMatch[1]}` as 'P0' | 'P1' | 'P2';
+        }
+
+        let owner: string | undefined;
+        const ownerMatch = stepText.match(/@([\w][\w.-]*)/);
+        if (ownerMatch) {
+          owner = ownerMatch[1];
+        }
+
+        let cleanStep = stepText;
+        if (priorityMatch) cleanStep = cleanStep.replace(priorityMatch[0], '').trim();
+        if (ownerMatch) cleanStep = cleanStep.replace(ownerMatch[0], '').trim();
+
+        currentItem = { step: cleanStep, priority, owner, criteria: [] };
+      } else if (leadingSpaces >= 2 && currentItem) {
+        const criteriaText = trimmed.substring(bulletMatch[0].length).trim();
+        if (criteriaText) {
+          currentItem.criteria.push(criteriaText);
+        }
+      }
+    } else {
+      if (currentItem) items.push(currentItem);
+      currentItem = { step: trimmed, criteria: [] };
+    }
+  }
+
+  if (currentItem) items.push(currentItem);
+  return items;
 }
 
 export function migrateNextIfNeeded(pmemPath: string): void {

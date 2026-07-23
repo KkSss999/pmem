@@ -84,6 +84,15 @@ export class EventStore {
     return this.db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?').run(new Date().toISOString()).changes;
   }
 
+  mergeBranch(sourceBranch: string, targetBranch: string): number {
+    const sourceScope = `branch:${sourceBranch}`;
+    const targetScope = `branch:${targetBranch}`;
+    const result = this.db.prepare(
+      'UPDATE events SET scope = ?, branch = ? WHERE scope = ?'
+    ).run(targetScope, targetBranch, sourceScope);
+    return result.changes;
+  }
+
   private createSchema(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS events (

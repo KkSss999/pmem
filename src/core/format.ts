@@ -219,7 +219,14 @@ function formatRecallCompact(r: Record<string, unknown>): string {
         ? `: ${m.source_files.join(', ')}`
         : '';
       const summaryStr = m.summary ? ` — ${m.summary}` : '';
-      lines.push(`- ${m.id}${filesStr}${summaryStr}`);
+      if ((m as any).sensitivity === 'secret') continue;
+      const confStr = (m as any).confidence != null ? ` [confidence: ${(m as any).confidence}]` : '';
+      const supStr = (m as any).superseded_by ? ` [superseded]` : '';
+      const classStr = (m as any).classification ? ` [${(m as any).classification}]` : '';
+      const trustStr = (m as any).trust_label ? ` [trust: ${(m as any).trust_label}]` : '';
+      const sens = (m as any).sensitivity;
+      const sensStr = sens && sens !== 'public' && sens !== 'secret' ? ` [sensitivity: ${sens}]` : '';
+      lines.push(`- ${m.id}${classStr}${filesStr}${summaryStr}${confStr}${supStr}${trustStr}${sensStr}`);
     }
   } else {
     lines.push('- (none)');
@@ -242,7 +249,13 @@ function formatRecallCompact(r: Record<string, unknown>): string {
   };
   if (Array.isArray(decs) && decs.length > 0) {
     for (const d of decs) {
-      addDecision(`${d.title}${d.summary ? ` — ${d.summary}` : ''}`);
+      const dClassStr = (d as any).classification ? ` [${(d as any).classification}]` : '';
+      const dConfStr = (d as any).confidence != null ? ` [confidence: ${(d as any).confidence}]` : '';
+      const dSupStr = (d as any).superseded_by ? ` [superseded]` : '';
+      const dTrustStr = (d as any).trust_label ? ` [trust: ${(d as any).trust_label}]` : '';
+      const dSens = (d as any).sensitivity;
+      const dSensStr = dSens && dSens !== 'public' && dSens !== 'secret' ? ` [sensitivity: ${dSens}]` : '';
+      addDecision(`${d.title}${dClassStr}${d.summary ? ` — ${d.summary}` : ''}${dConfStr}${dSupStr}${dTrustStr}${dSensStr}`);
     }
   }
   if (Array.isArray(recentTraces)) {
@@ -308,13 +321,19 @@ function formatAskCompact(r: Record<string, unknown>): string {
     if (direct.length > 0) {
       lines.push('\nMatched:');
       for (const m of direct) {
-        lines.push(`  - ${m.id} by ${m.matchType || m.match_type}: "${m.title}"`);
+        const cConf = m.card_confidence != null ? ` [confidence: ${m.card_confidence}]` : '';
+        const cSup = m.superseded_by ? ` [superseded]` : '';
+        const cClass = m.classification ? ` [${m.classification}]` : '';
+        lines.push(`  - ${m.id}${cClass} by ${m.matchType || m.match_type}: "${m.title}"${cConf}${cSup}`);
       }
     }
     if (expanded.length > 0) {
       lines.push('\nExpanded:');
       for (const m of expanded) {
-        lines.push(`  - ${m.id} via ${m.edgeType || m.edge_type || 'related'} (d=${m.graphDistance || m.graph_distance || 1})`);
+        const cConf = m.card_confidence != null ? ` [confidence: ${m.card_confidence}]` : '';
+        const cSup = m.superseded_by ? ` [superseded]` : '';
+        const cClass = m.classification ? ` [${m.classification}]` : '';
+        lines.push(`  - ${m.id}${cClass} via ${m.edgeType || m.edge_type || 'related'} (d=${m.graphDistance || m.graph_distance || 1})${cConf}${cSup}`);
       }
     }
   } else {

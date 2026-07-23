@@ -1,13 +1,92 @@
 import type { MemoryCard } from '../types';
-import type { MemoryProposal, RuntimeConfig } from './types';
+import type { CapabilitySet, MemoryCapability, MemoryProposal, RuntimeConfig } from './types';
+
+export interface AgentQuota {
+  maxObservations: number;
+  maxCards: number;
+  currentObs: number;
+  currentCards: number;
+}
+
+export const DEFAULT_READ_CAPABILITIES: MemoryCapability[] = ['memory.read', 'memory.search'];
 
 export class PolicyEngine {
-  constructor(private readonly config: RuntimeConfig) {}
+  readonly agentQuotas: Map<string, AgentQuota> = new Map();
+  private capabilities: CapabilitySet[] = [];
+
+  constructor(private readonly config: RuntimeConfig, capabilities: CapabilitySet[] = []) {
+    this.capabilities = capabilities ?? [];
+  }
+
+  setQuota(principal: string, maxObservations: number, maxCards: number): void {
+    this.agentQuotas.set(principal, { maxObservations, maxCards, currentObs: 0, currentCards: 0 });
+  }
+
+  checkQuota(principal: string, operation: 'observe' | 'capture'): { allowed: boolean; remaining: number } {
+    const quota = this.agentQuotas.get(principal);
+    if (!quota) return { allowed: true, remaining: Infinity };
+    if (operation === 'observe') {
+      if (quota.currentObs >= quota.maxObservations) return { allowed: false, remaining: 0 };
+      quota.currentObs++;
+      return { allowed: true, remaining: quota.maxObservations - quota.currentObs };
+    }
+    if (quota.currentCards >= quota.maxCards) return { allowed: false, remaining: 0 };
+    quota.currentCards++;
+    return { allowed: true, remaining: quota.maxCards - quota.currentCards };
+  }
+
+  resetQuotas(): void {
+    this.agentQuotas.clear();
+  }
+
+  registerCapabilities(caps: CapabilitySet[]): void {
+    this.capabilities = caps ?? [];
+  }
+
+  checkCapability(principal: string, capability: MemoryCapability, scope: string): boolean {
+    if (this.capabilities.length === 0) return DEFAULT_READ_CAPABILITIES.includes(capability);
+    for (const set of this.capabilities) {
+      if (set.principal !== principal) continue;
+      if (set.capabilities.includes('memory.admin')) return true;
+      if (!this.scopeMatches(set.scope, scope)) continue;
+      if (set.capabilities.includes(capability)) return true;
+    }
+    return false;
+  }
+
+  private scopeMatches(parent: string, target: string): boolean {
+    if (parent === target) return true;
+    return target.startsWith(parent + ':');
+  }
 
   requiresConfirmation(memory: MemoryProposal): boolean {
+    this.checkProposalCapability(memory);
     if (this.config.durable.confirmation === 'never') return false;
     if (this.config.durable.confirmation === 'required') return true;
     return memory.type === 'capture' || memory.type === 'commit';
+  }
+
+  private checkProposalCapability(memory: MemoryProposal): void {
+    if (this.capabilities.length === 0) return;
+    const requiredCap = this.proposalTypeToCapability(memory.type);
+    if (!requiredCap) return;
+    for (const set of this.capabilities) {
+      if (this.checkCapability(set.principal, requiredCap, memory.scope)) return;
+    }
+    throw new Error(
+      `Capability '${requiredCap}' is required for '${memory.type}' on scope '${memory.scope}', but no principal has it.`
+    );
+  }
+
+  private proposalTypeToCapability(type: string): MemoryCapability | null {
+    switch (type) {
+      case 'observe': return 'memory.observe';
+      case 'forget': return 'memory.forget';
+      case 'commit': return 'memory.commit';
+      case 'capture': return 'memory.commit';
+      case 'supersede': return 'memory.supersede';
+      default: return null;
+    }
   }
 
   shouldDistill(card: MemoryCard, traceCount: number): boolean {
@@ -51,4 +130,11 @@ export function parseDurationMs(value: string): number | null {
     w: 604_800_000,
   };
   return amount * factor[unit];
+}
+
+export function getDistillUrgency(traceCount: number): 'none' | 'suggest' | 'recommended' | 'urgent' {
+  if (traceCount < 10) return 'none';
+  if (traceCount < 20) return 'suggest';
+  if (traceCount < 40) return 'recommended';
+  return 'urgent';
 }

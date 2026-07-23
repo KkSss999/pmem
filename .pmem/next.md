@@ -2,11 +2,15 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Plan v1.1 System Memory release
+Commit and push v1.0.1 changes
 
 ## Why
-Confirmed during sync.
+Automated or manual context synchronization.
 
 ## Needed Context
-- Run `pmem recall` for full context.
+- .pmem/traces/2026-07-23-001.md
+- module.recall_retrieval_runtime_20260626
+- module.cli_runtime_20260602
+- module.manifest_runtime_20260602
+- module.engine
 <!-- pmem:next:end -->
