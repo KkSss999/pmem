@@ -18,6 +18,13 @@ export interface CardRow {
   section_count: number;
   is_deleted: number;
   is_candidate: number;
+  /** v1.1: agent-trust fields persisted from frontmatter for query/scoring/filtering. */
+  confidence?: number | null;
+  /** Stored as a JSON array string in SQLite; array in the rebuild input. */
+  superseded_by?: string[] | string | null;
+  classification?: string | null;
+  trust_label?: string | null;
+  sensitivity?: string | null;
 }
 
 export interface EdgeRow {

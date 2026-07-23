@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { fileExists, writeFile } from '../core/fs';
+import { fileExists, readFile, writeFile } from '../core/fs';
+import { parseStructuredNext } from '../core/next';
 import { Pmem } from '../runtime';
 import type { PmemSessionData } from '../types';
 
@@ -111,5 +112,34 @@ export async function contextCommand(task: string, options: { budget?: number; f
 
     console.log('## Recommended Next Action');
     console.log(result.recommended_next_action);
+    console.log('');
+
+    // Display structured next steps from next.md
+    const nextPath = path.join(pmemPath, 'next.md');
+    if (fileExists(nextPath)) {
+      const nextContent = readFile(nextPath) || '';
+      const structuredItems = parseStructuredNext(nextContent);
+
+      if (structuredItems.length > 0) {
+        console.log('## Task Queue (from next.md)');
+        const priorityOrder: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+        const sorted = [...structuredItems].sort((a, b) => {
+          const pa = a.priority ? (priorityOrder[a.priority] ?? 3) : 3;
+          const pb = b.priority ? (priorityOrder[b.priority] ?? 3) : 3;
+          return pa - pb;
+        });
+        for (const item of sorted) {
+          const prefixParts: string[] = [];
+          if (item.priority) prefixParts.push(`[${item.priority}]`);
+          if (item.owner) prefixParts.push(`@${item.owner}`);
+          const prefix = prefixParts.length > 0 ? `${prefixParts.join(' ')} ` : '';
+          console.log(`- ${prefix}${item.step}`);
+          for (const criterion of item.criteria) {
+            console.log(`  - ${criterion}`);
+          }
+        }
+        console.log('');
+      }
+    }
   }
 }

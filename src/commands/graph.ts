@@ -154,6 +154,12 @@ export function traceCommand(id: string): void {
     console.log(`Node "${id}" not found in database.`);
     return;
   }
+  // v1.1: a secret-sensitivity card is invisible — never print its
+  // title/path/body. Report not-found to match recall/ask/related semantics.
+  if ((card as any).sensitivity === 'secret') {
+    console.log(`Node "${id}" not found in database.`);
+    return;
+  }
 
   console.log(`Trace for ${card.id}:`);
   console.log(`Type: ${card.type}`);
@@ -166,14 +172,16 @@ export function traceCommand(id: string): void {
   const placeholders = evidenceTypes.map(() => '?').join(',');
 
   // Find evidence: decision and trace type cards connected via edges
-  const evidenceRows = db.prepare(`
-    SELECT DISTINCT c.id, c.type, c.title, c.file_path
+  const evidenceRows = (db.prepare(`
+    SELECT DISTINCT c.id, c.type, c.title, c.file_path, c.sensitivity
     FROM edges e
     JOIN cards c ON (c.id = e.from_id OR c.id = e.to_id) AND c.id != ?
     WHERE (e.from_id = ? OR e.to_id = ?)
       AND c.type IN (${placeholders})
       AND c.is_deleted = 0
-  `).all(id, id, id, ...evidenceTypes) as (CardRow)[];
+  `).all(id, id, id, ...evidenceTypes) as (CardRow)[])
+    // v1.1: never surface secret-sensitivity evidence cards.
+    .filter(row => (row as any).sensitivity !== 'secret');
 
   if (evidenceRows.length > 0) {
     console.log('');
@@ -185,12 +193,14 @@ export function traceCommand(id: string): void {
   }
 
   // Find depends_on chain
-  const dependsOn = db.prepare(`
-    SELECT e.to_id, c.title as to_title, e.source, e.confidence
+  const dependsOn = (db.prepare(`
+    SELECT e.to_id, c.title as to_title, c.sensitivity as to_sensitivity, e.source, e.confidence
     FROM edges e
     LEFT JOIN cards c ON c.id = e.to_id AND c.is_deleted = 0
     WHERE e.from_id = ? AND e.type = 'depends_on'
-  `).all(id) as { to_id: string; to_title: string | null; source: string; confidence: number }[];
+  `).all(id) as { to_id: string; to_title: string | null; to_sensitivity: string | null; source: string; confidence: number }[])
+    // v1.1: hide edges pointing at secret-sensitivity cards.
+    .filter(row => row.to_sensitivity !== 'secret');
 
   if (dependsOn.length > 0) {
     console.log('\nDepends On:');
@@ -201,12 +211,14 @@ export function traceCommand(id: string): void {
   }
 
   // Find depended_by
-  const dependedBy = db.prepare(`
-    SELECT e.from_id, c.title as from_title, e.source, e.confidence
+  const dependedBy = (db.prepare(`
+    SELECT e.from_id, c.title as from_title, c.sensitivity as from_sensitivity, e.source, e.confidence
     FROM edges e
     LEFT JOIN cards c ON c.id = e.from_id AND c.is_deleted = 0
     WHERE e.to_id = ? AND e.type = 'depends_on'
-  `).all(id) as { from_id: string; from_title: string | null; source: string; confidence: number }[];
+  `).all(id) as { from_id: string; from_title: string | null; from_sensitivity: string | null; source: string; confidence: number }[])
+    // v1.1: hide edges pointing at secret-sensitivity cards.
+    .filter(row => row.from_sensitivity !== 'secret');
 
   if (dependedBy.length > 0) {
     console.log('\nDepended On By:');

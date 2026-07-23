@@ -2,12 +2,18 @@
 id: feature.v1_1_system_memory_release_20260722
 type: feature
 title: "v1.1 System Memory Release"
-status: draft
-tags: [v1.1, system-memory, miao-integration, security, multi-agent, reliability, os-kernel]
+status: implementing
+tags: [v1.1, system-memory, namespace, capability-acl, memory-poisoning, quotas, branch-merge, security]
 created: "2026-07-22"
-updated: "2026-07-22T00:00:00.000Z"
+updated: "2026-07-23T00:00:00.000Z"
 source_files:
-  - docs/v1.1 pre-design.md
+  - src/runtime/policy.ts
+  - src/core/consistency.ts
+  - src/core/capture.ts
+  - src/types/cards.ts
+  - src/core/format.ts
+  - src/commands/verify.ts
+  - src/commands/context.ts
 depends_on:
   - feature.v1_0_agentic_memory_runtime_20260722
   - decision.pmem_two_layer_architecture_20260722

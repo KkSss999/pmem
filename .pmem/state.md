@@ -22,6 +22,7 @@
 
 ## Recent Changes
 
+- 2026-07-23: v1.0.1 Agent-Trust Operations: added confidence/superseded_by/classification fields to CardFrontmatter, enhanced pmem verify with 5 new checks (low_confidence, unclassified_card, superseded_reference, stale_next_step, conflicting_classifications), scoring pipeline applies confidence boost/penalty and superseded penalty, structured next.md with P0/P1/P2/@owner/criteria, context command displays sorted task queue. 310/310 tests passing.
 - 2026-07-22: PR #15 merged: v1.0 Agentic Memory Runtime released to main. Post-merge review fixes applied — SDK type exports, MCP tool schema hardening (additionalProperties: false, path scope validation), CLI forget routed through Runtime, error handling in status/context commands. 310/310 tests passing, E2E green, CI green.
 - 2026-06-26: Repositioned pmem from "project logs plus recall" toward "structured project memory + high-quality RAG + agent-CRUD local knowledge OS".
 - v0.7.5 is now treated as the published Context Restoration milestone.
@@ -31,5 +32,4 @@
 - v1.0 targets Project RAG OS semantics: remember, forget, supersede, promote, distill, verify, and evidence-traceable CRUD.
 - 2026-06-06: Recorded v0.7.5 design discussion as memory cards.
 - Re-scoped visualization from v0.8.0 → v0.7.5 closeout target.
-- Locked the read-only / single-project / localhost scope.
 ## Recent Changes (v0.7.1)

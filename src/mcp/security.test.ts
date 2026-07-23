@@ -467,7 +467,11 @@ Core entry point.
   describe('MCP version constants', () => {
     it('uses package version for MCP server identity and response schema version', () => {
       assert.strictEqual(MCP_SERVER_NAME, 'pmem-rt');
-      assert.strictEqual(PACKAGE_VERSION, '1.0.0');
+      // Version is sourced from package.json — assert consistency, not a hardcoded literal.
+      const pkgVersion = JSON.parse(
+        fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8')
+      ).version as string;
+      assert.strictEqual(PACKAGE_VERSION, pkgVersion);
       assert.strictEqual(MCP_SCHEMA_VERSION, PACKAGE_VERSION);
     });
   });

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { CardRow } from '../../../types';
-import { fuseAndScore, ftsBase, graphBase, recencyFactor } from './scoring';
+import { fuseAndScore, ftsBase, graphBase, recencyFactor, confidenceFactor, supersededFactor } from './scoring';
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
@@ -86,5 +86,42 @@ describe('v0.8 scoring', () => {
       { card: oldDirtyExact, base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },
     ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.exact']) });
     assert.strictEqual(results[0].card.id, 'decision.exact');
+  });
+});
+
+describe('v1.1 agent-trust scoring factors', () => {
+  it('confidenceFactor boosts high and penalizes low confidence', () => {
+    assert.strictEqual(confidenceFactor(null), 1.0);
+    assert.strictEqual(confidenceFactor(undefined), 1.0);
+    assert.ok(confidenceFactor(0.95) > 1.0, 'high confidence should boost');
+    assert.ok(confidenceFactor(0.1) < 1.0, 'low confidence should penalize');
+  });
+
+  it('supersededFactor penalizes superseded cards', () => {
+    assert.strictEqual(supersededFactor(null), 1.0);
+    assert.strictEqual(supersededFactor([]), 1.0);
+    assert.ok(supersededFactor(['decision.new']) < 1.0, 'array supersede penalizes');
+    // stored form is a JSON string; any non-empty string is treated as superseded
+    assert.ok(supersededFactor('["decision.new"]') < 1.0, 'string supersede penalizes');
+  });
+
+  it('fuseAndScore applies confidence and superseded factors from card fields', () => {
+    const lowConf = card({ id: 'decision.low', confidence: 0.1 } as any);
+    const superseded = card({ id: 'decision.sup', superseded_by: '["decision.low"]' } as any);
+    const baseline = card({ id: 'decision.base' });
+    const now = Date.parse('2026-01-02T00:00:00.000Z');
+    const results = fuseAndScore([
+      { card: lowConf, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
+      { card: superseded, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
+      { card: baseline, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
+    ], { now, dirtyCardIds: new Set() });
+    const byId = Object.fromEntries(results.map(r => [r.card.id, r]));
+    assert.ok(byId['decision.low'].factors.confidence < 1.0, 'low confidence factor applied');
+    assert.ok(byId['decision.sup'].factors.superseded < 1.0, 'superseded factor applied');
+    assert.strictEqual(byId['decision.base'].factors.confidence, 1.0);
+    assert.strictEqual(byId['decision.base'].factors.superseded, 1.0);
+    // baseline should outrank both penalized cards
+    assert.ok(byId['decision.base'].score > byId['decision.low'].score);
+    assert.ok(byId['decision.base'].score > byId['decision.sup'].score);
   });
 });

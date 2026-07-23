@@ -4,10 +4,11 @@ import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLoc
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
-import { checkStaleMemory } from '../core/consistency';
+import { checkStaleMemory, checkDocSync, verifyMemory, checkModuleContracts } from '../core/consistency';
 import type { VerifyIssue, VerifyResult, CardRow, EdgeRow } from '../types';
 import { rebuildCommand } from './rebuild';
 import { parseFrontmatter } from '../core/yaml';
+import { getDistillUrgency } from '../runtime/policy';
 
 const PMEM_DIR = '.pmem';
 
@@ -103,6 +104,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
 
     console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
     console.log(`Score: ${score}/100`);
+
     console.log('');
     for (const issue of issues) {
       let icon = 'ℹ';
@@ -376,6 +378,54 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
           card_id: ci.card_id,
         });
       }
+
+      // 10. Agent-trust checks: confidence, classification, superseded references, poisoning.
+      // verifyMemory is the aggregate — filter out types that are handled by their own
+      // dedicated blocks (staleMemory @ step 9, moduleContracts @ step 11, docSync @ step 12)
+      // to prevent double-reporting.
+      const trustIssues = verifyMemory(pmemPath)
+        .filter(ci =>
+          ci.type !== 'stale_memory' &&
+          ci.type !== 'missing_contract_field' &&
+          ci.type !== 'missing_source_file' &&
+          ci.type !== 'untracked_card'
+        );
+      for (const ci of trustIssues) {
+        // map 'blocking' → 'warning' for VerifyIssue compatibility
+        const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
+        issues.push({
+          severity: sev as 'error' | 'warning' | 'info',
+          type: ci.type,
+          message: ci.message,
+          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix',
+          card_id: ci.card_id,
+        });
+      }
+
+      // 11. Module boundary contract checks (v1.0.2)
+      const contractIssues = checkModuleContracts(pmemPath);
+      for (const ci of contractIssues) {
+        issues.push({
+          severity: 'info',
+          type: ci.type,
+          message: ci.message,
+          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix',
+          card_id: ci.card_id,
+        });
+      }
+
+      // 12. Doc-pmem sync: detect drift (v1.0.2)
+      const docSyncIssues = checkDocSync(pmemPath);
+      for (const ci of docSyncIssues) {
+        const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
+        issues.push({
+          severity: sev as 'error' | 'warning' | 'info',
+          type: ci.type,
+          message: ci.message,
+          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix-stale',
+          card_id: ci.card_id,
+        });
+      }
     }
 
     // 7. Check AGENTS.md exists
@@ -405,6 +455,8 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   const infos = issues.filter(i => i.severity === 'info');
   const passed = errors.length === 0;
   const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 5);
+  const missingSourceCount = issues.filter(i => i.type === 'missing_source_file').length;
+  const untrackedCount = issues.filter(i => i.type === 'untracked_card').length;
 
   const result: VerifyResult = { passed, score, issues };
 
@@ -412,6 +464,9 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   if (passed && warnings.length === 0) {
     console.log(`✓ Memory verification passed.`);
     console.log(`  Score: ${score}/100`);
+    if (missingSourceCount > 0 || untrackedCount > 0) {
+      console.log(`  Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`);
+    }
     if (infos.length > 0) {
       console.log('');
       console.log('Informational Notes:');
@@ -419,11 +474,15 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
         console.log(`ℹ [${issue.type}] ${issue.message}`);
       }
     }
+    printDistillSuggestion(db, pmemPath);
     return;
   }
 
   console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
   console.log(`Score: ${score}/100`);
+  if (missingSourceCount > 0 || untrackedCount > 0) {
+    console.log(`Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`);
+  }
   console.log('');
 
   for (const issue of issues) {
@@ -435,6 +494,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     console.log('');
   }
 
+  printDistillSuggestion(db, pmemPath);
   // Helper to clean up stale DB card rows when source .md files are missing.
   // Called before rebuildCommand() so --fix / --fix-stale can immediately
   // remove stale card references without waiting for a full index rebuild.
@@ -535,6 +595,21 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     // `releaseLock` calls above cover the normal exit paths since
     // `process.exit` does NOT run `finally` blocks.
     try { releaseLock(lockPath); } catch { /* ignore */ }
+  }
+}
+
+
+function printDistillSuggestion(db: ReturnType<typeof openDatabase> | null, pmemPath: string): void {
+  if (!db) return;
+  try {
+    const traceRow = db.prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0").get() as { count: number };
+    const traceCount = traceRow?.count ?? 0;
+    const urgency = getDistillUrgency(traceCount);
+    if (urgency !== 'none') {
+      console.log(`ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`);
+    }
+  } catch {
+    // Silently ignore DB errors — distill is a suggestion only
   }
 }
 

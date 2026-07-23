@@ -7,7 +7,22 @@ import type { CaptureOptions, CaptureResult } from '../core/capture';
 import type { ContextQueryResult, MemoryCard } from '../types';
 
 export type RuntimePreset = 'software' | 'research' | 'novel' | (string & {});
-export type MemoryScopeKind = 'project' | 'branch' | 'session' | 'agent' | 'private';
+export type MemoryScopeKind = 'system' | 'user' | 'application' | 'workspace' | 'agent' | 'task' | 'session' | 'private' | 'shared' | (string & {});
+
+export interface NamespaceAddress {
+  systemId?: string;
+  userId?: string;
+  appId?: string;
+  workspaceId?: string;
+  agentId?: string;
+  taskId?: string;
+  sessionId?: string;
+}
+
+export interface MemoryAddress extends NamespaceAddress {
+  memoryId: string;
+}
+
 export type DurableFormat = 'markdown';
 export type ConfirmationPolicy = 'required' | 'optional' | 'never';
 export type EpisodicCapturePolicy = 'automatic' | 'manual' | 'disabled';
@@ -28,6 +43,18 @@ export interface RuntimeConfig {
   };
 }
 
+export type MemoryCapability =
+  | 'memory.read' | 'memory.search' | 'memory.observe'
+  | 'memory.propose' | 'memory.commit' | 'memory.amend'
+  | 'memory.supersede' | 'memory.forget' | 'memory.purge'
+  | 'memory.share' | 'memory.export' | 'memory.admin';
+
+export interface CapabilitySet {
+  principal: string;
+  capabilities: MemoryCapability[];
+  scope: string;
+}
+
 export interface PmemOpenOptions {
   /** Project root directory. Pmem data is expected at `${root}/.pmem`. */
   root: string;
@@ -35,6 +62,8 @@ export interface PmemOpenOptions {
   preset?: RuntimePreset;
   /** Optional runtime config overrides layered over preset defaults. */
   config?: PartialRuntimeConfig;
+  /** Optional capability-based access control sets for multi-agent security. */
+  capabilities?: CapabilitySet[];
 }
 
 export type PartialRuntimeConfig = {
@@ -48,6 +77,8 @@ export interface RecallOptions {
   since?: string;
   recent?: number;
   noTraces?: boolean;
+  /** v1.1: filter scoped events to those visible to this principal (namespace isolation). */
+  principal?: string;
 }
 
 export interface RelatedOptions {
