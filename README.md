@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="pmem.png" alt="pmem logo" width="200" />
+</p>
+
 # pmem — Project Memory for AI Agents
 
 [![npm version](https://img.shields.io/npm/v/pmem-ai)](https://www.npmjs.com/package/pmem-ai)
@@ -25,7 +29,7 @@ The design is intentionally **local and Git-friendly**. Markdown cards are the s
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-**v1.0 (current)** ships the **Agentic Memory Runtime**: a two-layer architecture with the familiar CLI/Skills/MCP product on top and an embeddable `Pmem` SDK (`Pmem.open()` → `memory.ask()` / `memory.observe()` / `memory.forget()`) beneath. CLI, MCP, and SDK all route through the same Runtime core — one implementation, three interfaces.
+**v1.1 (current)** ships **System Memory Security**: namespace hierarchy, capability ACL with 12 capabilities, agent quotas, memory poisoning defense, trust-aware recall scoring, and secret-sensitivity filtering — all built on the v1.0 two-layer architecture.
 
 ## Who It's For
 
@@ -652,8 +656,10 @@ pmem verify
 - Unified query core: CLI / MCP / SDK share one implementation
 - MCP: 5 read-only tools + 3 append-only write tools (`pmem_observe`, `pmem_forget`, `pmem_capture`)
 
-**v1.1 System Memory** — planning:
-- See [docs/v1.1 pre-design.md](docs/v1.1%20pre-design.md)
+**v1.1 System Memory** — shipped:
+- 9-level namespace hierarchy with capability ACL (12 capabilities)
+- Agent quotas, memory poisoning defense
+- Trust-aware recall scoring, secret-sensitivity filtering
 
 Deferred:
 - Embedding-based semantic search

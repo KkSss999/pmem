@@ -6,7 +6,7 @@ allowed-tools: Bash(pmem:*)
 
 # Project Memory with pmem
 
-`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. v1.0 ships a two-layer architecture: the familiar CLI/Skills/MCP product layer, plus an embeddable Agentic Memory Runtime (SDK) for deep integration. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.1** adds namespace hierarchy, capability ACL (12 capabilities), agent quotas, memory poisoning defense, trust-aware recall scoring, and secret-sensitivity filtering. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
@@ -336,6 +336,20 @@ pmem mcp --write=append-only      # allows capture, observe, forget
 | `pmem_forget` | Append a tombstone event for an observation or memory identifier (audit-preserving) |
 
 All card content carries `content_trust: "untrusted_project_data"`. See [docs/pmem-rt.md](../docs/pmem-rt.md) for the full integration guide.
+
+### System Memory Security (v1.1)
+
+**Namespace Hierarchy** — 9-level scope system: `system` → `user` → `application` → `workspace` → `agent` → `task` → `session`, plus `private` and `shared`. Use `ScopeManager` to resolve principals and inherit capabilities.
+
+**Capability ACL (12 capabilities)** — `read`, `search`, `observe`, `propose`, `commit`, `amend`, `supersede`, `forget`, `purge`, `share`, `export`, `admin`. Capabilities are granted per-principal with scope inheritance (`agent:x` → `agent:x:*`). When no capabilities are registered, behavior matches v1.0 (read/search open).
+
+**Agent Quotas** — `PolicyEngine.setQuota()` enforces per-principal observe/capture limits. Capability checks run before quota so denied operations don't consume quota.
+
+**Memory Poisoning Defense** — `pmem verify` now detects untrusted-ratio warnings (>20% untrusted), `untrusted_fact` conflicts, and `agent_only_decision` info alongside trust-label checks.
+
+**Trust-Aware Recall** — `sensitivity`, `trust_label`, `classification`, `confidence`, and `superseded_by` columns are persisted to SQLite and surfaced in `recall`/`ask`. `confidence` boosts/penalizes and `superseded_by` down-weights results in scoring.
+
+**Secret Sensitivity Filtering** — `secret` sensitivity cards are excluded at the query source (`recall`/`ask`/`context`) and in output formatting. This filtering covers all read paths: recall foundational lists, the relation graph (`related`/`pmem_related`), and the `pmem trace`/`graph` CLI. A secret main card reports not-found and secret relation targets are omitted.
 
 ### Runtime / SDK (v1.0)
 

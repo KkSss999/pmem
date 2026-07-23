@@ -80,8 +80,7 @@
     "skills/**/*.md",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE",
-    "docs/*.md"
+    "LICENSE"
   ],
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
