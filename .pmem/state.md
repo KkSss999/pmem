@@ -16,8 +16,8 @@
 
 ## Active Features (roadmap)
 - feature.v0_8_hybrid_recall_engine_20260626
-- feature.v0_8_5_lightweight_semantic_layer_20260626
-- feature.v0_9_contextual_rerank_retrieval_20260626
+- feature.v1_1_1_lightweight_semantic_layer_20260626
+- feature.v1_1_2_contextual_rerank_retrieval_20260626
 - feature.v1_0_project_rag_os_20260626
 
 ## Recent Changes
@@ -27,8 +27,8 @@
 - 2026-06-26: Repositioned pmem from "project logs plus recall" toward "structured project memory + high-quality RAG + agent-CRUD local knowledge OS".
 - v0.7.5 is now treated as the published Context Restoration milestone.
 - v0.8 becomes the Hybrid Recall Engine target: SQLite FTS/BM25, structured filters, graph expansion, recency/module/decision scoring, task-aware context packing, and explainable recall.
-- v0.8.5 adds a lightweight semantic layer only after hybrid recall is working; SQLite-first storage is preferred over a heavy vector database.
-- v0.9 adds contextual retrieval and reranking.
+- v1.1.1 adds a lightweight semantic layer only after hybrid recall is working; SQLite-first storage is preferred over a heavy vector database.
+- v1.1.2 adds contextual retrieval and reranking.
 - v1.0 targets Project RAG OS semantics: remember, forget, supersede, promote, distill, verify, and evidence-traceable CRUD.
 - 2026-06-06: Recorded v0.7.5 design discussion as memory cards.
 - Re-scoped visualization from v0.8.0 → v0.7.5 closeout target.

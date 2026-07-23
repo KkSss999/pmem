@@ -1,9 +1,9 @@
 ---
-id: feature.v0_8_5_lightweight_semantic_layer_20260626
+id: feature.v1_1_1_lightweight_semantic_layer_20260626
 type: feature
-title: "v0.8.5 Lightweight Semantic Layer"
+title: "v1.1.1 Lightweight Semantic Layer"
 status: draft
-tags: [v0.8.5, semantic-search, embeddings, sqlite, retrieval]
+tags: [v1.1.1, semantic-search, embeddings, sqlite, retrieval]
 created: "2026-06-26"
 updated: "2026-06-26T12:15:00.000Z"
 source_files:
@@ -16,7 +16,7 @@ related_to:
   - risk.rag_scope_creep_heavy_vector_stack_20260626
 last_verified: "2026-06-26T12:15:00.000Z"
 ---
-# v0.8.5 Lightweight Semantic Layer
+# v1.1.1 Lightweight Semantic Layer
 
 ## Goal
 

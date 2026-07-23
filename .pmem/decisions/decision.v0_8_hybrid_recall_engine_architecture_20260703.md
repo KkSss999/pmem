@@ -45,7 +45,7 @@ v0.8 implements a five-stage deterministic retrieval pipeline: intent parse → 
 
 ## Explicit Deferrals
 
-- Embeddings / semantic layer → v0.8.5 ([[decision.sqlite_first_semantic_layer_20260626]])
-- LLM rerank / contextual retrieval → v0.9
+- Embeddings / semantic layer → v1.1.1 ([[decision.sqlite_first_semantic_layer_20260626]])
+- LLM rerank / contextual retrieval → v1.1.2
 - Card body chunking → whole-card recall unit in v0.8
 - New MCP tool surface → existing tools benefit transparently

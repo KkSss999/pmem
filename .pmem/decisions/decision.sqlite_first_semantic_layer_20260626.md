@@ -3,7 +3,7 @@ id: decision.sqlite_first_semantic_layer_20260626
 type: decision
 title: "SQLite-First Semantic Layer"
 status: active
-tags: [semantic-search, embeddings, sqlite, v0.8.5, architecture]
+tags: [semantic-search, embeddings, sqlite, v1.1.1, architecture]
 created: "2026-06-26"
 updated: "2026-06-26T12:15:00.000Z"
 source_files:
@@ -11,7 +11,7 @@ source_files:
 depends_on:
   - decision.structure_first_hybrid_recall_20260626
 related_to:
-  - feature.v0_8_5_lightweight_semantic_layer_20260626
+  - feature.v1_1_1_lightweight_semantic_layer_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
 last_verified: "2026-06-26T12:15:00.000Z"
 ---

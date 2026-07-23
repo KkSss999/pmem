@@ -13,7 +13,7 @@ depends_on:
 related_to:
   - decision.sqlite_first_semantic_layer_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
-  - feature.v0_8_5_lightweight_semantic_layer_20260626
+  - feature.v1_1_1_lightweight_semantic_layer_20260626
 last_verified: "2026-06-26T12:15:00.000Z"
 ---
 # RAG Scope Creep Into Heavy Vector Stack
@@ -34,5 +34,5 @@ The Project RAG OS direction could be misread as "attach a vector database" and 
 
 - Make v0.8 deterministic and structure-first.
 - Require an architecture decision before semantic search implementation.
-- Keep semantic search optional and SQLite-first in v0.8.5.
+- Keep semantic search optional and SQLite-first in v1.1.1.
 - Treat heavy vector engines as scale-specific options, not defaults.

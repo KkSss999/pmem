@@ -23,8 +23,8 @@ related_to:
   - decision.structure_first_hybrid_recall_20260626
   - decision.sqlite_first_semantic_layer_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
-  - feature.v0_8_5_lightweight_semantic_layer_20260626
-  - feature.v0_9_contextual_rerank_retrieval_20260626
+  - feature.v1_1_1_lightweight_semantic_layer_20260626
+  - feature.v1_1_2_contextual_rerank_retrieval_20260626
   - feature.v1_0_project_rag_os_20260626
   - task.rag_research_sprint_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
@@ -92,8 +92,8 @@ The next major product surface can be a local UI for humans to inspect project m
 
 - v0.7.5: **Context Restoration**. The milestone is published. It proves that pmem can write and restore project memory with thick traces, trace-aware recall, module/decision inference, and next-step cleanup before adding heavier retrieval machinery.
 - v0.8: **Hybrid Recall Engine**. Add SQLite FTS/BM25, field weighting, structured filters, graph expansion, recency scoring, module/decision boosts, task-aware ranking, must-read context packing, and "why recalled" explanations.
-- v0.8.5: **Lightweight Semantic Layer**. Add optional fuzzy semantic search only after the hybrid engine exists. Prefer Transformers.js + MiniLM-style embeddings + SQLite BLOB + linear cosine scan for single-project scale before considering Qdrant, Milvus, Vespa, turbovec, or sqlite-vec.
-- v0.9: **Rerank + Contextual Retrieval**. Add contextual chunks, query rewrite, small-to-big retrieval, candidate reranking, and citation/evidence scoring.
+- v1.1.1: **Lightweight Semantic Layer**. Add optional fuzzy semantic search only after the hybrid engine exists. Prefer Transformers.js + MiniLM-style embeddings + SQLite BLOB + linear cosine scan for single-project scale before considering Qdrant, Milvus, Vespa, turbovec, or sqlite-vec.
+- v1.1.2: **Rerank + Contextual Retrieval**. Add contextual chunks, query rewrite, small-to-big retrieval, candidate reranking, and citation/evidence scoring.
 - v1.0: **Project RAG OS**. Agent-facing memory CRUD becomes first-class: remember, forget, supersede, promote, distill, search, context, doctor memory, and verify.
 
 ## v0.8 Research Gate
@@ -105,7 +105,7 @@ The research gate must answer:
 - What candidate-generation stages run in v0.8?
 - How do BM25/FTS, exact IDs, source files, metadata filters, graph expansion, and recency combine?
 - Which ranking signals are deterministic and explainable?
-- Which signals are deferred to v0.8.5/v0.9?
+- Which signals are deferred to v1.1.1/v1.1.2?
 - What evaluation set proves recall improved?
 
 ## Deferred Threads

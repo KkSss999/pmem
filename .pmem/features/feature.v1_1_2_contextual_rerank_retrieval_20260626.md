@@ -1,9 +1,9 @@
 ---
 id: feature.v0_9_contextual_rerank_retrieval_20260626
 type: feature
-title: "v0.9 Contextual Retrieval and Reranking"
+title: "v1.1.2 Contextual Retrieval and Reranking"
 status: draft
-tags: [v0.9, contextual-retrieval, reranking, evidence, recall]
+tags: [v1.1.2, contextual-retrieval, reranking, evidence, recall]
 created: "2026-06-26"
 updated: "2026-06-26T12:15:00.000Z"
 source_files:
@@ -12,12 +12,12 @@ source_files:
 depends_on:
   - feature.v0_8_hybrid_recall_engine_20260626
 related_to:
-  - feature.v0_8_5_lightweight_semantic_layer_20260626
+  - feature.v1_1_1_lightweight_semantic_layer_20260626
   - feature.v1_0_project_rag_os_20260626
   - module.recall_retrieval_runtime_20260626
 last_verified: "2026-07-03T00:00:00.000Z"
 ---
-# v0.9 Contextual Retrieval and Reranking
+# v1.1.2 Contextual Retrieval and Reranking
 
 ## Goal
 
