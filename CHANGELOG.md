@@ -2,6 +2,54 @@
 
 All notable changes to pmem are documented here.
 
+## v1.1.0 — System Memory Security (2026-07-23)
+
+### Added
+
+- **9-level namespace hierarchy**: `system` → `user` → `application` → `workspace` → `agent` → `task` → `session`, plus `private` and `shared`. `ScopeManager` gains `parentScope()`, level-based `children()`, and namespace-address inference in `resolve()`.
+- **Capability ACL (12 capabilities)**: `MemoryCapability` (`read`/`search`/`observe`/`propose`/`commit`/`amend`/`supersede`/`forget`/`purge`/`share`/`export`/`admin`) with per-principal grants, scope inheritance (`agent:x` → `agent:x:*`), and `memory.admin` full propagation. `observe`/`forget`/`capture` are guarded and authorize the **calling principal**. When no capabilities are registered, behavior matches v1.0 (read/search open).
+- **Agent quotas**: `PolicyEngine.setQuota()` enforces per-principal observe/capture limits; exceeding a limit throws `QuotaExceededError`. Capability checks run before quota so a denied operation does not consume quota.
+- **Branch memory merge**: `mergeBranchMemory(source, target, principal)` migrates event-store scopes; guarded by `memory.admin`.
+- **Memory poisoning defense**: `pmem verify` gains `checkMemoryPoisoning()` (>20% untrusted-ratio warning, `untrusted_fact` conflict detection, `agent_only_decision` info) alongside `trust_labels` checks.
+- **Trust-aware recall & scoring**: `sensitivity`, `trust_label`, `classification`, `confidence`, and `superseded_by` are persisted to the SQLite `cards` table and surfaced in `recall`/`ask`. `confidence` boosts/penalizes and `superseded_by` down-weights results in scoring.
+
+### Security
+
+- **ACL authorizes the calling principal**: capability checks validate the principal making the request rather than granting when *any* registered principal holds the capability.
+- **`secret` sensitivity is filtered from agent context**: secret-sensitivity cards are excluded at the query source (`recall`/`ask`) and in output formatting.
+- **Namespace read isolation**: `recall` accepts an optional `principal` and filters scoped events through a fail-safe visibility check — unknown principals are treated as least-privileged (no fail-open); `shared`/legacy (`project`/`branch:*`) scopes remain visible for compatibility.
+
+### Changed
+
+- **`cards` schema**: added `confidence`, `superseded_by`, `classification`, `trust_label`, `sensitivity` columns with idempotent migration for existing databases.
+- **Version**: package and MCP schema version aligned to `1.1.0`.
+
+### Compatibility
+
+- All new frontmatter fields and the `capabilities`/`principal` options are optional; existing cards, CLI commands, MCP tools, and SQLite databases remain backward compatible (auto-migrated on open).
+- Deferred: full card-level per-principal read isolation, public `Pmem.open()` wiring for quota registration, and the v1.1 pre-design's Rust daemon/IPC/SLOs.
+
+## v1.0.2 — Trust & Delivery (2026-07-23)
+
+### Added
+
+- **`trust_label` and `sensitivity` frontmatter**: 7 trust levels (`system_trusted` → `untrusted_content`) and 5 sensitivity levels (`public` → `secret`). Surfaced by `verify` and recall display.
+- **Module boundary contracts**: `contract` frontmatter (owner/interface/invariants/verification) with `checkModuleContracts()` (`missing_contract_field`) in `pmem verify`.
+- **Auto-distill urgency**: `getDistillUrgency()` classifies trace backlog (`suggest` ≥ 10, `recommended` ≥ 20, `urgent` ≥ 40); `pmem capture` suggests distillation after capture.
+- **Doc-pmem sync drift**: `checkDocSync()` reports `missing_source_file` (referenced source deleted) and `untracked_card` (no `source_files` to track).
+
+### Fixed
+
+- **Doc-sync double-reporting**: `pmem verify` no longer reports `missing_source_file`/`untracked_card` twice (aggregate `verifyMemory()` now excludes types handled by dedicated blocks).
+
+## v1.0.1 — Agent-Trust Operations (2026-07-22)
+
+### Added
+
+- **Agent-trust frontmatter**: `confidence` (0–1 reliability), `superseded_by` (card IDs that replace this one), and `classification` (`fact`/`decision`/`assumption`/`plan`/`risk`/`question`).
+- **5 new `pmem verify` checks**: `low_confidence`, `unclassified_card`, `superseded_reference`, `stale_next_step`, `conflicting_classifications`.
+- **Structured next-step queue**: `parseStructuredNext()` extracts `[P0]`/`[P1]`/`[P2]` priority, `@owner`, and acceptance-criteria sub-bullets from `next.md`; rendered by `pmem context`.
+
 ## v1.0.0 — Agentic Memory Runtime (2026-07-22)
 
 ### Added

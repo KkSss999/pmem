@@ -77,6 +77,8 @@ export interface RecallOptions {
   since?: string;
   recent?: number;
   noTraces?: boolean;
+  /** v1.1: filter scoped events to those visible to this principal (namespace isolation). */
+  principal?: string;
 }
 
 export interface RelatedOptions {

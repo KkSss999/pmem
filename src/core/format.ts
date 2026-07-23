@@ -215,11 +215,11 @@ function formatRecallCompact(r: Record<string, unknown>): string {
   const arch = r.architecture as any[] | undefined;
   if (Array.isArray(arch) && arch.length > 0) {
     for (const m of arch) {
+      if ((m as any).sensitivity === 'secret') continue;
       const filesStr = Array.isArray(m.source_files) && m.source_files.length > 0
         ? `: ${m.source_files.join(', ')}`
         : '';
       const summaryStr = m.summary ? ` — ${m.summary}` : '';
-      if ((m as any).sensitivity === 'secret') continue;
       const confStr = (m as any).confidence != null ? ` [confidence: ${(m as any).confidence}]` : '';
       const supStr = (m as any).superseded_by ? ` [superseded]` : '';
       const classStr = (m as any).classification ? ` [${(m as any).classification}]` : '';
@@ -249,6 +249,7 @@ function formatRecallCompact(r: Record<string, unknown>): string {
   };
   if (Array.isArray(decs) && decs.length > 0) {
     for (const d of decs) {
+      if ((d as any).sensitivity === 'secret') continue;
       const dClassStr = (d as any).classification ? ` [${(d as any).classification}]` : '';
       const dConfStr = (d as any).confidence != null ? ` [confidence: ${(d as any).confidence}]` : '';
       const dSupStr = (d as any).superseded_by ? ` [superseded]` : '';

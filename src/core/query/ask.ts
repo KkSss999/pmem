@@ -24,6 +24,10 @@ export interface AskMatchV03 {
   reasons?: Reason[];
   factors?: ScoreFactors;
   stale?: boolean;
+  // v1.1 agent-trust display fields (optional, additive only)
+  card_confidence?: number | null;
+  superseded_by?: string | null;
+  classification?: string | null;
 }
 
 export interface AskResultV03 {
@@ -80,10 +84,12 @@ export function askQuery(pmemPath: string, query: string, options: AskOptions & 
   ).all() as Array<{ target: string }>;
   const dirtyCardIds = new Set(dirtyRows.map(r => r.target));
 
-  const scored = fuseAndScore(candidates, {
+  const scoredAll = fuseAndScore(candidates, {
     now: options.now ?? Date.now(),
     dirtyCardIds,
   });
+  // v1.1: never surface secret-sensitivity cards in ask output.
+  const scored = scoredAll.filter(r => (r.card as any).sensitivity !== 'secret');
 
   const limit = options.limit ?? 20;
   const top = scored.slice(0, limit);
@@ -119,6 +125,12 @@ function toMatch(r: ScoredResult, explain: boolean): AskMatchV03 {
   };
   if (r.edge_type) match.edge_type = r.edge_type;
   if (r.from_card) match.from_card = r.from_card;
+  const cardConfidence = (r.card as any).confidence;
+  if (cardConfidence != null) match.card_confidence = cardConfidence;
+  const cardSuperseded = (r.card as any).superseded_by;
+  if (cardSuperseded) match.superseded_by = cardSuperseded;
+  const cardClassification = (r.card as any).classification;
+  if (cardClassification) match.classification = cardClassification;
   if (explain) {
     match.reasons = r.reasons;
     match.factors = r.factors;

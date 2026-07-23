@@ -291,6 +291,11 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
         section_count: secCount,
         is_deleted: 0,
         is_candidate: isCandidate,
+        confidence: fm.confidence ?? null,
+        superseded_by: fm.superseded_by ?? null,
+        classification: fm.classification ?? null,
+        trust_label: fm.trust_label ?? null,
+        sensitivity: fm.sensitivity ?? null,
       };
 
       upsertCard(db, cardRow);

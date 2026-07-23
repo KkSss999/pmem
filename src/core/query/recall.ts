@@ -6,9 +6,23 @@ import { openDatabase, createSchema, getRecentRuntimeEvents } from '../db';
 import { getCurrentBranch } from '../git';
 import { loadManifest, resolveConfig } from '../manifest';
 import { parseTraceCard } from '../traceParse';
+import { isScopeVisible } from '../../runtime/scope';
 import type { CardRow } from '../../types';
 
 const PMEM_DIR = '.pmem';
+
+/** Card row shape including v1.1 agent-trust columns used by recall. */
+interface TrustCardRow {
+  id: string;
+  title: string;
+  summary: string | null;
+  file_path: string;
+  confidence: number | null;
+  superseded_by: string | null;
+  classification: string | null;
+  trust_label: string | null;
+  sensitivity: string | null;
+}
 
 export interface RecallQueryResult {
   project: string;
@@ -42,12 +56,22 @@ export interface RecallQueryResult {
     summary: string | null;
     file_path: string;
     source_files: string[];
+    confidence?: number | null;
+    superseded_by?: string | null;
+    classification?: string | null;
+    trust_label?: string | null;
+    sensitivity?: string | null;
   }>;
   decisions?: Array<{
     id: string;
     title: string;
     summary: string | null;
     file_path: string;
+    confidence?: number | null;
+    superseded_by?: string | null;
+    classification?: string | null;
+    trust_label?: string | null;
+    sensitivity?: string | null;
   }>;
   context_summary?: string[];
 }
@@ -59,6 +83,8 @@ export function recallQuery(pmemPath: string, options?: {
   noTraces?: boolean;
   db?: Database.Database;
   cwd?: string;
+  /** v1.1: when set, scoped events not visible to this principal are filtered out. */
+  principal?: string;
 }): RecallQueryResult {
   const cwd = options?.cwd ?? process.cwd();
   const indexContent = readFile(path.join(pmemPath, 'index.md'));
@@ -229,8 +255,11 @@ export function recallQuery(pmemPath: string, options?: {
     result.recent_updates = recentUpdates;
 
     const currentBranch = getCurrentBranch(cwd);
+    const principal = options?.principal;
     result.recent_events = getRecentRuntimeEvents(db, 20)
       .filter(e => !e.branch || !currentBranch || e.branch === currentBranch)
+      // v1.1: enforce namespace isolation on scoped events when a principal is given.
+      .filter(e => !principal || isScopeVisible(e.scope ?? (e.branch ? `branch:${e.branch}` : 'project'), principal))
       .slice(0, 5)
       .map(e => ({
         event_type: e.event_type,
@@ -242,31 +271,45 @@ export function recallQuery(pmemPath: string, options?: {
 
     // Load active architecture modules
     const modules = db.prepare(
-      "SELECT id, title, summary, file_path FROM cards WHERE type = 'module' AND is_deleted = 0 AND is_candidate = 0"
-    ).all() as Array<{ id: string; title: string; summary: string | null; file_path: string }>;
-    
-    result.architecture = modules.map(m => {
-      const paths = db.prepare("SELECT path FROM paths WHERE card_id = ? AND relation = 'source_file'").all(m.id) as Array<{ path: string }>;
-      return {
-        id: m.id,
-        title: m.title,
-        summary: m.summary,
-        file_path: m.file_path,
-        source_files: paths.map(p => p.path)
-      };
-    });
+      "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'module' AND is_deleted = 0 AND is_candidate = 0"
+    ).all() as Array<TrustCardRow>;
+
+    result.architecture = modules
+      .filter(m => m.sensitivity !== 'secret')
+      .map(m => {
+        const paths = db.prepare("SELECT path FROM paths WHERE card_id = ? AND relation = 'source_file'").all(m.id) as Array<{ path: string }>;
+        return {
+          id: m.id,
+          title: m.title,
+          summary: m.summary,
+          file_path: m.file_path,
+          source_files: paths.map(p => p.path),
+          confidence: m.confidence,
+          superseded_by: m.superseded_by,
+          classification: m.classification,
+          trust_label: m.trust_label,
+          sensitivity: m.sensitivity,
+        };
+      });
 
     // Load active decisions
     const decs = db.prepare(
-      "SELECT id, title, summary, file_path FROM cards WHERE type = 'decision' AND is_deleted = 0 AND is_candidate = 0"
-    ).all() as Array<{ id: string; title: string; summary: string | null; file_path: string }>;
-    
-    result.decisions = decs.map(d => ({
-      id: d.id,
-      title: d.title,
-      summary: d.summary,
-      file_path: d.file_path
-    }));
+      "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'decision' AND is_deleted = 0 AND is_candidate = 0"
+    ).all() as Array<TrustCardRow>;
+
+    result.decisions = decs
+      .filter(d => d.sensitivity !== 'secret')
+      .map(d => ({
+        id: d.id,
+        title: d.title,
+        summary: d.summary,
+        file_path: d.file_path,
+        confidence: d.confidence,
+        superseded_by: d.superseded_by,
+        classification: d.classification,
+        trust_label: d.trust_label,
+        sensitivity: d.sensitivity,
+      }));
 
   } catch (err: any) {
     // DB error fallback

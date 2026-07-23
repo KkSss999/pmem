@@ -379,10 +379,17 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
         });
       }
 
-      // 10. Agent-trust checks: confidence, classification, superseded references
-      // These use info/warning severity as returned by the consistency functions.
+      // 10. Agent-trust checks: confidence, classification, superseded references, poisoning.
+      // verifyMemory is the aggregate — filter out types that are handled by their own
+      // dedicated blocks (staleMemory @ step 9, moduleContracts @ step 11, docSync @ step 12)
+      // to prevent double-reporting.
       const trustIssues = verifyMemory(pmemPath)
-        .filter(ci => ci.type !== 'stale_memory' && ci.type !== 'missing_contract_field');
+        .filter(ci =>
+          ci.type !== 'stale_memory' &&
+          ci.type !== 'missing_contract_field' &&
+          ci.type !== 'missing_source_file' &&
+          ci.type !== 'untracked_card'
+        );
       for (const ci of trustIssues) {
         // map 'blocking' → 'warning' for VerifyIssue compatibility
         const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;

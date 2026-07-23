@@ -70,11 +70,14 @@ export class PolicyEngine {
     if (this.capabilities.length === 0) return;
     const requiredCap = this.proposalTypeToCapability(memory.type);
     if (!requiredCap) return;
-    for (const set of this.capabilities) {
-      if (this.checkCapability(set.principal, requiredCap, memory.scope)) return;
-    }
+    // Validate the *calling* principal only — never grant on the basis that
+    // some other registered principal happens to hold the capability.
+    const principal = typeof memory.metadata?.principal === 'string' && memory.metadata.principal.trim()
+      ? memory.metadata.principal.trim()
+      : 'default';
+    if (this.checkCapability(principal, requiredCap, memory.scope)) return;
     throw new Error(
-      `Capability '${requiredCap}' is required for '${memory.type}' on scope '${memory.scope}', but no principal has it.`
+      `Capability '${requiredCap}' is required for '${memory.type}' on scope '${memory.scope}', but principal '${principal}' does not have it.`
     );
   }
 

@@ -93,10 +93,11 @@ export class Pmem implements PmemInstance {
   async observe(change: Observation): Promise<Receipt> {
     this.assertOpen();
     const principal = (change.metadata?.principal as string) ?? 'default';
+    const scope = this.scope.resolve(change.file ?? '', change);
+    // Capability check before quota so a denied op does not consume quota.
+    this.requireCapability(principal, 'memory.observe', scope);
     const quotaCheck = this.policy.checkQuota(principal, 'observe');
     if (!quotaCheck.allowed) throw new Error(`QuotaExceededError: observation quota exceeded for ${principal}`);
-    const scope = this.scope.resolve(change.file ?? '', change);
-    this.requireCapability('memory.observe', scope);
     const proposal = {
       type: 'observe' as const,
       scope,
@@ -127,9 +128,10 @@ export class Pmem implements PmemInstance {
 
   async forget(request: ForgetRequest): Promise<Receipt> {
     this.assertOpen();
+    const principal = (request.metadata?.principal as string) ?? 'default';
     const target = this.events.find(request.id);
     const scope = target?.scope ?? this.scope.resolve('', { metadata: request.metadata });
-    this.requireCapability('memory.forget', scope);
+    this.requireCapability(principal, 'memory.forget', scope);
     const requiresConfirmation = this.policy.requiresConfirmation({
       type: 'forget',
       scope,
@@ -178,11 +180,12 @@ export class Pmem implements PmemInstance {
   async capture(summary: string, opts: CaptureOptions = {}): Promise<CaptureResult> {
     this.assertOpen();
     const principal = ((opts as Record<string, unknown>).principal as string) ?? 'default';
-    const quotaCheck = this.policy.checkQuota(principal, 'capture');
-    if (!quotaCheck.allowed) throw new Error(`QuotaExceededError: capture quota exceeded for ${principal}`);
     const captureSummary = summary || opts.summary || '';
     const scope = this.scope.resolve((opts as Record<string, unknown>).file as string ?? '', { summary: captureSummary });
-    this.requireCapability('memory.commit', scope);
+    // Capability check before quota so a denied op does not consume quota.
+    this.requireCapability(principal, 'memory.commit', scope);
+    const quotaCheck = this.policy.checkQuota(principal, 'capture');
+    if (!quotaCheck.allowed) throw new Error(`QuotaExceededError: capture quota exceeded for ${principal}`);
     return captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined, cwd: this.root });
   }
 
@@ -193,8 +196,10 @@ export class Pmem implements PmemInstance {
     this.events.expire();
   }
 
-  async mergeBranchMemory(sourceBranch: string, targetBranch: string = 'main'): Promise<number> {
+  async mergeBranchMemory(sourceBranch: string, targetBranch: string = 'main', principal: string = 'default'): Promise<number> {
     this.assertOpen();
+    // Cross-scope migration is a privileged operation: require admin.
+    this.requireCapability(principal, 'memory.admin', `branch:${targetBranch}`);
     return this.events.mergeBranch(sourceBranch, targetBranch);
   }
 
@@ -204,13 +209,13 @@ export class Pmem implements PmemInstance {
     this.closed = true;
   }
 
-  private requireCapability(capability: MemoryCapability, scope: string): void {
+  private requireCapability(principal: string, capability: MemoryCapability, scope: string): void {
     if (this.registeredCapabilities.length === 0) return;
-    for (const set of this.registeredCapabilities) {
-      if (this.policy.checkCapability(set.principal, capability, scope)) return;
-    }
+    // Authorize the *calling* principal only. Granting because some other
+    // registered principal holds the capability would defeat isolation.
+    if (this.policy.checkCapability(principal, capability, scope)) return;
     throw new Error(
-      `Operation requires capability '${capability}' on scope '${scope}', but no principal has it.`
+      `Operation requires capability '${capability}' on scope '${scope}', but principal '${principal}' does not have it.`
     );
   }
 

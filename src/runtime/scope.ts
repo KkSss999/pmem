@@ -40,17 +40,7 @@ export class ScopeManager {
   }
 
   isVisible(scope: string, principal: string): boolean {
-    if (scope === 'shared' || scope.startsWith('shared:')) return true;
-    if (scope === 'private') return principal === 'owner';
-    if (scope.startsWith('private:')) {
-      return scope === `private:${principal}`;
-    }
-
-    const scopeLevel = _hierarchyLevel(scope);
-    const principalLevel = _hierarchyLevel(principal);
-    if (principalLevel < 0) return true; // unknown principal → system-level, sees all
-    if (scopeLevel < 0) return true;
-    return principalLevel <= scopeLevel;
+    return isScopeVisible(scope, principal);
   }
 
   children(scope: string): string[] {
@@ -93,4 +83,29 @@ function _hierarchyLevel(scope: string): number {
   if (base === 'private') return HIERARCHY_ORDER.length;
   const level = HIERARCHY_LEVEL[base];
   return level ?? -1;
+}
+
+/**
+ * Pure scope-visibility check usable outside a ScopeManager instance
+ * (e.g. from query paths). A principal sees memory scoped at its own
+ * hierarchy level or narrower (higher level number); `system` sees all.
+ *
+ * Fail-safe: an *unrecognized principal* is treated as least-privileged
+ * (it only sees shared/legacy scopes), rather than fail-open to system.
+ * `shared` and legacy/unknown scopes (e.g. `project`, `branch:*`) remain
+ * visible to everyone for backward compatibility.
+ */
+export function isScopeVisible(scope: string, principal: string): boolean {
+  if (scope === 'shared' || scope.startsWith('shared:')) return true;
+  if (scope === 'private') return principal === 'owner';
+  if (scope.startsWith('private:')) {
+    return scope === `private:${principal}`;
+  }
+
+  const scopeLevel = _hierarchyLevel(scope);
+  if (scopeLevel < 0) return true; // shared/legacy/project/branch → visible to all
+
+  let principalLevel = _hierarchyLevel(principal);
+  if (principalLevel < 0) principalLevel = HIERARCHY_ORDER.length; // unknown principal → least privileged
+  return principalLevel <= scopeLevel;
 }

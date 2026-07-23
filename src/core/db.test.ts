@@ -133,6 +133,46 @@ describe('upsertCard', () => {
       db.close();
     }
   });
+
+  it('persists v1.1 agent-trust columns (confidence/superseded_by/classification/trust_label/sensitivity)', () => {
+    const db = createInMemoryDb();
+    createSchema(db);
+    try {
+      const card = makeCard({
+        confidence: 0.4,
+        superseded_by: ['decision.new'],
+        classification: 'decision',
+        trust_label: 'agent_generated',
+        sensitivity: 'secret',
+      });
+      upsertCard(db, card);
+      const row = db.prepare('SELECT * FROM cards WHERE id = ?').get('card.1') as any;
+      assert.strictEqual(row.confidence, 0.4);
+      // superseded_by is stored as a JSON array string
+      assert.strictEqual(row.superseded_by, JSON.stringify(['decision.new']));
+      assert.strictEqual(row.classification, 'decision');
+      assert.strictEqual(row.trust_label, 'agent_generated');
+      assert.strictEqual(row.sensitivity, 'secret');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('defaults v1.1 columns to null when not provided (back-compat)', () => {
+    const db = createInMemoryDb();
+    createSchema(db);
+    try {
+      upsertCard(db, makeCard());
+      const row = db.prepare('SELECT * FROM cards WHERE id = ?').get('card.1') as any;
+      assert.strictEqual(row.confidence, null);
+      assert.strictEqual(row.superseded_by, null);
+      assert.strictEqual(row.classification, null);
+      assert.strictEqual(row.trust_label, null);
+      assert.strictEqual(row.sensitivity, null);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe('getCardHash', () => {

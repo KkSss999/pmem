@@ -82,7 +82,12 @@ export function createSchema(db: Database.Database): void {
       token_count INTEGER DEFAULT 0,
       section_count INTEGER DEFAULT 0,
       is_deleted INTEGER DEFAULT 0,
-      is_candidate INTEGER DEFAULT 0
+      is_candidate INTEGER DEFAULT 0,
+      confidence REAL,
+      superseded_by TEXT,
+      classification TEXT,
+      trust_label TEXT,
+      sensitivity TEXT
     );
 
     CREATE TABLE IF NOT EXISTS edges (
@@ -179,6 +184,14 @@ export function createSchema(db: Database.Database): void {
     try { db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
   }
 
+  // v1.1: agent-trust columns on existing cards tables (idempotent).
+  for (const column of [
+    'confidence REAL', 'superseded_by TEXT', 'classification TEXT',
+    'trust_label TEXT', 'sensitivity TEXT'
+  ]) {
+    try { db.exec(`ALTER TABLE cards ADD COLUMN ${column}`); } catch {}
+  }
+
   setSchemaVersion(db, CORE_SCHEMA_VERSION);
 }
 
@@ -265,14 +278,48 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
 // Bulk insert helpers using transactions
 
 export function upsertCard(db: Database.Database, card: import('../types').CardRow): void {
+  // Normalize superseded_by (array in frontmatter) to a JSON string for storage.
+  const supersededBy = Array.isArray(card.superseded_by)
+    ? (card.superseded_by.length > 0 ? JSON.stringify(card.superseded_by) : null)
+    : (card.superseded_by ?? null);
+  // Build an explicit param object so new/optional columns default to null
+  // rather than throwing on callers that don't set them.
+  const params = {
+    id: card.id,
+    type: card.type,
+    title: card.title,
+    status: card.status ?? null,
+    priority: card.priority ?? null,
+    file_path: card.file_path,
+    summary: card.summary ?? null,
+    schema_version: card.schema_version ?? null,
+    card_version: card.card_version ?? 1,
+    created_at: card.created_at ?? null,
+    updated_at: card.updated_at ?? null,
+    last_verified_at: card.last_verified_at ?? null,
+    file_hash: card.file_hash,
+    frontmatter_hash: card.frontmatter_hash,
+    body_hash: card.body_hash,
+    token_count: card.token_count ?? 0,
+    section_count: card.section_count ?? 0,
+    is_deleted: card.is_deleted ?? 0,
+    is_candidate: card.is_candidate ?? 0,
+    confidence: card.confidence ?? null,
+    superseded_by: supersededBy,
+    classification: card.classification ?? null,
+    trust_label: card.trust_label ?? null,
+    sensitivity: card.sensitivity ?? null,
+  };
   db.prepare(`
     INSERT OR REPLACE INTO cards (id, type, title, status, priority, file_path, summary,
       schema_version, card_version, created_at, updated_at, last_verified_at,
-      file_hash, frontmatter_hash, body_hash, token_count, section_count, is_deleted, is_candidate)
+      file_hash, frontmatter_hash, body_hash, token_count, section_count, is_deleted, is_candidate,
+      confidence, superseded_by, classification, trust_label, sensitivity)
     VALUES (@id, @type, @title, @status, @priority, @file_path, @summary,
       @schema_version, @card_version, @created_at, @updated_at, @last_verified_at,
-      @file_hash, @frontmatter_hash, @body_hash, @token_count, @section_count, @is_deleted, @is_candidate)
-  `).run(card);
+      @file_hash, @frontmatter_hash, @body_hash, @token_count, @section_count, @is_deleted, @is_candidate,
+      @confidence, @superseded_by, @classification, @trust_label, @sensitivity)
+  `).run(params);
 }
 
 export function deleteCardEdges(db: Database.Database, cardId: string): void {
@@ -454,6 +501,7 @@ export interface RuntimeEventRow {
   created_at: string;
   session_id: string | null;
   success: number;
+  scope?: string | null;
 }
 
 export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInput): number {
@@ -478,7 +526,7 @@ export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInp
 
 export function getRecentRuntimeEvents(db: Database.Database, limit: number = 10): RuntimeEventRow[] {
   return db.prepare(
-    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?"
+    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success, scope FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?"
   ).all(limit) as RuntimeEventRow[];
 }
 
