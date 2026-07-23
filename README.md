@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="pmem.png" alt="pmem logo" width="200" />
+  <img src="pmem.png" alt="pmem logo" />
 </p>
 
 # pmem — Project Memory for AI Agents
