@@ -18,7 +18,7 @@ All notable changes to pmem are documented here.
 - **ACL authorizes the calling principal**: capability checks validate the principal making the request rather than granting when *any* registered principal holds the capability.
 - **`secret` sensitivity is filtered from agent context**: secret-sensitivity cards are excluded at the query source (`recall`/`ask`) and in output formatting.
 - **Namespace read isolation**: `recall` accepts an optional `principal` and filters scoped events through a fail-safe visibility check — unknown principals are treated as least-privileged (no fail-open); `shared`/legacy (`project`/`branch:*`) scopes remain visible for compatibility.
-- **`secret` filtering covers all read paths**: in addition to `recall`/`ask`/`context`, secret-sensitivity cards are excluded from recall foundational lists (`mustRead`/`active_foundation`/`active_modules`) and from the relation graph (`related`/`pmem_related`) — a secret main card reports not-found and secret relation targets are omitted (with `total_edges` reflecting only visible edges).
+- **`secret` filtering covers all read paths**: in addition to `recall`/`ask`/`context`, secret-sensitivity cards are excluded from recall foundational lists (`mustRead`/`active_foundation`/`active_modules`), the relation graph (`related`/`pmem_related`), and the `pmem trace`/`graph` CLI (secret main card reports not-found; secret evidence/dependency targets and card bodies are never printed). A secret main card reports not-found and secret relation targets are omitted (with `total_edges` reflecting only visible edges).
 
 ### Changed
 
