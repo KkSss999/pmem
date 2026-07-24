@@ -232,6 +232,10 @@ Semantic retrieval is opt-in. Normal install, `init`, `rebuild`, `ask`, and
 `context` never download a model. To enable it for a project:
 
 ```bash
+# Install only on machines that need local semantic inference. The base pmem-ai
+# package intentionally does not install Transformers.js or native ONNX/image runtimes.
+npm install -g pmem-ai-semantic@1.2.0
+
 pmem semantic setup                 # ModelScope, asks before downloading
 pmem semantic rebuild               # incremental by default
 pmem semantic status
@@ -239,6 +243,9 @@ pmem ask "where is login throttling handled?" --explain
 ```
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
+For SDK installations, install `pmem-ai-semantic@1.2.0` in the same project as
+`pmem-ai`. If the companion is absent or incompatible, setup/rebuild and SDK
+semantic queries report the exact install command while deterministic recall remains available.
 The pinned model is stored once for all projects at
 `~/.pmem-global/models/Xenova/multilingual-e5-small/<revision>`; each project
 keeps only its semantic configuration and rebuildable SQLite vectors. Running

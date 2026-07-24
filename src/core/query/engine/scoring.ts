@@ -179,6 +179,13 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
       byId.set(cand.card.id, { ...cand, reasons: [...cand.reasons] });
     } else {
       existing.reasons.push(...cand.reasons);
+      if (cand.rerank_text?.trim()) {
+        if (!existing.rerank_text?.trim()) {
+          existing.rerank_text = cand.rerank_text;
+        } else if (existing.rerank_text !== cand.rerank_text && !existing.rerank_text.includes(cand.rerank_text)) {
+          existing.rerank_text = `${existing.rerank_text}\n${cand.rerank_text}`;
+        }
+      }
       if (cand.base > existing.base) {
         existing.base = cand.base;
         existing.graph_distance = cand.graph_distance;

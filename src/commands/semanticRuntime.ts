@@ -4,7 +4,12 @@ import * as crypto from 'node:crypto';
 import * as https from 'node:https';
 import { pipeline } from 'node:stream/promises';
 import type { SemanticModelSpec, SemanticOperations, SemanticRuntimeStatus } from './semantic';
-import { createOfflineTransformersProvider } from '../core/semantic/transformers';
+import {
+  createOfflineTransformersProvider,
+  loadSemanticCompanion,
+  nativeDynamicImport,
+  type SemanticCompanionLoader,
+} from '../core/semantic/transformers';
 import { inspectSemanticReadiness } from '../core/health/semantic';
 import { loadManifest } from '../core/manifest';
 import {
@@ -126,9 +131,14 @@ async function retryTransientDownload<T>(operation: () => Promise<T>, attempts =
   throw lastError;
 }
 
-export function createDefaultSemanticOperations(): SemanticOperations {
+export function createDefaultSemanticOperations(
+  loadCompanion: SemanticCompanionLoader = nativeDynamicImport,
+): SemanticOperations {
   return {
     async prepareModel(spec): Promise<void> {
+      // Fail before downloading ~145 MB when the explicitly opt-in inference
+      // runtime is unavailable or incompatible.
+      await loadSemanticCompanion(loadCompanion);
       const existing = await inspectModelCache(spec);
       if (existing.cached) return;
       const receipt = await downloadModelSnapshot(spec);
@@ -182,7 +192,7 @@ export function createDefaultSemanticOperations(): SemanticOperations {
         throw new Error(`Semantic model cache is ${receipt.integrity}. Re-run \`pmem semantic setup\` while online.`);
       }
       const core = await loadCore();
-      const provider = await createOfflineTransformersProvider(spec);
+      const provider = await createOfflineTransformersProvider(spec, loadCompanion);
       try {
         const result = await core.rebuildSemanticProject(pmemPath, provider, { mode });
         return { indexedCards: result.cardsSeen - result.cardsExcluded, indexedChunks: result.chunksTotal };

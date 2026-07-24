@@ -7,6 +7,7 @@ All notable changes to pmem are documented here.
 ### Added
 
 - **Opt-in local semantic retrieval for macOS**: `pmem semantic setup/status/rebuild/clear` manages a pinned multilingual E5 ONNX model and a derived SQLite vector index. ModelScope is the default download source; Hugging Face remains available with `--source huggingface`.
+- **Isolated semantic runtime**: the base `pmem-ai` production install no longer includes Transformers.js, ONNX Runtime, or sharp. Local inference is enabled explicitly by installing the separately distributed `pmem-ai-semantic@1.2.0` companion.
 - **One global model cache**: model artifacts are shared across projects under `~/.pmem-global/models/<model>/<revision>`; project-local `.pmem` stores only configuration and derived chunk vectors.
 - ModelScope and Hugging Face are interchangeable download mirrors for the same verified global artifact; switching source does not duplicate or invalidate the cache.
 - **Hybrid semantic + graph recall**: semantic chunk hits collapse to parent cards before graph expansion and expose similarity, chunk, heading, model revision, and parent-card provenance in explain output.

@@ -54,6 +54,24 @@ describe('v0.8 scoring', () => {
     assert.ok(results[0].score > 0.9, 'decision/module type weight and recency should boost exact-ish hits');
   });
 
+  it('preserves semantic rerank text when a deterministic channel found the card first', () => {
+    const shared = card({ id: 'module.shared', type: 'module' });
+    const results = fuseAndScore([
+      { card: shared, base: 0.8, graph_distance: 0, reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }] },
+      {
+        card: shared,
+        base: 0.7,
+        graph_distance: 0,
+        reasons: [{ channel: 'semantic', detail: 'semantic passage', base: 0.7 }],
+        rerank_text: 'credential rotation boundary\nContext: authentication session',
+      },
+    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].rerank_text, 'credential rotation boundary\nContext: authentication session');
+    assert.deepEqual(results[0].reasons.map(reason => reason.channel), ['fts', 'semantic']);
+  });
+
   it('penalizes dirty cards without hiding them', () => {
     const results = fuseAndScore([
       { card: card(), base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },

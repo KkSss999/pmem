@@ -15,8 +15,13 @@ import {
   type SemanticModelSpec,
   type SemanticOperations,
 } from './semantic';
-import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
-import { createOfflineTransformersProvider } from '../core/semantic/transformers';
+import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
+import {
+  createOfflineTransformersProvider,
+  loadSemanticCompanion,
+  SEMANTIC_COMPANION_PACKAGE,
+  SEMANTIC_COMPANION_VERSION,
+} from '../core/semantic/transformers';
 import { semanticCacheIdentityMatches, type SemanticModelReceipt } from '../core/semantic/cache';
 
 const tempDirs: string[] = [];
@@ -200,6 +205,39 @@ describe('pmem semantic command', () => {
     assert.doesNotMatch(source, /require\(specifier\)/);
   });
 
+  it('gives an actionable error when the opt-in semantic companion is absent', async () => {
+    await assert.rejects(
+      loadSemanticCompanion(async () => {
+        const error = new Error('not found') as NodeJS.ErrnoException;
+        error.code = 'ERR_MODULE_NOT_FOUND';
+        throw error;
+      }),
+      new RegExp(`npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`),
+    );
+  });
+
+  it('rejects an incompatible semantic companion API', async () => {
+    await assert.rejects(
+      loadSemanticCompanion(async () => ({ apiVersion: 2 })),
+      /incompatible.*pmem-ai-semantic@1\.2\.0/i,
+    );
+  });
+
+  it('checks for the companion before semantic setup downloads model files', async () => {
+    const operations = createDefaultSemanticOperations(async () => { throw new Error('missing'); });
+    await assert.rejects(
+      operations.prepareModel({
+        model: SEMANTIC_MODEL,
+        revision: SEMANTIC_MODEL_REVISION,
+        dtype: SEMANTIC_DTYPE,
+        dimension: SEMANTIC_DIMENSION,
+        source: 'modelscope',
+        cachePath: '/tmp/shared-model',
+      }),
+      /Semantic runtime companion is not installed.*npm install -g pmem-ai-semantic@1\.2\.0/,
+    );
+  });
+
   it('records an explicit Hugging Face source without changing the shared model directory', async () => {
     const { cwd, manifestPath } = project();
     let received: SemanticModelSpec | undefined;
@@ -239,26 +277,57 @@ describe('pmem semantic command', () => {
     const calls: any[] = [];
     const env = { allowRemoteModels: true, allowLocalModels: false, cacheDir: 'before' };
     const extractor = Object.assign(async () => ({ tolist: () => [[1, 0]] }), { dispose: async () => {} });
-    const provider = await createOfflineTransformersProvider({
+    const companion = require('../../packages/semantic-runtime') as {
+      apiVersion: number;
+      createOfflineTransformersProvider(spec: SemanticModelSpec, importer: (specifier: string) => Promise<any>): Promise<any>;
+    };
+    assert.strictEqual(companion.apiVersion, 1);
+    const provider = await companion.createOfflineTransformersProvider({
       model: SEMANTIC_MODEL,
       revision: SEMANTIC_MODEL_REVISION,
       dtype: SEMANTIC_DTYPE,
       dimension: SEMANTIC_DIMENSION,
       source: 'modelscope',
       cachePath: '/tmp/shared-model',
-    }, async () => ({
+    }, async (specifier: string) => {
+      assert.strictEqual(specifier, '@huggingface/transformers');
+      return {
       env,
       pipeline: async (...args: any[]) => {
         calls.push({ args, remote: env.allowRemoteModels, local: env.allowLocalModels });
         return extractor;
       },
-    }));
+      };
+    });
     assert.strictEqual(calls[0].args[1], '/tmp/shared-model');
     assert.strictEqual(calls[0].args[2].local_files_only, true);
     assert.strictEqual(calls[0].remote, false);
     assert.strictEqual(calls[0].local, true);
     assert.strictEqual(env.allowRemoteModels, true);
     await provider.dispose();
+  });
+
+  it('loads a compatible injected companion without resolving a root dependency', async () => {
+    const expected = { modelId: SEMANTIC_MODEL, revision: SEMANTIC_MODEL_REVISION, dimension: 384 };
+    const provider = await createOfflineTransformersProvider({
+      model: SEMANTIC_MODEL,
+      revision: SEMANTIC_MODEL_REVISION,
+      dtype: SEMANTIC_DTYPE,
+      dimension: SEMANTIC_DIMENSION,
+      cachePath: '/tmp/shared-model',
+    }, async specifier => {
+      assert.strictEqual(specifier, SEMANTIC_COMPANION_PACKAGE);
+      return {
+        apiVersion: 1,
+        createOfflineTransformersProvider: async () => ({
+          ...expected,
+          embedPassages: async () => [],
+          embedQuery: async () => [],
+          dispose: async () => {},
+        }),
+      };
+    });
+    assert.strictEqual(provider.modelId, expected.modelId);
   });
 
   it('rejects a forged receipt and requires the pinned ModelScope snapshot coordinates', async () => {

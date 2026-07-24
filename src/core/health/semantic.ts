@@ -1,15 +1,8 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Manifest, VerifyIssue } from '../../types';
 import { closeDatabase, openOwnedDatabase } from '../db';
 import { chunkCard } from '../semantic/chunks';
-import {
-  MODEL_UINT8_SHA256,
-  REQUIRED_MODEL_FILES,
-  semanticCacheIdentityMatches,
-  semanticReceiptPath,
-  type SemanticModelReceipt,
-} from '../semantic/cache';
+import { inspectModelCacheSync } from '../semantic/cache';
 import { loadSemanticProjectDocuments, getSemanticProjectStatus } from '../semantic/project';
 import { filterSafeSemanticCards, semanticExclusionReason, type SemanticExclusionReason } from '../semantic/safety';
 
@@ -71,19 +64,10 @@ export function inspectSemanticReadiness(pmemPath: string, manifest: Manifest): 
     };
   }
   const spec = { model: config.model, revision: config.revision, dtype: config.dtype, dimension: config.dimension, source: config.source ?? undefined, cachePath: config.cache_path };
-  try {
-    const receipt = JSON.parse(fs.readFileSync(semanticReceiptPath(spec), 'utf8')) as SemanticModelReceipt;
-    let intact = semanticCacheIdentityMatches(receipt, spec);
-    for (const required of REQUIRED_MODEL_FILES) {
-      const recorded = receipt.files.find(file => file.path === required);
-      const local = path.join(spec.cachePath, required);
-      intact = intact && !!recorded && fs.statSync(local).isFile() && fs.statSync(local).size === recorded.size;
-    }
-    intact = intact && receipt.files.find(file => file.path === 'onnx/model_uint8.onnx')?.sha256 === MODEL_UINT8_SHA256;
-    if (!intact) throw new Error('receipt mismatch');
-  } catch (error: any) {
+  const cache = inspectModelCacheSync(spec);
+  if (cache.integrity !== 'ok') {
     issues.push(semanticIssue(
-      error?.code === 'ENOENT' ? 'semantic_cache_missing' : 'semantic_cache_corrupt',
+      cache.integrity === 'missing' ? 'semantic_cache_missing' : 'semantic_cache_corrupt',
       'The configured global semantic model cache is missing or does not match its receipt.',
       'Run: pmem semantic setup',
     ));

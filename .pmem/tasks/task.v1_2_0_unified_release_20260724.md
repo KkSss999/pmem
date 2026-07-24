@@ -13,6 +13,9 @@ created: "2026-07-24"
 updated: "2026-07-24"
 source_files:
   - package.json
+  - packages/semantic-runtime/package.json
+  - src/core/health/semantic.ts
+  - src/core/semantic/cache.ts
   - src/core/query/ask.ts
   - src/core/query/engine/scoring.ts
   - src/core/semantic/chunks.ts
@@ -89,3 +92,25 @@ Validated locally on Apple Silicon macOS on 2026-07-24 as one v1.2.0 development
 - Install smoke, real-workflow E2E, npm package dry-run, and whitespace validation passed.
 
 No staging, commit, push, tag, publish, or pull request was performed. User review remains the explicit prerequisite for discussing repository publication actions.
+
+## PR Review Reopen
+
+PR #17 is reopened for implementation on 2026-07-24 with three merge blockers:
+
+- Remove the vulnerable Transformers.js native dependency chain from the default `pmem-ai` production install. If no repaired upstream exists, isolate semantic inference behind an explicitly installed companion package while keeping setup/status/fallback behavior actionable.
+- Make `pmem verify` semantic readiness use the same real file-hash integrity decision as the runtime; same-size cache corruption must fail both paths.
+- Preserve non-empty semantic `rerank_text` when deterministic and semantic candidates for the same card are fused, with a cross-channel regression test.
+
+The follow-up gate requires zero high/critical root production advisories, full unit/build/E2E/package checks, the live semantic quality/performance gate through the companion runtime, `pmem rebuild` plus JSON verify, and an updated PR commit. The task returns to completed only after these gates pass. A fully clean `npm audit --omit=dev` is currently blocked by two moderate `@modelcontextprotocol/sdk -> @hono/node-server` advisories whose published remediation is a breaking SDK downgrade; they are unrelated to the newly isolated semantic runtime and remain explicitly disclosed.
+
+## PR Review Closeout
+
+All three review blockers were fixed and revalidated on Apple Silicon macOS on 2026-07-24:
+
+- The default `pmem-ai` manifest and lockfile no longer contain Transformers.js or its ONNX Runtime, `adm-zip`, and `sharp` dependency graph. Semantic inference is supplied by the separately packaged, explicitly installed `pmem-ai-semantic@1.2.0` companion; setup fails before downloading a model when it is absent. Root tarball installation showed the four reviewed dependencies absent, while explicit companion tarball installation loaded API v1 successfully.
+- Root `npm audit --omit=dev --audit-level=high` passed with 0 high and 0 critical advisories. The remaining production audit result is 2 moderate advisories from the pre-existing MCP SDK chain described above.
+- Semantic health now delegates to the same `inspectModelCacheSync()` integrity implementation as runtime inspection and recalculates the real SHA-256 of every required model file. A same-size corruption regression is covered and passes.
+- Duplicate deterministic/semantic candidates now retain and merge non-empty `rerank_text`; the cross-channel overlap regression confirms FTS-first fusion keeps semantic passage/context and both reasons.
+- Build and the final full automated suite passed: 392 tests, 0 failures, with the separately gated live test skipped in the ordinary suite.
+- The companion-backed live gate passed: Recall@5 `0.95`, MRR `0.865414`, exact success `60/60`, candidate Recall@50 `1.0`, and hard-negative NDCG@10 improved from `0.871031` to `0.947689` (`+0.076658`). The 300-card contextual rebuild took `1510.891 ms`; warm query p95 was `7.146 ms`.
+- Install smoke, real-workflow E2E, root and companion package dry-runs, isolated tarball installation, and `git diff --check` passed.

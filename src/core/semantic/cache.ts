@@ -45,6 +45,22 @@ export function sha256File(filePath: string): Promise<string> {
   });
 }
 
+export function sha256FileSync(filePath: string): string {
+  const hash = crypto.createHash('sha256');
+  const descriptor = fs.openSync(filePath, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead: number;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest('hex');
+}
+
 export function semanticCacheIdentityMatches(value: SemanticModelReceipt, spec: SemanticCacheSpec): boolean {
   return value.model === spec.model
     && value.revision === spec.revision
@@ -54,10 +70,14 @@ export function semanticCacheIdentityMatches(value: SemanticModelReceipt, spec: 
     && value.files.length === REQUIRED_MODEL_FILES.length;
 }
 
-/** Download source is provenance only; verified artifacts are shared across mirrors. */
-export async function inspectModelCache(
+/**
+ * Canonical model-cache integrity check used by both runtime commands and
+ * synchronous project health verification. Download source is provenance only;
+ * verified artifacts are shared across mirrors.
+ */
+export function inspectModelCacheSync(
   spec: SemanticCacheSpec,
-): Promise<{ integrity: 'ok' | 'missing' | 'corrupt'; cached: boolean }> {
+): { integrity: 'ok' | 'missing' | 'corrupt'; cached: boolean } {
   let value: SemanticModelReceipt;
   try {
     value = JSON.parse(fs.readFileSync(semanticReceiptPath(spec), 'utf8'));
@@ -72,7 +92,7 @@ export async function inspectModelCache(
       if (!recorded) return { integrity: 'corrupt', cached: false };
       const localPath = path.join(spec.cachePath, requiredPath);
       const stat = fs.statSync(localPath);
-      if (!stat.isFile() || stat.size !== recorded.size || await sha256File(localPath) !== recorded.sha256) {
+      if (!stat.isFile() || stat.size !== recorded.size || sha256FileSync(localPath) !== recorded.sha256) {
         return { integrity: 'corrupt', cached: false };
       }
     }
@@ -82,4 +102,10 @@ export async function inspectModelCache(
   } catch {
     return { integrity: 'corrupt', cached: false };
   }
+}
+
+export async function inspectModelCache(
+  spec: SemanticCacheSpec,
+): Promise<{ integrity: 'ok' | 'missing' | 'corrupt'; cached: boolean }> {
+  return inspectModelCacheSync(spec);
 }

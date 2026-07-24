@@ -1,0 +1,19 @@
+{
+  "name": "pmem-ai-semantic",
+  "version": "1.2.0",
+  "description": "Opt-in local semantic inference companion for pmem-ai",
+  "main": "index.js",
+  "exports": "./index.js",
+  "type": "commonjs",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "dependencies": {
+    "@huggingface/transformers": "4.2.0"
+  }
+}

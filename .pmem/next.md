@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Review and accept the v1.2.0 report before deciding whether to stage, commit, push, and open a pull request.
+Commit and push the reviewed fixes to PR #17, then verify GitHub checks.
 
 ## Why
 The unified semantic retrieval, meaningful health scoring, explicit metadata migration, and local contextual reranking gates have passed on Apple Silicon macOS. Repository publication remains intentionally untouched until the user accepts the report.
