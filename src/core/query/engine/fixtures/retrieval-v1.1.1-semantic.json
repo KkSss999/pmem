@@ -1,0 +1,36 @@
+{
+  "fixture_version": "v1.1.1-retrieval-2026-07-24.1",
+  "evaluator": "semantic-v1.1.1-live",
+  "recorded_at": "2026-07-24",
+  "platform": "macOS arm64",
+  "model": "Xenova/multilingual-e5-small",
+  "model_revision": "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+  "model_source": "modelscope",
+  "model_source_revision": "252d0dcb679dda2c7b6fd5bbfed15df3c7feaebf",
+  "dtype": "uint8",
+  "global_cache_template": "~/.pmem-global/models/Xenova/multilingual-e5-small/<revision>",
+  "query_count": 60,
+  "quality": {
+    "recall_at_5": 0.866667,
+    "mrr": 0.836052,
+    "slices": {
+      "zh": { "query_count": 20, "recall_at_5": 0.85, "mrr": 0.81 },
+      "en": { "query_count": 20, "recall_at_5": 0.9, "mrr": 0.857738 },
+      "code_path_mixed": { "query_count": 20, "recall_at_5": 0.85, "mrr": 0.840417 }
+    },
+    "exact_query_success": { "query_count": 60, "success_count": 60, "success_rate": 1 }
+  },
+  "disabled_path_latency_ms": {
+    "baseline": { "mean": 0.667, "p50": 0.556, "p95": 1.017 },
+    "accepted": { "mean": 0.672, "p50": 0.583, "p95": 1.037 },
+    "change_percent": { "mean": 0.75, "p50": 4.86, "p95": 1.97 }
+  },
+  "warm_query_latency_ms": { "p50": 3.594, "p95": 5.799 },
+  "performance_300_cards": {
+    "card_count": 300,
+    "chunk_count": 300,
+    "full_index_build_ms": 1442.366,
+    "warm_query_p50_ms": 4.402,
+    "warm_query_p95_ms": 5.639
+  }
+}

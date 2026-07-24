@@ -1,18 +1,33 @@
 import * as path from 'path';
 import { statSync } from 'fs';
-import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock } from '../core/fs';
+import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock, lockOwnedBySelf } from '../core/fs';
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
 import { openDatabase, createSchema } from '../core/db';
 import { computeHash, tokenCount } from '../core/hash';
 import { checkStaleMemory, checkDocSync, verifyMemory, checkModuleContracts } from '../core/consistency';
-import type { VerifyIssue, VerifyResult, CardRow, EdgeRow } from '../types';
+import type { VerifyIssue, VerifyResult, CardRow, EdgeRow, SemanticReadinessSummary } from '../types';
 import { rebuildCommand } from './rebuild';
 import { parseFrontmatter } from '../core/yaml';
 import { getDistillUrgency } from '../runtime/policy';
+import { buildVerifyResult, healthBaselinePath, inspectSemanticReadiness, readHealthBaseline } from '../core/health';
 
 const PMEM_DIR = '.pmem';
 
-export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixStale?: boolean; relaxed?: boolean; noExit?: boolean; cwd?: string }): void {
+export interface VerifyCommandOptions {
+  fix?: boolean;
+  fixLocks?: boolean;
+  fixStale?: boolean;
+  relaxed?: boolean;
+  noExit?: boolean;
+  cwd?: string;
+  format?: 'compact' | 'json';
+  silent?: boolean;
+}
+
+export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult | undefined {
+  if (options.format === 'json' && (options.fix || options.fixStale)) {
+    throw new Error('`pmem verify --format json` cannot be combined with --fix or --fix-stale. Run the repair first, then run JSON verification separately.');
+  }
   const cwd = options.cwd ?? process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -22,6 +37,31 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   }
 
   const issues: VerifyIssue[] = [];
+  const baselineRead = readHealthBaseline(pmemPath);
+  if (baselineRead.status === 'invalid') {
+    issues.push({
+      severity: 'warning',
+      type: 'health_baseline_invalid',
+      message: '.pmem/health-baseline.json is invalid and change_score cannot be calculated.',
+      fix: 'Review the file, then run: pmem health baseline --write',
+    });
+  }
+  let semanticReadiness: SemanticReadinessSummary = {
+    applicable: false,
+    eligible_cards: 0,
+    excluded_cards: 0,
+    excluded_by_reason: {},
+    pipeline_version: null,
+    index_compatible: false,
+    index_fresh: false,
+  };
+  const finish = (): VerifyResult => buildVerifyResult(
+    issues,
+    baselineRead.value,
+    baselineRead.status,
+    healthBaselinePath(pmemPath),
+    semanticReadiness,
+  );
 
   // 1. Check manifest exists
   const manifest = loadManifest(pmemPath);
@@ -72,6 +112,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   // warning that disappears on the next verify). If we cannot acquire the
   // lock, surface a single info-level `active_lock` note and skip the
   // freshness checks entirely.
+  const lockAlreadyOwned = lockOwnedBySelf(lockPath);
   const lockAcquired = acquireLock(lockPath, 500);
   if (!lockAcquired) {
     const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
@@ -82,46 +123,15 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
       fix: 'Wait for the other pmem process to finish, then re-run: pmem verify',
     });
 
-    const errors = issues.filter(i => i.severity === 'error');
-    const warnings = issues.filter(i => i.severity === 'warning');
-    const infos = issues.filter(i => i.severity === 'info');
-    const passed = errors.length === 0;
-    const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 5);
-    const result: VerifyResult = { passed, score, issues };
-
-    if (passed && warnings.length === 0) {
-      console.log(`Memory Verify Result: clean (index checks deferred).`);
-      console.log(`Score: ${score}/100`);
-      if (infos.length > 0) {
-        console.log('');
-        console.log('Informational Notes:');
-        for (const issue of infos) {
-          console.log(`ℹ [${issue.type}] ${issue.message}`);
-        }
-      }
-      return;
+    const result = finish();
+    if (!options.silent) renderVerifyResult(result, options.format ?? 'compact', true);
+    if (!result.passed) {
+      if (options.noExit) return result;
+      process.exitCode = 2;
+      return result;
     }
-
-    console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
-    console.log(`Score: ${score}/100`);
-
-    console.log('');
-    for (const issue of issues) {
-      let icon = 'ℹ';
-      if (issue.severity === 'error') icon = '✗';
-      else if (issue.severity === 'warning') icon = '⚠';
-      console.log(`${icon} [${issue.type}] ${issue.message}`);
-      console.log(`  Fix: ${issue.fix}`);
-      console.log('');
-    }
-
-    const hasErrors = issues.some(i => i.severity === 'error');
-    if (hasErrors) {
-      if (options.noExit) return;
-      process.exit(2);
-    }
-    if (options.noExit) return;
-    process.exit(0);
+    if (options.noExit) return result;
+    return result;
   }
 
   // v0.7.6 FIX-1 (issue #9): wrap the bulk of verify (manifest/schema/hash/
@@ -213,6 +223,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
             type: 'stale_index',
             message: `Card "${card.id}" file hash mismatch (stored: ${card.file_hash}, current: ${currentFileHash}).`,
             fix: 'Run: pmem rebuild',
+            card_id: card.id,
           });
         }
       }
@@ -240,6 +251,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
           type: 'orphan_edges',
           message: `${orphanEdgeSet.size} edge(s) reference non-existent card IDs.`,
           fix: 'Run: pmem rebuild',
+          evidence_count: orphanEdgeSet.size,
         });
       }
 
@@ -258,6 +270,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
               type: 'card_id_violation',
               message: `Card "${card.id}" does not match naming pattern.`,
               fix: `Rename card ID to match: ${renderedPattern}`,
+              card_id: card.id,
             });
           }
         }
@@ -358,6 +371,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
               fix: `Run: pmem relations ${card.id} --format json to inspect.`,
               card_id: card.id,
               relation_count: relatedEdgeCount,
+              evidence_count: relatedEdgeCount,
               threshold,
               top_edges: topEdges,
               pruning_candidates: pruningCandidates,
@@ -376,6 +390,9 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
           message: ci.message,
           fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem rebuild',
           card_id: ci.card_id,
+          file_path: ci.file_path,
+          file_paths: ci.file_paths,
+          evidence_count: ci.evidence_count,
         });
       }
 
@@ -399,6 +416,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
           message: ci.message,
           fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix',
           card_id: ci.card_id,
+          evidence_count: ci.evidence_count,
         });
       }
 
@@ -447,23 +465,33 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
         fix: 'Run: pmem update --auto (to detect changes) or pmem update --confirm (to record updates).',
       });
     }
+    const semanticHealth = inspectSemanticReadiness(pmemPath, manifest);
+    semanticReadiness = {
+      applicable: semanticHealth.applicable,
+      eligible_cards: semanticHealth.eligible_cards,
+      excluded_cards: semanticHealth.excluded_cards,
+      excluded_by_reason: semanticHealth.excluded_by_reason,
+      pipeline_version: semanticHealth.pipeline_version,
+      index_compatible: semanticHealth.index_compatible,
+      index_fresh: semanticHealth.index_fresh,
+    };
+    issues.push(...semanticHealth.issues);
   }
 
   // Build result
-  const errors = issues.filter(i => i.severity === 'error');
-  const warnings = issues.filter(i => i.severity === 'warning');
-  const infos = issues.filter(i => i.severity === 'info');
-  const passed = errors.length === 0;
-  const score = Math.max(0, 100 - errors.length * 30 - warnings.length * 5);
+  const result = finish();
+  const warnings = result.issues.filter(i => i.severity === 'warning');
+  const infos = result.issues.filter(i => i.severity === 'info');
   const missingSourceCount = issues.filter(i => i.type === 'missing_source_file').length;
   const untrackedCount = issues.filter(i => i.type === 'untracked_card').length;
 
-  const result: VerifyResult = { passed, score, issues };
-
   // Output
-  if (passed && warnings.length === 0) {
+  if (!options.silent && options.format === 'json') {
+    console.log(JSON.stringify(result, null, 2));
+  } else if (!options.silent && result.passed && warnings.length === 0) {
     console.log(`✓ Memory verification passed.`);
-    console.log(`  Score: ${score}/100`);
+    console.log(`  Score: ${result.score}/100`);
+    printHealthSummary(result);
     if (missingSourceCount > 0 || untrackedCount > 0) {
       console.log(`  Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`);
     }
@@ -475,17 +503,16 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
       }
     }
     printDistillSuggestion(db, pmemPath);
-    return;
-  }
-
-  console.log(`Memory Verify Result: ${passed ? 'Warnings found' : 'Failed'}`);
-  console.log(`Score: ${score}/100`);
+  } else if (!options.silent) {
+  console.log(`Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`);
+  console.log(`Score: ${result.score}/100`);
+  printHealthSummary(result);
   if (missingSourceCount > 0 || untrackedCount > 0) {
     console.log(`Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`);
   }
   console.log('');
 
-  for (const issue of issues) {
+  for (const issue of result.issues) {
     let icon = 'ℹ';
     if (issue.severity === 'error') icon = '✗';
     else if (issue.severity === 'warning') icon = '⚠';
@@ -495,6 +522,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   }
 
   printDistillSuggestion(db, pmemPath);
+  }
   // Helper to clean up stale DB card rows when source .md files are missing.
   // Called before rebuildCommand() so --fix / --fix-stale can immediately
   // remove stale card references without waiting for a full index rebuild.
@@ -541,7 +569,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
       // Clean up stale DB rows for missing card files before rebuild
       cleanupMissingCards(db, issues);
       console.log('Rebuilding indexes for updated cards...');
-      rebuildCommand();
+      rebuildCommand({ cwd });
     }
 
     // Also fix structural index issues (stale_index, etc.) when --fix-stale is used
@@ -554,7 +582,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     if (fixableIssue && staleIssues.length === 0) {
       if (db) cleanupMissingCards(db, issues);
       console.log('Auto-fixing: rebuilding indexes...');
-      rebuildCommand();
+      rebuildCommand({ cwd });
     }
   }
 
@@ -571,7 +599,7 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
     if (fixableIssue) {
       if (db) cleanupMissingCards(db, issues);
       console.log('Auto-fixing: rebuilding indexes...');
-      rebuildCommand();
+      rebuildCommand({ cwd });
     }
   }
 
@@ -579,22 +607,50 @@ export function verifyCommand(options: { fix?: boolean; fixLocks?: boolean; fixS
   // but if a stale lock was found and not cleaned (e.g., --fix-locks not passed),
   // we provide guidance here.
 
-  const hasErrors = issues.some(i => i.severity === 'error');
-  if (hasErrors) {
-    if (options.noExit) return;
-    releaseLock(lockPath);
-    process.exit(2);
+  if (!result.passed) {
+    if (options.noExit) return result;
+    process.exitCode = 2;
+    return result;
   }
-  if (options.noExit) return;
-  releaseLock(lockPath);
-  process.exit(0);
+  if (options.noExit) return result;
+  return result;
 
   } finally {
-    // If we got here via an exception thrown during verify (e.g. a SQL
-    // error from createSchema), still release the lock. The explicit
-    // `releaseLock` calls above cover the normal exit paths since
-    // `process.exit` does NOT run `finally` blocks.
-    try { releaseLock(lockPath); } catch { /* ignore */ }
+    // A nested caller may already own the process-reentrant lock (for
+    // example health baseline write). In that case the outer critical
+    // section remains responsible for releasing it.
+    if (!lockAlreadyOwned) {
+      try { releaseLock(lockPath); } catch { /* ignore */ }
+    }
+  }
+}
+
+function printHealthSummary(result: VerifyResult): void {
+  const dims = result.dimensions;
+  console.log(`Change Score: ${result.change_score === null ? 'n/a (no baseline)' : `${result.change_score}/100`}`);
+  console.log(
+    `Dimensions: correctness ${dims.correctness.score}/100 · freshness ${dims.freshness.score}/100 · ` +
+    `metadata ${dims.metadata.score}/100 · semantic ${dims.semantic_readiness.score ?? 'n/a'}`,
+  );
+}
+
+function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', deferred = false): void {
+  if (format === 'json') {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  const warnings = result.issues.filter(issue => issue.severity === 'warning');
+  console.log(result.passed && warnings.length === 0
+    ? `Memory Verify Result: clean${deferred ? ' (index checks deferred)' : ''}.`
+    : `Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`);
+  console.log(`Score: ${result.score}/100`);
+  printHealthSummary(result);
+  if (result.issues.length > 0) console.log('');
+  for (const issue of result.issues) {
+    const icon = issue.severity === 'error' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ';
+    console.log(`${icon} [${issue.type}] ${issue.message}`);
+    console.log(`  Fix: ${issue.fix}`);
+    console.log('');
   }
 }
 
@@ -636,4 +692,3 @@ function updateFrontmatterTimestamp(filePath: string, field: 'last_verified' | '
   const fs = require('fs');
   fs.writeFileSync(filePath, newContent, 'utf8');
 }
-

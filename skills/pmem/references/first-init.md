@@ -3,9 +3,12 @@
 ## Step 1: Install pmem globally
 
 ```bash
-npm install -g pmem-ai
+npm install -g pmem-ai@1.2.0
 pmem --version
 ```
+
+This is the complete model-free base installation. Do not install the semantic
+companion unless the user wants local semantic recall.
 
 ## Step 2: Install agent skills
 
@@ -26,8 +29,9 @@ pmem init your-project --guided \
   --description "A web application" \
   --stage "Alpha development" \
   --next "Set up project structure"
-pmem rebuild
 ```
+
+Fresh projects are indexed during `pmem init`, so `recall`, `ask`, and `context` are ready immediately. `init` does not download a semantic model.
 
 Domain presets (v0.7.0):
 
@@ -50,7 +54,6 @@ cat > pmem-init.json <<'JSON'
 }
 JSON
 pmem init your-project --answers pmem-init.json
-pmem rebuild
 ```
 
 Interactive (for humans):
@@ -60,7 +63,11 @@ pmem init your-project --guided
 # Answers 3 questions in TTY
 ```
 
-## Step 4: Create your first memory card
+## Step 4: Confirm immediate recall, then create your first memory card
+
+```bash
+pmem context "Set up project structure"
+```
 
 ```bash
 mkdir -p .pmem/modules src
@@ -105,6 +112,17 @@ pmem doctor
 pmem recall --format compact --budget 2000
 pmem verify
 ```
+
+Optional semantic enhancement on macOS is a separate, explicit journey:
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+```
+
+The companion is a runtime used by the existing `pmem` CLI, not a second CLI.
+The verified model is shared from `~/.pmem-global/models`; this project stores
+only semantic configuration and rebuildable vectors in `.pmem/pmem.db`.
 
 ## Next: try a full session workflow
 

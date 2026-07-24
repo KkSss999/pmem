@@ -12,6 +12,9 @@ import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
 import { Pmem } from './index';
+import { createSchema, upsertCard } from '../core/db';
+import { rebuildSemanticIndex } from '../core/semantic';
+import type { CardRow } from '../types';
 
 function makeProject(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-runtime-'));
@@ -145,5 +148,55 @@ test('two same-root Pmem instances keep independent DB handles after one closes'
   } finally {
     await first.close();
     await second.close();
+  }
+});
+
+test('Pmem ask and context reject an unverified semantic cache and degrade deterministically', async () => {
+  const root = makeProject();
+  const pmemPath = path.join(root, '.pmem');
+  const manifest = getDefaultManifest('runtime-test');
+  manifest.embedding = {
+    enabled: true,
+    provider: 'local',
+    model: 'Xenova/multilingual-e5-small',
+    revision: '761b726dd34fb83930e26aab4e9ac3899aa1fa78',
+    source: 'modelscope',
+    dtype: 'uint8',
+    cache_path: path.join(root, 'missing-cache'),
+    dimension: 384,
+    store: 'sqlite',
+    index: 'flat',
+  };
+  saveManifest(pmemPath, manifest);
+  const db = new Database(path.join(pmemPath, 'pmem.db'));
+  createSchema(db);
+  const row: CardRow = {
+    id: 'decision.cache_guard', type: 'decision', title: 'Cache Guard', status: 'active', priority: null,
+    file_path: '.pmem/decisions/decision.cache_guard.md', summary: 'Deterministic fallback card',
+    schema_version: '0.3', card_version: 1, created_at: null, updated_at: null, last_verified_at: null,
+    file_hash: 'f', frontmatter_hash: 'fm', body_hash: 'b', token_count: 1, section_count: 1,
+    is_deleted: 0, is_candidate: 0, trust_label: 'user_confirmed', sensitivity: 'internal',
+  };
+  upsertCard(db, row);
+  await rebuildSemanticIndex(db, [{
+    id: row.id, title: row.title, summary: row.summary, body: '# Cache Guard\nverified fallback',
+    frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
+  }], {
+    modelId: manifest.embedding.model!, revision: manifest.embedding.revision!, dimension: 384,
+    async embedPassages(texts) { return texts.map(() => Array(384).fill(1)); },
+    async embedQuery() { return Array(384).fill(1); },
+  }, { mode: 'full' });
+  db.close();
+
+  const memory = await Pmem.open({ root });
+  try {
+    const ask = await memory.ask('Cache Guard');
+    assert.equal(ask.matched[0]?.id, row.id);
+    assert.match(ask.warnings?.[0] ?? '', /cache is missing/i);
+    const context = await memory.context('Cache Guard');
+    assert.ok(context.relevant_memory.some(card => card.id === row.id));
+    assert.ok(context.warnings.some(warning => /cache is missing/i.test(warning)));
+  } finally {
+    await memory.close();
   }
 });

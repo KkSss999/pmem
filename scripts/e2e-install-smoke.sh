@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$ROOT/temp/e2e-install-smoke"
 PREFIX="$TMP_DIR/npm-prefix"
+PROJECT="$TMP_DIR/first-project"
 
 rm -rf "$TMP_DIR"
 mkdir -p "$PREFIX"
@@ -24,5 +25,14 @@ EXPECTED_VERSION="$(node -e "console.log(require('./package.json').version)")"
 "$PREFIX/bin/pmem" --help | grep -q "Project Memory"
 "$PREFIX/bin/pmem" --help | grep -q "status"
 "$PREFIX/bin/pmem" --help | grep -q "session"
+"$PREFIX/bin/pmem" semantic enable --help | grep -q "pmem semantic enable"
+"$PREFIX/bin/pmem" semantic enable --help | grep -q -- "--source <source>"
 
-echo "install smoke passed"
+mkdir -p "$PROJECT"
+cd "$PROJECT"
+"$PREFIX/bin/pmem" init first-project | tee init-output.txt
+grep -q 'pmem is ready for project "first-project"' init-output.txt
+test -f .pmem/pmem.db
+"$PREFIX/bin/pmem" context "create the first module" --format compact | grep -q "PMEM_CONTEXT_READY"
+
+echo "install and first-project journey passed"

@@ -2,10 +2,11 @@
 id: feature.v1_1_2_contextual_rerank_retrieval_20260626
 type: feature
 title: "v1.1.2 Contextual Retrieval and Reranking"
-status: draft
+status: superseded
 tags: [v1.1.2, contextual-retrieval, reranking, evidence, recall]
 created: "2026-06-26"
 updated: "2026-06-26T12:15:00.000Z"
+superseded_by: task.v1_2_0_unified_release_20260724
 source_files:
   - src/core/query/recall.ts
   - src/core/query/ask.ts
@@ -18,6 +19,8 @@ related_to:
 last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # v1.1.2 Contextual Retrieval and Reranking
+
+> Release disposition: this draft is absorbed into the single v1.2.0 acceptance unit. No standalone v1.1.2 release will be produced.
 
 ## Goal
 

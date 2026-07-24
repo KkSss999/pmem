@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/sdk/index.js",
   "exports": {
@@ -26,7 +26,7 @@
     "pretest": "npm run build",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
-    "test": "node --require ts-node/register --test src/core/*.test.ts src/core/query/*.test.ts src/core/query/engine/*.test.ts src/commands/*.test.ts src/mcp/*.test.ts src/runtime/*.test.ts",
+    "test": "node --require ts-node/register --test src/core/*.test.ts src/core/health/*.test.ts src/core/query/*.test.ts src/core/query/engine/*.test.ts src/commands/*.test.ts src/mcp/*.test.ts src/runtime/*.test.ts",
     "test:e2e:install": "bash scripts/e2e-install-smoke.sh",
     "test:e2e:workflow": "bash scripts/e2e-real-workflow.sh",
     "test:e2e:non-git": "bash scripts/e2e-non-git-fallback.sh",

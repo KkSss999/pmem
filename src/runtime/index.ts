@@ -1,11 +1,22 @@
 import Database from 'better-sqlite3';
-import { askQuery } from '../core/query/ask';
+import { askQuery, askQueryWithSemantic } from '../core/query/ask';
 import { recallQuery } from '../core/query/recall';
 import { contextQuery } from '../core/query/context';
 import { relatedQuery } from '../core/query/related';
 import { statusQuery } from '../core/query/status';
 import { captureCore } from '../core/capture';
 import { createSchema, forgetMemory, openOwnedDatabase } from '../core/db';
+import { loadManifest } from '../core/manifest';
+import {
+  createOfflineTransformersProvider,
+  DEFAULT_SEMANTIC_DIMENSION,
+  DEFAULT_SEMANTIC_DTYPE,
+  DEFAULT_SEMANTIC_MODEL,
+  DEFAULT_SEMANTIC_MODEL_REVISION,
+  getSemanticStatus,
+  inspectModelCache,
+  type DisposableEmbeddingProvider,
+} from '../core/semantic';
 import { loadRuntimeConfig } from './config';
 import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
@@ -21,6 +32,7 @@ export class Pmem implements PmemInstance {
   private events: EventStore;
   private readonly registeredCapabilities: CapabilitySet[];
   private closed = false;
+  private semanticProvider: Promise<DisposableEmbeddingProvider> | null = null;
 
   static async open(opts: PmemOpenOptions): Promise<Pmem> {
     const config = loadRuntimeConfig(opts.root, opts.preset, opts.config);
@@ -48,7 +60,36 @@ export class Pmem implements PmemInstance {
   async ask(query: string, opts?: AskOptions): Promise<AskResultV03> {
     this.assertOpen();
     try {
-      return askQuery(this.pmemPath, query, { ...opts, now: opts?.now ?? Date.now(), db: this.db });
+      const deterministicOptions = { ...opts, now: opts?.now ?? Date.now(), db: this.db };
+      let semantic: ReturnType<Pmem['semanticConfig']>;
+      try {
+        semantic = this.semanticConfig();
+      } catch (error: any) {
+        return {
+          ...askQuery(this.pmemPath, query, deterministicOptions),
+          warnings: [`Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`],
+        };
+      }
+      if (!semantic) return askQuery(this.pmemPath, query, deterministicOptions);
+      const semanticStatus = getSemanticStatus(this.db);
+      if (!semanticStatus.available) {
+        const detail = semanticStatus.compatible
+          ? 'the derived index is unavailable'
+          : `the derived index uses pipeline v${semanticStatus.pipelineVersion ?? 1}, but v2 is required`;
+        return {
+          ...askQuery(this.pmemPath, query, deterministicOptions),
+          warnings: [`Semantic retrieval is enabled but ${detail}. Run \`pmem semantic rebuild\`.`],
+        };
+      }
+      try {
+        const provider = await this.getSemanticProvider(semantic);
+        return await askQueryWithSemantic(this.pmemPath, query, provider, deterministicOptions);
+      } catch (error: any) {
+        return {
+          ...askQuery(this.pmemPath, query, deterministicOptions),
+          warnings: [`Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`],
+        };
+      }
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
@@ -66,7 +107,32 @@ export class Pmem implements PmemInstance {
   async context(task: string, budget?: number): Promise<ContextQueryResult> {
     this.assertOpen();
     try {
-      return contextQuery(this.pmemPath, task, budget, this.db, this.root);
+      const result = contextQuery(this.pmemPath, task, budget, this.db, this.root);
+      const manifest = loadManifest(this.pmemPath);
+      if (!manifest || !('embedding' in manifest) || !manifest.embedding.enabled) return result;
+      const ask = await this.ask(task, { explain: true, limit: 12 });
+      result.relevant_memory = ask.matched.slice(0, 10).map(match => {
+        const row = this.db.prepare(
+          'SELECT type, title, summary, file_path FROM cards WHERE id = ? AND is_deleted = 0'
+        ).get(match.id) as { type: string; title: string; summary: string | null; file_path: string };
+        return {
+          id: match.id,
+          title: row.title,
+          file_path: row.file_path,
+          summary: row.summary ?? undefined,
+          type: row.type,
+          score: match.score,
+          reason: match.reasons?.map(reason => reason.channel).join(', ') || match.match_type,
+          stale: match.stale,
+        };
+      });
+      if (ask.warnings) result.warnings.push(...ask.warnings);
+      for (const card of result.relevant_memory.slice(0, 3)) {
+        if (!result.must_read.some(item => item.path === card.file_path)) {
+          result.must_read.push({ path: card.file_path, reason: `Task-relevant memory card: ${card.id} (${card.type})` });
+        }
+      }
+      return result;
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
@@ -205,6 +271,10 @@ export class Pmem implements PmemInstance {
 
   async close(): Promise<void> {
     if (this.closed) return;
+    if (this.semanticProvider) {
+      try { await (await this.semanticProvider).dispose(); } catch {}
+      this.semanticProvider = null;
+    }
     this.db.close();
     this.closed = true;
   }
@@ -221,6 +291,50 @@ export class Pmem implements PmemInstance {
 
   private assertOpen(): void {
     if (this.closed) throw new Error('Pmem instance is already closed.');
+  }
+
+  private semanticConfig(): {
+    model: string;
+    revision: string;
+    dtype: 'uint8';
+    dimension: number;
+    source: 'modelscope' | 'huggingface';
+    cachePath: string;
+  } | null {
+    const manifest = loadManifest(this.pmemPath);
+    const embedding = manifest && 'embedding' in manifest ? manifest.embedding : null;
+    if (!embedding?.enabled) return null;
+    if (
+      embedding.provider !== 'local'
+      || embedding.model !== DEFAULT_SEMANTIC_MODEL
+      || embedding.revision !== DEFAULT_SEMANTIC_MODEL_REVISION
+      || embedding.dtype !== DEFAULT_SEMANTIC_DTYPE
+      || embedding.dimension !== DEFAULT_SEMANTIC_DIMENSION
+      || (embedding.source !== 'modelscope' && embedding.source !== 'huggingface')
+      || !embedding.cache_path
+    ) {
+      throw new Error('Semantic manifest configuration is incompatible with v1.2.0. Run `pmem semantic setup`.');
+    }
+    return {
+      model: embedding.model,
+      revision: embedding.revision,
+      dtype: embedding.dtype,
+      dimension: embedding.dimension,
+      source: embedding.source,
+      cachePath: embedding.cache_path,
+    };
+  }
+
+  private async getSemanticProvider(spec: ReturnType<Pmem['semanticConfig']>): Promise<DisposableEmbeddingProvider> {
+    if (!spec) throw new Error('Semantic retrieval is disabled.');
+    if (!this.semanticProvider) {
+      const cache = await inspectModelCache(spec);
+      if (!cache.cached) {
+        throw new Error(`Semantic model cache is ${cache.integrity}. Re-run \`pmem semantic setup\` while online.`);
+      }
+      this.semanticProvider = createOfflineTransformersProvider(spec);
+    }
+    return this.semanticProvider;
   }
 
 }

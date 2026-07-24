@@ -70,3 +70,35 @@ export interface UpdateLogRow {
   success: number;
   error: string | null;
 }
+
+/** Derived semantic-index metadata. Markdown cards remain the source of truth. */
+export interface SemanticMetaRow {
+  id: 1;
+  /** Derived retrieval pipeline format. v2 adds contextual passage metadata. */
+  pipeline_version: number;
+  model_id: string;
+  model_revision: string;
+  dimension: number;
+  index_content_hash: string;
+  chunk_count: number;
+  built_at: string;
+}
+
+/** A heading-aware card chunk and its normalized Float32 embedding. */
+export interface SemanticChunkRow {
+  chunk_id: string;
+  card_id: string;
+  heading: string | null;
+  heading_path: string;
+  ordinal: number;
+  content: string;
+  content_hash: string;
+  context: string;
+  context_hash: string;
+  model_id: string;
+  model_revision: string;
+  dimension: number;
+  vector: Buffer;
+  created_at: string;
+  updated_at: string;
+}

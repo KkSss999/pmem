@@ -6,23 +6,31 @@ allowed-tools: Bash(pmem:*)
 
 # Project Memory with pmem
 
-`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.1** adds namespace hierarchy, capability ACL (12 capabilities), agent quotas, memory poisoning defense, trust-aware recall scoring, and secret-sensitivity filtering. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.2** adds optional local semantic recall, contextual reranking, and multidimensional memory health while keeping deterministic retrieval authoritative. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
 ```bash
-# First time in a project
-pmem init my-project --guided --description "A backend service" --stage "Alpha" --next "Set up CI/CD"
-pmem rebuild
+# Install the complete model-free base CLI
+npm install -g pmem-ai@1.2.0
+
+# First time in a project: init also builds the first local index
+pmem init my-project
 
 # Start task: restore and aggregate context
-pmem context "implement v0.7.4 agent UX"
+pmem context "implement login throttling"
 
 # Modify files...
 
-# End task: automatically capture trace and sync memory
-pmem capture --auto
+# End task: record the known result and next step
+pmem sync -s "implemented login throttling" -n "add integration tests"
+pmem verify
 ```
+
+The base `pmem-ai` package is the default and complete product experience. It
+does not install or download Transformers, ONNX Runtime, `sharp`, or a semantic
+model. Do not instruct users to install `pmem-ai-semantic` unless they explicitly
+want local semantic recall.
 
 ## Core Workflow
 
@@ -33,8 +41,23 @@ Every session follows this simplified loop:
           ↓
   edit project files
           ↓
-  pmem capture --auto    (end of session / sync memory & save trace)
+  pmem sync -s "..." -n "..."  (record result, next step, and rebuild)
 ```
+
+Use `pmem capture --auto` instead when pmem should derive the trace from the
+working tree. Use the lower-level `status → mark-dirty → update` sequence for
+review-heavy maintenance.
+
+## Installation Modes
+
+| Mode | Install | User outcome |
+|---|---|---|
+| Base, recommended | `npm install -g pmem-ai@1.2.0` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
+| Semantic enhancement, macOS | Base package plus `npm install -g pmem-ai-semantic@1.2.0` | Adds local multilingual embeddings and contextual reranking |
+
+`pmem-ai-semantic` is an optional runtime companion, not another CLI. If the
+companion, shared model, or semantic index is unavailable, `ask`, `context`, and
+`recall` must remain usable through deterministic retrieval.
 
 ## Commands
 
@@ -61,11 +84,37 @@ pmem init my-project --guided \
 # From JSON file
 pmem init my-project --answers ./pmem-init.json
 
+# Fresh projects are indexed by init and immediately ready for recall/ask/context.
+# Use rebuild after later Markdown edits or to recover a missing index.
+
 # Rebuild SQLite indexes from cards
 pmem rebuild
 pmem rebuild --full          # full rebuild, clear all tables
 pmem rebuild --card module.core  # rebuild single card
 ```
+
+### Optional Semantic Retrieval (macOS)
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+pmem semantic status
+```
+
+`semantic enable` explicitly prepares or reuses the one verified global model
+cache under `~/.pmem-global/models` and builds the current project's derived
+vectors in `.pmem/pmem.db`. Models are never copied per project. The default
+install and `pmem init` never download a model. Operators may use
+`pmem semantic setup` and `pmem semantic rebuild` separately.
+
+When guiding a user:
+
+1. Start with the base CLI and confirm `pmem init`, `context`, and `ask` work.
+2. Offer semantic enhancement only as an explicit optional step.
+3. Run `pmem semantic enable`; it handles confirmation, cache reuse/download,
+   manifest enablement, and the current-project full semantic rebuild.
+4. Use `pmem semantic status` for readiness and `pmem semantic clear` to disable
+   the project index without deleting the global model.
 
 ### Domain Presets & Custom Schemas (v0.7.0)
 

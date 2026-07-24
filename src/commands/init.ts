@@ -5,6 +5,7 @@ import { ensureDir, writeFile, fileExists, atomicWrite } from '../core/fs';
 import { getDefaultManifest, saveManifest } from '../core/manifest';
 import { InitScanResult, InitScanCandidate } from '../types';
 import { DOMAIN_PRESETS, type DomainPreset } from '../core/domainPresets';
+import { rebuildCommand } from './rebuild';
 
 const PMEM_DIR = '.pmem';
 
@@ -35,9 +36,9 @@ Stage: {{PROJECT_STAGE}}
 
 ## CLI
 Use:
-pmem recall
+pmem context "<task>"
 pmem ask "<query>"
-pmem status
+pmem sync -s "<what changed>" -n "<next step>"
 `;
 
 const STATE_MD = `# Project State
@@ -67,7 +68,7 @@ Define your first module or decision card.
 Building memory cards early establishes the project knowledge graph.
 
 ## Needed Context
-Run \`pmem recall\` to see the current project state.
+Run \`pmem context "<task>"\` to restore task-specific project context.
 <!-- pmem:next:end -->
 `;
 
@@ -76,12 +77,12 @@ const RECALL_SKILL = `# Skill: Recall Project Memory
 Use this when you need to understand the project.
 
 ## Steps
-1. Read \`.pmem/index.md\`.
-2. Read \`.pmem/state.md\`.
-3. Read \`.pmem/next.md\`.
-4. If the user asks about a specific module, run:
+1. Start focused work with:
+   \`pmem context "<task>"\`
+2. Use \`pmem recall\` when you need a general project overview.
+3. If the user asks about a specific module or decision, run:
    \`pmem ask "<module or task>"\`
-5. Only read detailed memory cards when needed.
+4. Only read detailed memory cards returned by pmem when needed.
 
 ## Token Rule
 Do not read all memory files unless explicitly requested.
@@ -91,23 +92,32 @@ const TASK_SKILL = `# Skill: Task
 
 Use this before modifying files or executing tasks.
 
-## Required Reads
-- .pmem/index.md
-- .pmem/state.md
-- Related memory cards (foundational cards or decision cards)
+## Daily Workflow
+1. Restore task-specific context:
+   \`pmem context "<task>"\`
+2. Complete and verify the work.
+3. Sync the result back to project memory:
+   \`pmem sync -s "<what changed>" -n "<next step>"\`
+4. Run \`pmem verify\` before handing off.
 
-## Required Writes
-After task completion:
+## Advanced Diagnostics
+When you need to inspect or control the update pipeline step by step:
 - Run \`pmem status --format json\`
 - Run \`pmem mark-dirty --auto\`
 - Run \`pmem update --suggest --format json\`
 - Confirm the memory update with \`pmem update --confirm -s "<summary>" -n "<next step>"\`
-- Run \`pmem verify\`
 `;
 
 const UPDATE_SKILL = `# Skill: Update Memory
 
 Use this after completing a task.
+
+## Default
+Run \`pmem sync -s "<what changed>" -n "<next step>"\` to detect changes,
+update memory, and rebuild the local indexes in one flow.
+
+Use \`pmem status\`, \`pmem mark-dirty\`, and \`pmem update\` directly only
+when you need to review or control those stages separately.
 
 ## Must Update
 - state.md when project state changed
@@ -152,14 +162,16 @@ This project uses pmem for project memory.
 
 pmem stores source-of-truth memory as Markdown cards under \`.pmem/\` and rebuilds SQLite indexes for fast agent recall. Do not edit \`.pmem/pmem.db\` directly.
 
-## Session Start
+## Daily Workflow
 
 \`\`\`bash
-pmem session start -a "Codex"
-pmem recall --format compact --budget 2000
+pmem context "<current task>"
+# Complete and verify the work.
+pmem sync -s "<what changed>" -n "<next step>"
+pmem verify
 \`\`\`
 
-For specific work, ask pmem first:
+For a specific memory lookup:
 
 \`\`\`bash
 pmem ask "<task or memory card>" --format compact
@@ -169,30 +181,23 @@ pmem ask "<task or memory card>" --format compact
 
 Only read memory cards returned by pmem unless more context is needed.
 
-## After Editing Code
+## Advanced Update Diagnostics
+
+Use the expanded workflow only when you need to inspect each update stage:
 \`\`\`bash
 pmem status --format json
 pmem mark-dirty --auto
 pmem update --suggest --format json
+pmem update --confirm -s "<what changed>" -n "<next step>"
 \`\`\`
 
 \`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
-
-## Session End
-
-Before finishing work:
-
-\`\`\`bash
-pmem update --confirm -s "<what changed>" -n "<next step>"
-pmem session end -s "<task summary>"
-pmem verify
-\`\`\`
 
 ## Source Of Truth
 
 - Markdown cards in \`.pmem/**/*.md\` are canonical.
 - \`.pmem/pmem.db\` is a rebuildable SQLite runtime index.
-- Run \`pmem rebuild\` after changing memory cards.
+- \`pmem sync\` keeps the index current; use \`pmem rebuild\` after manual card edits.
 
 ## More Workflows
 
@@ -305,9 +310,9 @@ ${info.nextStep}
 
 ## CLI
 Use:
-pmem recall
+pmem context "<task>"
 pmem ask "<query>"
-pmem status
+pmem sync -s "<what changed>" -n "<next step>"
 `;
 
   const stateContent = `# Project State
@@ -337,7 +342,7 @@ ${info.nextStep}
 Identified during guided initialization.
 
 ## Needed Context
-Run \`pmem recall\` to see the current project state.
+Run \`pmem context "<task>"\` to restore task-specific project context.
 <!-- pmem:next:end -->
 `;
 
@@ -350,11 +355,12 @@ Generated by pmem init scan on ${new Date().toISOString().split('T')[0]}.
 ${scan.candidates.map(c => `### ${c.path}
 - Suggested ID: ${c.suggestedId}
 - Confidence: ${c.confidence}
-`).join('\n') || '(No candidates detected — create modules manually.)\n\n```bash\npmem update --confirm\n```\n'}
+`).join('\n') || '(No candidates detected — create memory cards manually when useful.)\n'}
 ## Confirm
-Review these candidates and create confirmed module cards manually, or run:
+Review these candidates and create confirmed memory cards when useful:
 \`\`\`bash
-pmem init --guided
+pmem new <type> "<title>"
+pmem sync -s "Added initial memory cards" -n "<next step>"
 \`\`\`
 `;
 
@@ -368,18 +374,19 @@ function writeMinimalCandidates(pmemPath: string, scan: InitScanResult): void {
   const candidatesContent = `# Generated Module Candidates
 
 Generated by pmem init scan on ${new Date().toISOString().split('T')[0]}.
-Memory status: incomplete (minimal init — review these candidates and run \`pmem init --guided\` for richer setup).
+Memory status: ready (review these candidates when you want richer project memory).
 
 ## Candidates
 
 ${scan.candidates.map(c => `### ${c.path}
 - Suggested ID: ${c.suggestedId}
 - Confidence: ${c.confidence}
-`).join('\n') || '(No candidates detected — create modules manually.)\n\n```bash\npmem update --confirm\n```\n'}
+`).join('\n') || '(No candidates detected — create memory cards manually when useful.)\n'}
 ## Confirm
-Review these candidates and create confirmed module cards manually, or run:
+Review these candidates and create confirmed memory cards when useful:
 \`\`\`bash
-pmem init --guided
+pmem new <type> "<title>"
+pmem sync -s "Added initial memory cards" -n "<next step>"
 \`\`\`
 `;
 
@@ -477,8 +484,8 @@ export async function initCommand(options: {
       };
     } else if (hasDescription || hasStage || hasNext) {
       // v0.6.4 polish 7: partial flags — warn + suggest, do not block.
-      // Init still proceeds with empty strings for missing fields so the user
-      // can re-run guided later or edit .pmem/index.md directly.
+      // Init still proceeds with empty strings for missing fields. The user can
+      // fill those fields in the generated source-of-truth Markdown later.
       const missing: string[] = [];
       if (!hasDescription) missing.push('--description');
       if (!hasStage) missing.push('--stage');
@@ -491,7 +498,8 @@ export async function initCommand(options: {
       console.error(`    --next "<immediate next step>"`);
       console.error(`  Or answer via: pmem init ${name} --guided --answers ./pmem-init.json`);
       console.error(`  Missing: ${missing.join(', ')}`);
-      console.error(`  Continuing init with empty values for the missing field(s) — re-run guided to fill them in.`);
+      console.error(`  Continuing init with empty values for the missing field(s).`);
+      console.error(`  Fill them later in .pmem/index.md, .pmem/state.md, or .pmem/next.md, then run pmem sync.`);
       guidedInfo = {
         description: answers.description || '',
         stage: answers.stage || '',
@@ -617,32 +625,29 @@ export async function initCommand(options: {
 
 pmem keeps project memory in Markdown cards under .pmem/ and rebuilds SQLite indexes for fast recall. Markdown cards are the source of truth; do not edit .pmem/pmem.db directly.
 
-## Session Start
+## Daily Workflow
 \`\`\`bash
-pmem session start -a "Claude"
-pmem recall --format compact --budget 2000
+pmem context "<current task>"
+# Complete and verify the work.
+pmem sync -s "<what changed>" -n "<next step>"
+pmem verify
 \`\`\`
 
-## Before Focused Work
+## Specific Memory Lookup
 \`\`\`bash
 pmem ask "<task or memory card>" --format compact
 \`\`\`
 
-## During Work (after editing files)
+## Advanced Update Diagnostics
+Use this expanded flow only when you need to inspect each stage:
 \`\`\`bash
 pmem status --format json
 pmem mark-dirty --auto
 pmem update --suggest --format json
+pmem update --confirm -s "<summary>" -n "<next step>"
 \`\`\`
 
 \`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
-
-## Session End
-\`\`\`bash
-pmem update --confirm -s "<summary>" -n "<next step>"
-pmem session end -s "<task summary>"
-pmem verify
-\`\`\`
 
 ## Optional Hooks (.claude/settings.json)
 \`\`\`json
@@ -659,22 +664,18 @@ pmem verify
   writeFile(path.join(pmemPath, 'integrations', 'claude-code', 'settings.example.json'), '{}\n');
   writeFile(path.join(pmemPath, 'integrations', 'cursor', 'rules.example.md'), `# Cursor Rules with pmem
 
-## Session Start
-In Cursor's AI chat: \`pmem session start -a "Cursor" && pmem recall --format compact --budget 2000\`
+## Daily Workflow
+1. Start focused work with \`pmem context "<current task>"\`.
+2. Complete and verify the work.
+3. Finish with \`pmem sync -s "<what changed>" -n "<next step>" && pmem verify\`.
 
-## Before Focused Work
+## Specific Memory Lookup
 \`pmem ask "<task or memory card>" --format compact\`
 
-## When Editing Code
-After each significant change: \`pmem status --format json && pmem mark-dirty --auto\`
-
-## Before Requesting Review
-\`pmem update --suggest --format json\`
+## Advanced Update Diagnostics
+When you need to inspect each stage: \`pmem status --format json && pmem mark-dirty --auto && pmem update --suggest --format json\`
 
 \`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
-
-## End of Session
-\`pmem update --confirm -s "<summary>" -n "<next>" && pmem session end -s "<summary>" && pmem verify\`
 
 ## Source Of Truth
 Markdown cards under \`.pmem/\` are canonical. SQLite indexes are rebuildable runtime data.
@@ -683,19 +684,22 @@ Markdown cards under \`.pmem/\` are canonical. SQLite indexes are rebuildable ru
 
 ## Quick Start
 \`\`\`bash
-pmem session start -a "Codex"
-pmem recall --format compact --budget 2000
+pmem context "<current task>"
+# Complete and verify the work.
+pmem sync -s "<what changed>" -n "<next step>"
+pmem verify
 \`\`\`
 
 ## Memory-Aware Workflow
-1. Start task: \`pmem ask "<task description>" --format compact\`
-2. Edit code
-3. Inspect changes: \`pmem status --format json\`
-4. Mark changes: \`pmem mark-dirty --auto\`
-5. Get suggestions: \`pmem update --suggest --format json\`
-6. \`pmem update --suggest\` exits 0. Parse the JSON output (e.g., check \`summary.has_actionable\`) to see if any memory update is suggested.
-7. Apply: \`pmem update --confirm -s "<what changed>" -n "<next step>"\`
-8. End session: \`pmem session end -s "<summary>" && pmem verify\`
+1. Start a task with \`pmem context "<task description>"\`.
+2. Use \`pmem ask "<specific question>" --format compact\` for focused lookup.
+3. Edit and verify the code.
+4. Finish with \`pmem sync -s "<what changed>" -n "<next step>"\`.
+
+## Advanced Update Diagnostics
+Use \`pmem status --format json\`, \`pmem mark-dirty --auto\`, and
+\`pmem update --suggest --format json\` when you need to inspect each stage.
+\`pmem update --suggest\` exits 0; parse \`summary.has_actionable\`.
 
 ## Source Of Truth
 Markdown cards under \`.pmem/\` are canonical. \`.pmem/pmem.db\` is a rebuildable SQLite runtime index.
@@ -704,8 +708,25 @@ Markdown cards under \`.pmem/\` are canonical. \`.pmem/pmem.db\` is a rebuildabl
   // Write AGENTS.md in project root
   writeFile(path.join(cwd, 'AGENTS.md'), AGENTS_MD);
 
+  // Build the first deterministic local index as part of initialization. This
+  // makes `pmem ask` and `pmem context` immediately usable without pulling a
+  // model or requiring a separate `pmem rebuild` step.
+  console.log('\nBuilding first local index...');
+  try {
+    rebuildCommand({ cwd, silent: true });
+    if (!fileExists(path.join(pmemPath, 'pmem.db'))) {
+      throw new Error('the SQLite index was not created');
+    }
+  } catch (err: any) {
+    console.error('\n✗ pmem initialization is incomplete: the source files were created, but the local index is not ready.');
+    console.error(`  ${err?.message || err}`);
+    console.error('  Resolve the error, then run `pmem rebuild --full`.');
+    process.exitCode = 2;
+    return;
+  }
+
   // Print summary
-  console.log(`\n✓ pmem initialized for project "${name}"`);
+  console.log(`\n✓ pmem is ready for project "${name}"`);
   console.log(`  .pmem/    — memory cards, skills, indexes, integrations`);
   console.log(`  AGENTS.md — agent entry instructions`);
 
@@ -722,10 +743,13 @@ Markdown cards under \`.pmem/\` are canonical. \`.pmem/pmem.db\` is a rebuildabl
   if (guidedInfo) {
     const mode = options.guided && !options.description && !options.stage && !options.next && !options.answers
       ? 'interactive' : 'non-interactive';
-    console.log(`\nGuided setup (${mode}) complete. Run \`pmem recall\` to see your project state.`);
-  } else {
-    console.log(`\nNext: run \`pmem recall\` to see your project state, or \`pmem init --guided\` for interactive setup.`);
+    console.log(`  Guided setup: ${mode}`);
   }
+
+  console.log('\nNext:');
+  console.log('  1. Start:  `pmem context "<your task>"`');
+  console.log('  2. Search: `pmem ask "<question>"`');
+  console.log('  3. Finish: `pmem sync -s "<what changed>" -n "<next step>"`');
 }
 
 function replaceTemplate(template: string, vars: Record<string, string>): string {

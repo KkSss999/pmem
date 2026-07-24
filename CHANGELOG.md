@@ -2,6 +2,36 @@
 
 All notable changes to pmem are documented here.
 
+## v1.2.0 — Unified Memory Intelligence (2026-07-24)
+
+### Added
+
+- **Ready-after-init experience**: fresh projects build their first deterministic index during `pmem init`, so `recall`, `ask`, and `context` work immediately without a separate rebuild command.
+- **One-step semantic enablement**: `pmem semantic enable` guides companion validation, explicit model setup, and current-project indexing while preserving the expert `setup` and `rebuild` operations.
+- **Transactional two-package delivery**: CI packs, installs, audits, and smoke-tests both npm artifacts; main-branch releases publish and verify the semantic companion before publishing the base CLI that documents it.
+- **Opt-in local semantic retrieval for macOS**: `pmem semantic setup/status/rebuild/clear` manages a pinned multilingual E5 ONNX model and a derived SQLite vector index. ModelScope is the default download source; Hugging Face remains available with `--source huggingface`.
+- **Isolated semantic runtime**: the base `pmem-ai` production install no longer includes Transformers.js, ONNX Runtime, or sharp. Local inference is enabled explicitly by installing the separately distributed `pmem-ai-semantic@1.2.0` companion.
+- **One global model cache**: model artifacts are shared across projects under `~/.pmem-global/models/<model>/<revision>`; project-local `.pmem` stores only configuration and derived chunk vectors.
+- ModelScope and Hugging Face are interchangeable download mirrors for the same verified global artifact; switching source does not duplicate or invalidate the cache.
+- **Hybrid semantic + graph recall**: semantic chunk hits collapse to parent cards before graph expansion and expose similarity, chunk, heading, model revision, and parent-card provenance in explain output.
+- **Local contextual reranking**: deterministic query planning and a bounded TypeScript second stage improve ordering without another model or cloud service. Exact ID/title/path authority and graph provenance remain intact.
+- **Contextual index pipeline v2**: safe card metadata and relationship context are versioned separately from Markdown source; incompatible derived indexes degrade safely until rebuilt.
+- **Memory Health**: `pmem verify` now reports backward-compatible `score` plus overall, change, and correctness/freshness/metadata/semantic-readiness dimensions. Repeated stale evidence is aggregated per card and penalties remain meaningful for mature repositories.
+- **Explicit health baseline**: `pmem health baseline --write` accepts current project-specific debt so later verification distinguishes historical and newly introduced issues.
+- **Safe metadata migration**: `pmem health migrate` is dry-run by default; apply requires explicit trust/sensitivity choices, creates a backup, holds the project lock, rolls back failures, rebuilds the index, and only fills missing fields.
+- **Versioned retrieval evaluation**: 60 labelled Chinese, English, and code/path queries plus a 300-card performance fixture lock quality, exact-authority, and latency baselines.
+
+### Security
+
+- Embedding input is allowlisted before provider invocation. Secret, untrusted/imported/agent-generated, candidate, deleted, and superseded memory never reaches the model or semantic tables.
+- Model downloads require explicit setup confirmation, use pinned revisions and integrity receipts, and inference disables remote model loading after setup.
+
+### Compatibility
+
+- Semantic retrieval is disabled by default, so install, init, rebuild, ask, and context retain their deterministic offline behavior and never download a model.
+- Markdown cards remain canonical; semantic chunks and vectors are rebuildable derived data. `pmem semantic clear` disables and clears the project index without deleting the shared model cache.
+- Existing compact verify output, top-level `score`, warning exit behavior, manifests, and Markdown cards remain compatible; new health fields and commands are additive.
+
 ## v1.1.0 — System Memory Security (2026-07-23)
 
 ### Added

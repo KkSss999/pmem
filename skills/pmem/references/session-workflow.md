@@ -2,6 +2,9 @@
 
 Every agent session with pmem follows this pattern. pmem's value is in **cross-session recall**: the next time you open the project, `pmem recall` restores context instantly.
 
+This workflow uses the model-free `pmem-ai` base package. It remains fully
+available when semantic retrieval is not installed or temporarily unavailable.
+
 ## Session Start
 
 Always run these at the beginning of a session:
@@ -33,7 +36,17 @@ This finds relevant cards by:
 4. Graph neighbor expansion (cards related to matched ones)
 5. Keyword fallback (FTS5 full-text or LIKE)
 
-## After Editing Code (Manual Flow)
+## After Editing Code (Recommended Flow)
+
+If the completed change and next step are known, close the loop with one command:
+
+```bash
+pmem sync -s "<summary of changes>" -n "<next step>"
+```
+
+This detects changes, marks affected memory, records the update, and rebuilds the index.
+
+## Review-Heavy Manual Flow
 
 ```bash
 pmem status --format json
@@ -61,15 +74,7 @@ pmem update --confirm -s "<summary of changes>" -n "<next step>"
 
 Writes the confirmed changes and updates state/next files.
 
-### Shortcut: One-Command Sync (v0.7.1)
-
-Instead of running status, mark-dirty, update --suggest, and update --confirm individually, you can use the sync shortcut:
-
-```bash
-pmem sync -s "<summary of changes>" -n "<next step>"
-```
-
-This runs change detection, automatically marks affected cards as dirty, commits updates, and rebuilds the indexes inside an atomic transaction.
+Use the manual sequence when an agent needs to inspect suggestions before confirming them; it is not required for the ordinary daily loop.
 
 ## Session End
 
@@ -91,3 +96,17 @@ pmem recall --format compact --budget 2000
 ```
 
 You immediately see what was done, what state the project is in, and what to do next — without re-reading source files or asking "where were we?"
+
+## Optional Semantic Enhancement
+
+On macOS, a user may explicitly add the companion and enable semantic recall:
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+```
+
+This augments `ask` and `context`; it does not replace the deterministic engine
+or change the ordinary session start/end workflow. If semantic readiness is
+lost, continue the session with deterministic retrieval and use
+`pmem semantic status` to diagnose the optional layer.

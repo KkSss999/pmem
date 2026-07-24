@@ -12,6 +12,7 @@ export type Channel =
   | 'source_file'
   | 'source_file_prefix'
   | 'fts'
+  | 'semantic'
   | 'like'
   | 'graph';
 
@@ -19,6 +20,12 @@ export interface Reason {
   channel: Channel;
   detail: string;
   base: number;
+  /** Semantic provenance is additive and only present for semantic candidates. */
+  similarity?: number;
+  chunk_id?: string;
+  heading?: string | null;
+  model_revision?: string;
+  parent_card?: string;
 }
 
 export interface ScoreFactors {
@@ -40,12 +47,15 @@ export interface ScoredCandidate {
   /** set by graph expansion */
   edge_type?: string;
   from_card?: string;
+  /** Internal contextual evidence used by reranking; never emitted directly. */
+  rerank_text?: string;
 }
 
 export interface ScoredResult extends ScoredCandidate {
   score: number;
   factors: ScoreFactors;
   stale: boolean;
+  rerank?: import('./rerank').RerankExplanation;
 }
 
 export const CHANNEL_BASE: Record<Channel, number> = {
@@ -60,6 +70,7 @@ export const CHANNEL_BASE: Record<Channel, number> = {
   source_file: 0.9,
   source_file_prefix: 0.75,
   fts: 0.8, // upper cap; actual base computed from bm25
+  semantic: 0.86, // may outrank fuzzy lexical hits; exact/title/path remain rank-authoritative
   like: 0.5,
   graph: 0.6, // fallback; actual base inherited from seed
 };
@@ -168,6 +179,13 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
       byId.set(cand.card.id, { ...cand, reasons: [...cand.reasons] });
     } else {
       existing.reasons.push(...cand.reasons);
+      if (cand.rerank_text?.trim()) {
+        if (!existing.rerank_text?.trim()) {
+          existing.rerank_text = cand.rerank_text;
+        } else if (existing.rerank_text !== cand.rerank_text && !existing.rerank_text.includes(cand.rerank_text)) {
+          existing.rerank_text = `${existing.rerank_text}\n${cand.rerank_text}`;
+        }
+      }
       if (cand.base > existing.base) {
         existing.base = cand.base;
         existing.graph_distance = cand.graph_distance;
@@ -199,9 +217,22 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
   }
 
   results.sort((a, b) => {
-    const aExact = a.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
-    const bExact = b.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
-    return (bExact - aExact) || (b.score - a.score) || a.card.id.localeCompare(b.card.id);
+    const aExactId = a.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
+    const bExactId = b.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
+    if (aExactId !== bExactId) return bExactId - aExactId;
+
+    // Semantic similarity may discover candidates, but must never displace an
+    // exact title/path hit. Keep all pre-v1.1 deterministic channels otherwise
+    // ordered by their established fused score.
+    const exactAgainstSemantic = (result: ScoredResult, other: ScoredResult): number => {
+      const exact = result.reasons.some(r => r.channel === 'exact_title' || r.channel === 'source_file');
+      const otherSemanticOnly = other.reasons.some(r => r.channel === 'semantic')
+        && !other.reasons.some(r => r.channel === 'exact_title' || r.channel === 'source_file');
+      return exact && otherSemanticOnly ? 1 : 0;
+    };
+    const aAuthority = exactAgainstSemantic(a, b);
+    const bAuthority = exactAgainstSemantic(b, a);
+    return (bAuthority - aAuthority) || (b.score - a.score) || a.card.id.localeCompare(b.card.id);
   });
   return results;
 }

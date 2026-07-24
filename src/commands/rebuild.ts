@@ -14,6 +14,8 @@ interface RebuildOptions {
   full?: boolean;
   card?: string;
   cwd?: string;
+  /** Suppress success summaries when rebuild is an internal command step. */
+  silent?: boolean;
 }
 
 interface ParsedCard {
@@ -571,10 +573,12 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   // Count actual edges from the SQLite edges table (includes explicit + inferred + mention)
   const dbEdgeCount = (db.prepare("SELECT COUNT(*) as cnt FROM edges").get() as { cnt: number }).cnt;
 
-  console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
-  console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
-  if (cleanedStaleCards > 0) {
-    console.log(`Cleaned ${cleanedStaleCards} stale card(s) (source files deleted)`);
+  if (!options.silent) {
+    console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
+    console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
+    if (cleanedStaleCards > 0) {
+      console.log(`Cleaned ${cleanedStaleCards} stale card(s) (source files deleted)`);
+    }
   }
 
   closeDatabase();

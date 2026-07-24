@@ -31,6 +31,24 @@ pmem doctor
 pmem rebuild
 ```
 
+Fresh v1.2 projects create the first index during `pmem init`; use this command to recover a deleted index or upgrade an older project.
+
+## Semantic companion is missing
+
+The base CLI remains healthy; only optional semantic commands need the
+companion. On macOS, install the matching release and enable it for the current
+project:
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+pmem semantic status
+```
+
+The model is stored once under `~/.pmem-global/models`. Do not copy it into the
+project. If semantic setup or indexing fails, `pmem ask`, `context`, and
+`recall` continue through deterministic retrieval.
+
 ## Not a git repository
 
 `pmem status` and `pmem mark-dirty --auto` use git by default. Outside git repos, they fall back to mtime scanning:

@@ -54,6 +54,24 @@ describe('v0.8 scoring', () => {
     assert.ok(results[0].score > 0.9, 'decision/module type weight and recency should boost exact-ish hits');
   });
 
+  it('preserves semantic rerank text when a deterministic channel found the card first', () => {
+    const shared = card({ id: 'module.shared', type: 'module' });
+    const results = fuseAndScore([
+      { card: shared, base: 0.8, graph_distance: 0, reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }] },
+      {
+        card: shared,
+        base: 0.7,
+        graph_distance: 0,
+        reasons: [{ channel: 'semantic', detail: 'semantic passage', base: 0.7 }],
+        rerank_text: 'credential rotation boundary\nContext: authentication session',
+      },
+    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+
+    assert.equal(results.length, 1);
+    assert.equal(results[0].rerank_text, 'credential rotation boundary\nContext: authentication session');
+    assert.deepEqual(results[0].reasons.map(reason => reason.channel), ['fts', 'semantic']);
+  });
+
   it('penalizes dirty cards without hiding them', () => {
     const results = fuseAndScore([
       { card: card(), base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },
@@ -86,6 +104,19 @@ describe('v0.8 scoring', () => {
       { card: oldDirtyExact, base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },
     ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.exact']) });
     assert.strictEqual(results[0].card.id, 'decision.exact');
+  });
+
+  it('keeps exact title and path hits ahead of semantic candidates', () => {
+    const exactTitle = card({ id: 'decision.title', title: 'Target title', updated_at: '2024-01-01T00:00:00.000Z' });
+    const exactPath = card({ id: 'module.path', type: 'module', updated_at: '2024-01-01T00:00:00.000Z' });
+    const semantic = card({ id: 'decision.semantic', updated_at: '2026-01-03T00:00:00.000Z' });
+    const results = fuseAndScore([
+      { card: semantic, base: 0.99, graph_distance: 0, reasons: [{ channel: 'semantic', detail: 'similar', base: 0.99 }] },
+      { card: exactTitle, base: 0.4, graph_distance: 0, reasons: [{ channel: 'exact_title', detail: 'title', base: 0.4 }] },
+      { card: exactPath, base: 0.4, graph_distance: 0, reasons: [{ channel: 'source_file', detail: 'path', base: 0.4 }] },
+    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+    assert.deepStrictEqual(results.slice(0, 2).map(result => result.card.id).sort(), ['decision.title', 'module.path']);
+    assert.strictEqual(results[2].card.id, 'decision.semantic');
   });
 });
 

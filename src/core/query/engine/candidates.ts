@@ -9,6 +9,8 @@ export interface CandidateOptions {
   maxHops?: number;
   /** How many top seeds to expand (default 8) */
   expandTopN?: number;
+  /** Optional candidates produced by the async semantic channel before graph expansion. */
+  additionalCandidates?: readonly ScoredCandidate[];
 }
 
 export function generateCandidates(
@@ -24,6 +26,8 @@ export function generateCandidates(
   collectTagMatches(db, intent, out);
   collectSourceFileMatches(db, intent, out);
   collectFtsMatches(db, intent, out);
+
+  if (opts.additionalCandidates) out.push(...opts.additionalCandidates);
 
   if (out.length === 0) {
     collectLikeMatches(db, intent, out);

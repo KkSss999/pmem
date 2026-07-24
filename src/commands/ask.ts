@@ -95,6 +95,11 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
         for (const f of result.evidence_paths.slice(0, 8)) lines.push(`  ${f}`);
       }
     }
+    if (result.warnings && result.warnings.length > 0) {
+      lines.push('');
+      lines.push('Warnings:');
+      for (const warning of result.warnings) lines.push(`  - ${warning}`);
+    }
     console.log(lines.join('\n'));
   }
 }

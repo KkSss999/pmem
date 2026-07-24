@@ -1,0 +1,58 @@
+{
+  "fixture_version": "v1.1.1-retrieval-2026-07-24.1",
+  "hard_negative_fixture_version": "v1.2.0-hard-negatives-2026-07-24.1",
+  "evaluator": "contextual-v1-live",
+  "recorded_at": "2026-07-24",
+  "platform": "macOS arm64",
+  "model": "Xenova/multilingual-e5-small",
+  "model_revision": "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+  "pipeline_version": 2,
+  "quality": {
+    "query_count": 60,
+    "recall_at_5": 0.933333,
+    "mrr": 0.862058,
+    "pre_rerank_recall_at_5": 0.866667,
+    "pre_rerank_mrr": 0.834228,
+    "candidate_recall_at_50": 1,
+    "slices": {
+      "zh": { "recall_at_5": 0.95, "mrr": 0.864167 },
+      "en": { "recall_at_5": 0.9, "mrr": 0.855757 },
+      "code_path_mixed": { "recall_at_5": 0.95, "mrr": 0.86625 }
+    },
+    "exact_query_success_rate": 1
+  },
+  "hard_negatives": {
+    "query_count": 30,
+    "pre_rerank_ndcg_at_10": 0.871031,
+    "reranked_ndcg_at_10": 0.935387,
+    "improvement": 0.064356
+  },
+  "latency_ms": {
+    "warm_query_p50": 4.131,
+    "warm_query_p95": 6.209,
+    "pre_rerank_p50": 4.164,
+    "pre_rerank_p95": 5.71,
+    "rerank_overhead_p50": -0.112
+  },
+  "disabled_path_latency_ms": {
+    "baseline": { "mean": 0.667, "p50": 0.556, "p95": 1.017 },
+    "accepted": { "mean": 0.694, "p50": 0.598, "p95": 1.042 },
+    "change_percent": { "mean": 4.05, "p50": 7.55, "p95": 2.46 }
+  },
+  "performance_300_cards": {
+    "full_index_build_ms": 1592.253,
+    "warm_query_p50_ms": 5.182,
+    "warm_query_p95_ms": 6.915
+  },
+  "acceptance": {
+    "minimum_recall_at_5": 0.866667,
+    "minimum_mrr": 0.856052,
+    "minimum_rerank_mrr_gain": 0.02,
+    "minimum_hard_negative_ndcg_at_10_gain": 0.05,
+    "required_candidate_recall_at_50": 1,
+    "required_exact_query_success_rate": 1,
+    "maximum_300_card_build_ms": 1802.958,
+    "maximum_300_card_warm_query_p95_ms": 12,
+    "maximum_rerank_overhead_p50_ms": 2
+  }
+}
