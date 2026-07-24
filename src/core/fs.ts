@@ -168,7 +168,7 @@ export function withLock<T>(
  * matches `process.pid`). Used by `withLock` and `acquireLock` to support
  * reentrant critical sections without deadlock or premature release.
  */
-function lockOwnedBySelf(lockPath: string): boolean {
+export function lockOwnedBySelf(lockPath: string): boolean {
   try {
     const pidFile = path.join(lockPath, 'pid');
     if (!fs.existsSync(pidFile)) return false;
@@ -299,4 +299,3 @@ export function isPathMatch(filePath: string, targetPath: string): boolean {
   const t = targetPath.replace(/\/$/, '');
   return f === t || f.startsWith(t + '/');
 }
-

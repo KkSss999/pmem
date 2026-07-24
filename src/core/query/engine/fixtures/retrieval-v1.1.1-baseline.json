@@ -1,0 +1,36 @@
+{
+  "fixture_version": "v1.1.1-retrieval-2026-07-24.1",
+  "evaluator": "deterministic-v0.8",
+  "recorded_at": "2026-07-24T00:00:00.000Z",
+  "platform": "darwin-arm64",
+  "node_version": "v24.14.0",
+  "query_count": 60,
+  "recall_at_5": 0.716667,
+  "mrr": 0.660147,
+  "slices": {
+    "zh": {"query_count":20,"recall_at_5":0.45,"mrr":0.425},
+    "en": {"query_count":20,"recall_at_5":0.85,"mrr":0.790441},
+    "code_path_mixed": {"query_count":20,"recall_at_5":0.85,"mrr":0.765}
+  },
+  "exact_query_success": {
+    "query_count": 60,
+    "success_count": 60,
+    "success_rate": 1,
+    "by_kind": {
+      "id": {"query_count":20,"success_count":20,"success_rate":1},
+      "title": {"query_count":20,"success_count":20,"success_rate":1},
+      "path": {"query_count":20,"success_count":20,"success_rate":1}
+    }
+  },
+  "latency_ms": {"sample_count":60,"mean":0.667,"p50":0.556,"p95":1.017},
+  "semantic_acceptance": {
+    "minimum_recall_at_5": 0.866667,
+    "minimum_mrr": 0.660147,
+    "minimum_slice_recall_at_5": {
+      "zh": 0.4,
+      "en": 0.8,
+      "code_path_mixed": 0.8
+    },
+    "required_exact_query_success_rate": 1
+  }
+}

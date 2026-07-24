@@ -13,7 +13,7 @@ import type { ConsistencyIssue, CardRow } from '../types';
  * semantics stay aligned.
  */
 export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
-  const cwd = process.cwd();
+  const cwd = path.dirname(pmemPath);
   const dbPath = path.join(pmemPath, 'pmem.db');
 
   if (!fileExists(dbPath)) {
@@ -45,6 +45,7 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
       const cardUpdatedMs = Math.max(t1, t2);
       if (cardUpdatedMs === 0) continue;
 
+      const stalePaths: string[] = [];
       for (const sourceFile of sourceFiles) {
         // Skip .pmem/ self-references: pmem update --confirm rewrites
         // manifest.yml / next.md / state.md / index.md, which would
@@ -57,17 +58,25 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
         try {
           const sourceStat = statSync(absPath);
           if (sourceStat.mtimeMs > cardUpdatedMs) {
-            issues.push({
-              type: 'stale_memory',
-              severity: 'blocking',
-              card_id: card.id,
-              file_path: sourceFile.path,
-              message: `${card.id} may be stale — ${sourceFile.path} modified after last card update`,
-            });
+            stalePaths.push(sourceFile.path);
           }
         } catch {
           // skip files that can't be stat'd
         }
+      }
+      if (stalePaths.length > 0) {
+        stalePaths.sort();
+        issues.push({
+          type: 'stale_memory',
+          severity: 'blocking',
+          card_id: card.id,
+          file_path: stalePaths[0],
+          file_paths: stalePaths,
+          evidence_count: stalePaths.length,
+          message: stalePaths.length === 1
+            ? `${card.id} may be stale — ${stalePaths[0]} modified after last card update`
+            : `${card.id} may be stale — ${stalePaths.length} source files modified after last card update`,
+        });
       }
     }
   } finally {
@@ -379,6 +388,7 @@ export function checkMemoryPoisoning(pmemPath: string): ConsistencyIssue[] {
           type: 'memory_poisoning_risk',
           severity: 'warning',
           message: `${pct}% of cards are untrusted — potential memory poisoning (${untrustedCount}/${totalCards}).`,
+          evidence_count: untrustedCount,
         });
       }
     }

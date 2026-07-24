@@ -659,8 +659,8 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
       if (!staleByCard.has(issue.card_id)) {
         staleByCard.set(issue.card_id, new Set());
       }
-      if (issue.file_path) {
-        staleByCard.get(issue.card_id)!.add(issue.file_path);
+      for (const filePath of issue.file_paths ?? (issue.file_path ? [issue.file_path] : [])) {
+        staleByCard.get(issue.card_id)!.add(filePath);
       }
     }
   }

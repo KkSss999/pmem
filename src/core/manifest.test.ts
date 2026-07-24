@@ -53,6 +53,10 @@ describe('getDefaultManifest', () => {
     assert.strictEqual(manifest.embedding.enabled, false);
     assert.strictEqual(manifest.embedding.provider, 'none');
     assert.strictEqual(manifest.embedding.model, null);
+    assert.strictEqual(manifest.embedding.revision, null);
+    assert.strictEqual(manifest.embedding.source, null);
+    assert.strictEqual(manifest.embedding.dtype, null);
+    assert.strictEqual(manifest.embedding.cache_path, null);
     assert.strictEqual(manifest.embedding.dimension, null);
   });
 

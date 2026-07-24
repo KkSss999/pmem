@@ -4,8 +4,11 @@ import type Database from 'better-sqlite3';
 import { openDatabase, createSchema } from '../db';
 import { loadManifest, resolveConfig } from '../manifest';
 import { parseIntent } from './engine/intent';
+import { buildQueryPlan } from './engine/queryPlan';
+import { rerankCandidates, type RerankExplanation } from './engine/rerank';
 import { generateCandidates } from './engine/candidates';
-import { fuseAndScore, type ScoredResult, type Reason, type ScoreFactors } from './engine/scoring';
+import { CHANNEL_BASE, fuseAndScore, type ScoredCandidate, type ScoredResult, type Reason, type ScoreFactors } from './engine/scoring';
+import { getSemanticStatus, searchSemanticCards, type EmbeddingProvider, type SemanticCardMatch } from '../semantic';
 
 // Legacy match_type retained for AskResultV03 back-compat.
 type MatchType = 'exact_id' | 'exact_title' | 'alias' | 'tag' | 'source_file' | 'graph_expansion' | 'keyword_fallback';
@@ -28,6 +31,8 @@ export interface AskMatchV03 {
   card_confidence?: number | null;
   superseded_by?: string | null;
   classification?: string | null;
+  /** Present in explain mode when the local contextual second stage ran. */
+  rerank?: RerankExplanation;
 }
 
 export interface AskResultV03 {
@@ -35,6 +40,8 @@ export interface AskResultV03 {
   matched: AskMatchV03[];
   recommended_files: string[];
   evidence_paths: string[];
+  /** Present only when explicitly enabled semantic retrieval degraded safely. */
+  warnings?: string[];
 }
 
 export interface AskOptions {
@@ -42,6 +49,8 @@ export interface AskOptions {
   explain?: boolean;
   /** injected for deterministic tests; defaults to Date.now() at entry */
   now?: number;
+  /** Evaluation/SDK escape hatch; semantic retrieval reranks by default. */
+  rerank?: boolean;
 }
 
 const CHANNEL_TO_MATCH_TYPE: Record<string, MatchType> = {
@@ -61,6 +70,49 @@ const CHANNEL_TO_MATCH_TYPE: Record<string, MatchType> = {
 };
 
 export function askQuery(pmemPath: string, query: string, options: AskOptions & { db?: Database.Database } = {}): AskResultV03 {
+  return executeAskQuery(pmemPath, query, options);
+}
+
+/**
+ * Async semantic path used by the Runtime/CLI. The synchronous askQuery API
+ * remains deterministic and backward-compatible for embedders and tests.
+ */
+export async function askQueryWithSemantic(
+  pmemPath: string,
+  query: string,
+  provider: EmbeddingProvider,
+  options: AskOptions & { db?: Database.Database } = {},
+): Promise<AskResultV03> {
+  const db = options.db ?? openDatabase(pmemPath);
+  if (!options.db) createSchema(db);
+  try {
+    const status = getSemanticStatus(db);
+    if (!status.available) {
+      const detail = status.compatible
+        ? 'the derived index is unavailable'
+        : `the derived index uses pipeline v${status.pipelineVersion ?? 1}, but v2 is required`;
+      return {
+        ...executeAskQuery(pmemPath, query, { ...options, db }),
+        warnings: [`Semantic retrieval is enabled but ${detail}. Run \`pmem semantic rebuild\`.`],
+      };
+    }
+    const matches = await searchSemanticCards(db, query, provider, 48);
+    return executeAskQuery(pmemPath, query, { ...options, db }, matches, options.rerank !== false);
+  } catch (error: any) {
+    return {
+      ...executeAskQuery(pmemPath, query, { ...options, db }),
+      warnings: [`Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`],
+    };
+  }
+}
+
+function executeAskQuery(
+  pmemPath: string,
+  query: string,
+  options: AskOptions & { db?: Database.Database },
+  semanticMatches: readonly SemanticCardMatch[] = [],
+  rerankEnabled = false,
+): AskResultV03 {
   const dbPath = path.join(pmemPath, 'pmem.db');
 
   if (!fileExists(dbPath)) {
@@ -77,7 +129,9 @@ export function askQuery(pmemPath: string, query: string, options: AskOptions & 
   const knownTypes: string[] = (config as any).card_types ?? ['module', 'decision', 'trace', 'task', 'feature', 'risk'];
 
   const intent = parseIntent(query, knownTypes);
-  const candidates = generateCandidates(db, intent);
+  const candidates = generateCandidates(db, intent, {
+    additionalCandidates: semanticCandidates(db, semanticMatches),
+  });
 
   const dirtyRows = db.prepare(
     "SELECT target FROM dirty_flags WHERE resolved_at IS NULL AND scope = 'card'"
@@ -89,7 +143,8 @@ export function askQuery(pmemPath: string, query: string, options: AskOptions & 
     dirtyCardIds,
   });
   // v1.1: never surface secret-sensitivity cards in ask output.
-  const scored = scoredAll.filter(r => (r.card as any).sensitivity !== 'secret');
+  const visible = scoredAll.filter(r => (r.card as any).sensitivity !== 'secret');
+  const scored = rerankEnabled ? rerankCandidates(visible, buildQueryPlan(intent)) : visible;
 
   const limit = options.limit ?? 20;
   const top = scored.slice(0, limit);
@@ -109,6 +164,33 @@ export function askQuery(pmemPath: string, query: string, options: AskOptions & 
     recommended_files: recommendedFiles,
     evidence_paths: evidencePaths,
   };
+}
+
+function semanticCandidates(db: Database.Database, matches: readonly SemanticCardMatch[]): ScoredCandidate[] {
+  const candidates: ScoredCandidate[] = [];
+  const cardQuery = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0 AND is_candidate = 0');
+  for (const match of matches) {
+    const card = cardQuery.get(match.cardId) as import('../../types').CardRow | undefined;
+    if (!card || card.sensitivity === 'secret') continue;
+    const base = Math.max(0.2, Math.min(CHANNEL_BASE.semantic, match.similarity));
+    candidates.push({
+      card,
+      base,
+      graph_distance: 0,
+      reasons: [{
+        channel: 'semantic',
+        detail: `cosine ${match.similarity.toFixed(4)} at ${match.headingPath.join(' > ') || '(card root)'}`,
+        base,
+        similarity: match.similarity,
+        chunk_id: match.chunkId,
+        heading: match.heading,
+        model_revision: match.modelRevision,
+        parent_card: match.cardId,
+      }],
+      rerank_text: `${match.content}\n${match.context}`,
+    });
+  }
+  return candidates;
 }
 
 function toMatch(r: ScoredResult, explain: boolean): AskMatchV03 {
@@ -134,6 +216,7 @@ function toMatch(r: ScoredResult, explain: boolean): AskMatchV03 {
   if (explain) {
     match.reasons = r.reasons;
     match.factors = r.factors;
+    if (r.rerank) match.rerank = r.rerank;
   }
   return match;
 }

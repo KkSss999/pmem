@@ -25,9 +25,17 @@ export interface EmbeddingConfig {
   enabled: boolean;
   provider: 'none' | 'api' | 'local';
   model: string | null;
+  /** Immutable model source revision. Required when local semantic retrieval is enabled. */
+  revision?: string | null;
+  /** Registry used only by the explicit setup command to populate the shared model directory. */
+  source?: 'modelscope' | 'huggingface' | null;
+  /** ONNX quantization selected during the explicit setup step. */
+  dtype?: 'uint8' | null;
+  /** User-level Transformers.js cache. No download is attempted outside semantic setup. */
+  cache_path?: string | null;
   dimension: number | null;
   store: 'sqlite';
-  index: 'none';
+  index: 'none' | 'flat';
 }
 
 export interface ServeExperimentalConfig {

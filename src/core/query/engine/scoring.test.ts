@@ -87,6 +87,19 @@ describe('v0.8 scoring', () => {
     ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.exact']) });
     assert.strictEqual(results[0].card.id, 'decision.exact');
   });
+
+  it('keeps exact title and path hits ahead of semantic candidates', () => {
+    const exactTitle = card({ id: 'decision.title', title: 'Target title', updated_at: '2024-01-01T00:00:00.000Z' });
+    const exactPath = card({ id: 'module.path', type: 'module', updated_at: '2024-01-01T00:00:00.000Z' });
+    const semantic = card({ id: 'decision.semantic', updated_at: '2026-01-03T00:00:00.000Z' });
+    const results = fuseAndScore([
+      { card: semantic, base: 0.99, graph_distance: 0, reasons: [{ channel: 'semantic', detail: 'similar', base: 0.99 }] },
+      { card: exactTitle, base: 0.4, graph_distance: 0, reasons: [{ channel: 'exact_title', detail: 'title', base: 0.4 }] },
+      { card: exactPath, base: 0.4, graph_distance: 0, reasons: [{ channel: 'source_file', detail: 'path', base: 0.4 }] },
+    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+    assert.deepStrictEqual(results.slice(0, 2).map(result => result.card.id).sort(), ['decision.title', 'module.path']);
+    assert.strictEqual(results[2].card.id, 'decision.semantic');
+  });
 });
 
 describe('v1.1 agent-trust scoring factors', () => {

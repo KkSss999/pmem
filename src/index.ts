@@ -28,6 +28,8 @@ import { forgetCommand } from './commands/forget';
 import { moduleInferCommand } from './commands/module';
 import { decisionInferCommand } from './commands/decision';
 import { relationsCommand } from './commands/relations';
+import { semanticCommand } from './commands/semantic';
+import { healthBaselineCommand, healthMigrateCommand } from './commands/health';
 
 
 const program = new Command();
@@ -271,9 +273,37 @@ program
   .option('--fix-locks', 'Clean stale lock at .pmem/.lock')
   .option('--fix-stale', 'Auto-fix stale memory warning by updating verification timestamps')
   .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action((options) => {
-    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, relaxed: options.relaxed });
+    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, relaxed: options.relaxed, format: options.format });
   });
+
+const health = program
+  .command('health')
+  .description('Inspect health, accept a debt baseline, and migrate card metadata');
+
+health
+  .command('baseline')
+  .description('Preview or explicitly write the current health-debt baseline')
+  .option('--write', 'Accept current issues as the historical health baseline')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((options) => healthBaselineCommand({ write: options.write, format: options.format }));
+
+health
+  .command('migrate')
+  .description('Preview or apply missing classification, trust, and sensitivity metadata')
+  .option('--apply', 'Apply the migration (default is dry-run)')
+  .option('--trust-label <label>', 'Explicit trust label for cards where it is missing')
+  .option('--sensitivity <level>', 'Explicit sensitivity for cards where it is missing')
+  .option('--classification-by-type <mappings>', 'Comma-separated mappings such as module=fact,resource=fact')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action((options) => healthMigrateCommand({
+    apply: options.apply,
+    trustLabel: options.trustLabel,
+    sensitivity: options.sensitivity,
+    classificationByType: options.classificationByType,
+    format: options.format,
+  }));
 
 program
   .command('doctor')
@@ -347,6 +377,45 @@ integration
   .description('Verify integration setup')
   .action(() => {
     integrationCommand('verify');
+  });
+
+const semantic = program
+  .command('semantic')
+  .description('Manage optional local semantic retrieval');
+
+semantic
+  .command('setup')
+  .description('Explicitly download and enable the pinned semantic model (macOS only)')
+  .option('-y, --yes', 'Confirm the displayed model download without prompting')
+  .option('--source <source>', 'Model registry (modelscope or huggingface)', 'modelscope')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    await semanticCommand('setup', { yes: options.yes, format: options.format, source: options.source });
+  });
+
+semantic
+  .command('status')
+  .description('Show semantic model cache and derived index status')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    await semanticCommand('status', { format: options.format });
+  });
+
+semantic
+  .command('rebuild')
+  .description('Rebuild derived semantic chunks and vectors using the local model')
+  .option('--full', 'Force a full semantic index rebuild (default: incremental)')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    await semanticCommand('rebuild', { format: options.format, full: options.full });
+  });
+
+semantic
+  .command('clear')
+  .description('Clear derived semantic data and disable semantic retrieval')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    await semanticCommand('clear', { format: options.format });
   });
 
 program

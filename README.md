@@ -226,6 +226,49 @@ depends_on: [decision.sqlite_runtime]
 
 **Do not edit SQLite directly.** Edit Markdown cards or use pmem workflow commands, then run `pmem rebuild`.
 
+### Optional Semantic Retrieval (v1.2.0, macOS)
+
+Semantic retrieval is opt-in. Normal install, `init`, `rebuild`, `ask`, and
+`context` never download a model. To enable it for a project:
+
+```bash
+pmem semantic setup                 # ModelScope, asks before downloading
+pmem semantic rebuild               # incremental by default
+pmem semantic status
+pmem ask "where is login throttling handled?" --explain
+```
+
+Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
+The pinned model is stored once for all projects at
+`~/.pmem-global/models/Xenova/multilingual-e5-small/<revision>`; each project
+keeps only its semantic configuration and rebuildable SQLite vectors. Running
+`pmem semantic clear` removes and disables the project index while preserving
+the shared model cache. The source is download provenance only: once the pinned
+cache passes integrity verification, projects using either source reuse that
+same global copy.
+
+### Memory Health and Metadata Migration (v1.2.0)
+
+`pmem verify` keeps the legacy `score` while adding an overall score, a
+baseline-relative change score, and correctness, freshness, metadata, and
+semantic-readiness dimensions:
+
+```bash
+pmem verify --format json
+pmem health baseline                 # preview current debt
+pmem health baseline --write         # explicitly accept it as the baseline
+pmem health migrate                  # dry-run; writes nothing
+pmem health migrate --apply \
+  --trust-label application_trusted \
+  --sensitivity internal \
+  --classification-by-type module=fact,project=fact
+```
+
+Migration only fills missing metadata, always creates a backup before an
+applied change, and never silently promotes old cards to user- or
+system-trusted. Contextual reranking uses the existing local E5 model plus a
+bounded TypeScript feature pass; it does not download a second model.
+
 ### Hybrid Recall Engine (v0.8)
 
 `pmem ask` uses a 5-stage deterministic pipeline:
@@ -661,8 +704,13 @@ pmem verify
 - Agent quotas, memory poisoning defense
 - Trust-aware recall scoring, secret-sensitivity filtering
 
+**v1.2 Unified Memory Intelligence** — release candidate:
+- Opt-in local multilingual semantic search with one shared global model cache
+- Contextual chunk evidence and local reranking without a second model
+- Multi-dimensional memory health, explicit debt baselines, and safe metadata migration
+- Parent-card provenance, graph expansion, exact-query authority, and deterministic fallback
+
 Deferred:
-- Embedding-based semantic search
 - `pmem serve` / REST API
 - Graph visualization UI
 - Telemetry

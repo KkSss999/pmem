@@ -4,6 +4,18 @@ export interface VerifyIssue {
   message: string;
   fix: string;
   card_id?: string;
+  /** Primary evidence path retained for compatibility. */
+  file_path?: string;
+  /** Health dimension used by the v1.2 scoring model. */
+  dimension?: HealthDimension;
+  /** Stable identity used to compare this issue with an accepted baseline. */
+  fingerprint?: string;
+  /** Number of raw observations collapsed into this issue. */
+  evidence_count?: number;
+  /** All source paths represented by an aggregated issue. */
+  file_paths?: string[];
+  /** True when the issue is present in the accepted health baseline. */
+  historical?: boolean;
   /**
    * v0.7.6 (issue #10): for `too_many_relations` — count of related edges.
    */
@@ -38,9 +50,41 @@ export interface VerifyIssue {
   }>;
 }
 
+export type HealthDimension = 'correctness' | 'freshness' | 'metadata' | 'semantic_readiness';
+
+export interface HealthDimensionResult {
+  status: 'applicable' | 'not_applicable';
+  score: number | null;
+  issue_count: number;
+}
+
+export interface HealthBaselineSummary {
+  status: 'missing' | 'loaded' | 'invalid';
+  path: string;
+  historical: number;
+  new: number;
+  resolved: number;
+}
+
+export interface SemanticReadinessSummary {
+  applicable: boolean;
+  eligible_cards: number;
+  excluded_cards: number;
+  excluded_by_reason: Record<string, number>;
+  pipeline_version: number | null;
+  index_compatible: boolean;
+  index_fresh: boolean;
+}
+
 export interface VerifyResult {
   passed: boolean;
+  /** Backward-compatible alias of overall_score. */
   score: number;
+  overall_score: number;
+  change_score: number | null;
+  dimensions: Record<HealthDimension, HealthDimensionResult>;
+  semantic_readiness: SemanticReadinessSummary;
+  baseline: HealthBaselineSummary;
   issues: VerifyIssue[];
 }
 
@@ -49,6 +93,8 @@ export interface ConsistencyIssue {
   severity: 'blocking' | 'warning' | 'info';
   card_id?: string;
   file_path?: string;
+  file_paths?: string[];
+  evidence_count?: number;
   message: string;
 }
 

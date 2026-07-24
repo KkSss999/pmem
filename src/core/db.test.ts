@@ -71,7 +71,7 @@ function makeEdge(overrides: Partial<EdgeRow> = {}): EdgeRow {
 }
 
 describe('createSchema', () => {
-  it('creates all 10 tables without error', () => {
+  it('creates all core and derived tables without error', () => {
     const db = createInMemoryDb();
     try {
       assert.doesNotThrow(() => {

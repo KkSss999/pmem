@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ensureDir } from './fs';
 import type { EdgeRow } from '../types';
 
-export const CORE_SCHEMA_VERSION = '0.4';
+export const CORE_SCHEMA_VERSION = '0.5';
 
 let _db: Database.Database | null = null;
 
@@ -174,6 +174,41 @@ export function createSchema(db: Database.Database): void {
       payload_json TEXT,
       expires_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS semantic_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      pipeline_version INTEGER NOT NULL DEFAULT 1,
+      model_id TEXT NOT NULL,
+      model_revision TEXT NOT NULL,
+      dimension INTEGER NOT NULL CHECK (dimension > 0),
+      index_content_hash TEXT NOT NULL,
+      chunk_count INTEGER NOT NULL DEFAULT 0,
+      built_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS semantic_chunks (
+      chunk_id TEXT PRIMARY KEY,
+      card_id TEXT NOT NULL,
+      heading TEXT,
+      heading_path TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      context TEXT NOT NULL DEFAULT '',
+      context_hash TEXT NOT NULL DEFAULT '',
+      model_id TEXT NOT NULL,
+      model_revision TEXT NOT NULL,
+      dimension INTEGER NOT NULL CHECK (dimension > 0),
+      vector BLOB NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(card_id) REFERENCES cards(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_semantic_chunks_card_id
+      ON semantic_chunks(card_id);
+    CREATE INDEX IF NOT EXISTS idx_semantic_chunks_content_hash
+      ON semantic_chunks(content_hash);
   `);
 
   for (const column of [
@@ -183,6 +218,10 @@ export function createSchema(db: Database.Database): void {
   ]) {
     try { db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
   }
+
+  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1'); } catch {}
+  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''"); } catch {}
 
   // v1.1: agent-trust columns on existing cards tables (idempotent).
   for (const column of [
@@ -352,7 +391,11 @@ export function insertEdge(db: Database.Database, edge: import('../types').EdgeR
   db.prepare(`
     INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at)
     VALUES (@from_id, @to_id, @type, @source, @confidence, @created_at, @updated_at)
-  `).run(edge);
+  `).run({
+    ...edge,
+    created_at: edge.created_at ?? null,
+    updated_at: edge.updated_at ?? null,
+  });
 }
 
 export function deleteCardAliases(db: Database.Database, cardId: string): void {
@@ -386,6 +429,8 @@ export function insertPath(db: Database.Database, cardId: string, filePath: stri
 
 export function clearAllTables(db: Database.Database): void {
   db.exec(`
+    DELETE FROM semantic_chunks;
+    DELETE FROM semantic_meta;
     DELETE FROM paths;
     DELETE FROM tags;
     DELETE FROM aliases;
@@ -666,4 +711,3 @@ function toMemoryEventTypeForCore(eventType: string): string {
   if (eventType === 'memory.observe') return 'observe';
   return 'observe';
 }
-
