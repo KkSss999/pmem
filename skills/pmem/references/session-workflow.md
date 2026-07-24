@@ -2,6 +2,9 @@
 
 Every agent session with pmem follows this pattern. pmem's value is in **cross-session recall**: the next time you open the project, `pmem recall` restores context instantly.
 
+This workflow uses the model-free `pmem-ai` base package. It remains fully
+available when semantic retrieval is not installed or temporarily unavailable.
+
 ## Session Start
 
 Always run these at the beginning of a session:
@@ -93,3 +96,17 @@ pmem recall --format compact --budget 2000
 ```
 
 You immediately see what was done, what state the project is in, and what to do next — without re-reading source files or asking "where were we?"
+
+## Optional Semantic Enhancement
+
+On macOS, a user may explicitly add the companion and enable semantic recall:
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+```
+
+This augments `ask` and `context`; it does not replace the deterministic engine
+or change the ordinary session start/end workflow. If semantic readiness is
+lost, continue the session with deterministic retrieval and use
+`pmem semantic status` to diagnose the optional layer.

@@ -40,14 +40,33 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 
 ## Install
 
+### Base CLI — recommended for every user
+
 ```bash
-npm install -g pmem-ai
+npm install -g pmem-ai@1.2.0
 pmem --version
 ```
+
+This is a complete, model-free pmem installation. It includes Markdown memory,
+SQLite/FTS retrieval, graph expansion, health checks, MCP, and the SDK. Most
+users only need this package. It does not install Transformers.js, ONNX Runtime,
+`sharp`, or a semantic model.
 
 Requires Node.js ≥ 18. `better-sqlite3` is compiled during install.
 
 Run `pmem doctor` anytime to check the health of your project memory setup.
+
+### Optional semantic companion — install only when needed
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+```
+
+`pmem-ai-semantic` is not a second CLI. It is the opt-in local inference runtime
+used by the `pmem semantic ...` commands. Keeping it separate prevents every
+pmem user from receiving the Transformers/ONNX/native dependency chain. Both
+packages use the same release version, but ordinary deterministic pmem usage
+requires only `pmem-ai`.
 
 ### From Source
 
@@ -82,7 +101,7 @@ test -f ~/.gemini/skills/pmem/SKILL.md
 
 ## Quick Start
 
-### 2-Minute Setup
+### 2-Minute Base Setup
 
 ```bash
 pmem init my-project
@@ -104,6 +123,11 @@ pmem capture --auto
 ```
 
 Use `pmem sync -s "<what changed>" -n "<next step>"` when you already know the final summary. Use `capture --auto` when pmem should derive the trace from the working tree. The lower-level `status → mark-dirty → update` flow remains available for review-heavy maintenance.
+
+This base journey remains available even when the optional semantic companion,
+model cache, or project semantic index is absent. Semantic failures degrade to
+the deterministic retrieval engine instead of taking `ask`, `context`, or
+`recall` offline.
 
 For a richer guided setup:
 
@@ -242,8 +266,9 @@ depends_on: [decision.sqlite_runtime]
 
 ### Optional Semantic Retrieval (v1.2.0, macOS)
 
-Semantic retrieval is opt-in. Normal install, `init`, `rebuild`, `ask`, and
-`context` never download a model. To enable it for a project:
+Semantic retrieval is a second, opt-in mode layered on top of the complete base
+CLI. Normal install, `init`, `rebuild`, `ask`, and `context` never download a
+model. To enable it for a project:
 
 ```bash
 # Install only on machines that need local semantic inference. The base pmem-ai
@@ -263,6 +288,18 @@ pmem semantic rebuild               # build this project's derived index
 ```
 
 It checks the companion, asks before downloading the pinned model, reuses the one global verified cache when present, and builds the current project's semantic index. `setup` and `rebuild` remain available when operators need to control those phases independently.
+
+The storage boundary is intentional:
+
+```text
+~/.pmem-global/models/                 one verified model shared by all projects
+project-a/.pmem/pmem.db                project A configuration and vectors
+project-b/.pmem/pmem.db                project B configuration and vectors
+```
+
+No project receives its own model copy. The per-project vectors are derived
+data and can always be rebuilt from canonical Markdown cards plus the shared
+model.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
 For SDK installations, install `pmem-ai-semantic@1.2.0` in the same project as

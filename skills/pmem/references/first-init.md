@@ -3,9 +3,12 @@
 ## Step 1: Install pmem globally
 
 ```bash
-npm install -g pmem-ai
+npm install -g pmem-ai@1.2.0
 pmem --version
 ```
+
+This is the complete model-free base installation. Do not install the semantic
+companion unless the user wants local semantic recall.
 
 ## Step 2: Install agent skills
 
@@ -116,6 +119,10 @@ Optional semantic enhancement on macOS is a separate, explicit journey:
 npm install -g pmem-ai-semantic@1.2.0
 pmem semantic enable
 ```
+
+The companion is a runtime used by the existing `pmem` CLI, not a second CLI.
+The verified model is shared from `~/.pmem-global/models`; this project stores
+only semantic configuration and rebuildable vectors in `.pmem/pmem.db`.
 
 ## Next: try a full session workflow
 

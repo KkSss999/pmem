@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Review PR #17 when desired; remote CI may complete asynchronously.
+Review PR #17 when desired; CI may complete asynchronously.
 
 ## Why
 The complete v1.2.0 local acceptance report was approved, including the dual-package release transaction and installation-to-use UX. The user authorized updating PR #17 without waiting for CI.
