@@ -31,6 +31,8 @@ pmem doctor
 pmem rebuild
 ```
 
+Fresh v1.2 projects create the first index during `pmem init`; use this command to recover a deleted index or upgrade an older project.
+
 ## Not a git repository
 
 `pmem status` and `pmem mark-dirty --auto` use git by default. Outside git repos, they fall back to mtime scanning:

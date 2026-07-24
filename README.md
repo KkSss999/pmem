@@ -29,7 +29,7 @@ The design is intentionally **local and Git-friendly**. Markdown cards are the s
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-**v1.1 (current)** ships **System Memory Security**: namespace hierarchy, capability ACL with 12 capabilities, agent quotas, memory poisoning defense, trust-aware recall scoring, and secret-sensitivity filtering — all built on the v1.0 two-layer architecture.
+**v1.2 (current)** ships **Unified Memory Intelligence**: the deterministic hybrid engine remains authoritative, with optional local multilingual semantic recall, contextual reranking, and explainable memory-health diagnostics.
 
 ## Who It's For
 
@@ -82,14 +82,28 @@ test -f ~/.gemini/skills/pmem/SKILL.md
 
 ## Quick Start
 
-### 5-Minute Setup
+### 2-Minute Setup
 
 ```bash
 pmem init my-project
-pmem rebuild
 pmem context "Implement core setup"
+
+# Work on the project, then close the loop:
+pmem sync -s "Implemented core setup" -n "Add integration tests"
+pmem verify
+```
+
+`pmem init` creates the Markdown memory foundation and its first SQLite index, so the project is immediately ready for `recall`, `ask`, and `context`. It never downloads a model.
+
+### Daily Agent Loop
+
+```bash
+pmem context "Implement core setup"   # restore only the relevant context
+# edit and verify project files
 pmem capture --auto
 ```
+
+Use `pmem sync -s "<what changed>" -n "<next step>"` when you already know the final summary. Use `capture --auto` when pmem should derive the trace from the working tree. The lower-level `status → mark-dirty → update` flow remains available for review-heavy maintenance.
 
 For a richer guided setup:
 
@@ -236,11 +250,19 @@ Semantic retrieval is opt-in. Normal install, `init`, `rebuild`, `ask`, and
 # package intentionally does not install Transformers.js or native ONNX/image runtimes.
 npm install -g pmem-ai-semantic@1.2.0
 
-pmem semantic setup                 # ModelScope, asks before downloading
-pmem semantic rebuild               # incremental by default
+pmem semantic enable                # guided setup + current-project index
 pmem semantic status
 pmem ask "where is login throttling handled?" --explain
 ```
+
+Operators can control the two phases independently when needed:
+
+```bash
+pmem semantic setup                 # prepare/reuse the verified global model
+pmem semantic rebuild               # build this project's derived index
+```
+
+It checks the companion, asks before downloading the pinned model, reuses the one global verified cache when present, and builds the current project's semantic index. `setup` and `rebuild` remain available when operators need to control those phases independently.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
 For SDK installations, install `pmem-ai-semantic@1.2.0` in the same project as
@@ -466,6 +488,12 @@ pmem integration list|install <framework>|verify
 pmem install [--skills] [--agent-rules] [--claude] [--codex] [--gemini] \
              [--cursor] [--cline] [--aider] [--windsurf] [--all]
 pmem mcp [--write readonly|append-only]
+
+pmem semantic enable [--yes] [--source modelscope|huggingface]
+pmem semantic setup [--yes] [--source modelscope|huggingface]
+pmem semantic status
+pmem semantic rebuild [--full]
+pmem semantic clear
 ```
 
 ## Agent Workflow
@@ -644,7 +672,16 @@ Run commands from the project root where `.pmem/` should live.
 pmem rebuild
 ```
 
-If the project has no memory cards yet, add a module, decision, or task card first.
+Fresh v1.2 projects create this index during `pmem init`. The manual command is primarily a recovery path for deleted indexes and an upgrade path for older projects. If the project has no memory cards yet, add a module, decision, or task card first.
+
+### Semantic Companion Is Missing
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+```
+
+The base CLI intentionally stays lightweight. A missing companion never breaks deterministic `ask`, `context`, or `recall`; only semantic setup/rebuild is unavailable until the companion is installed.
 
 ### `pmem ask` Returns No Matches
 

@@ -6,14 +6,13 @@ allowed-tools: Bash(pmem:*)
 
 # Project Memory with pmem
 
-`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.1** adds namespace hierarchy, capability ACL (12 capabilities), agent quotas, memory poisoning defense, trust-aware recall scoring, and secret-sensitivity filtering. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.2** adds optional local semantic recall, contextual reranking, and multidimensional memory health while keeping deterministic retrieval authoritative. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
 ```bash
 # First time in a project
 pmem init my-project --guided --description "A backend service" --stage "Alpha" --next "Set up CI/CD"
-pmem rebuild
 
 # Start task: restore and aggregate context
 pmem context "implement v0.7.4 agent UX"
@@ -61,11 +60,24 @@ pmem init my-project --guided \
 # From JSON file
 pmem init my-project --answers ./pmem-init.json
 
+# Fresh projects are indexed by init and immediately ready for recall/ask/context.
+# Use rebuild after later Markdown edits or to recover a missing index.
+
 # Rebuild SQLite indexes from cards
 pmem rebuild
 pmem rebuild --full          # full rebuild, clear all tables
 pmem rebuild --card module.core  # rebuild single card
 ```
+
+### Optional Semantic Retrieval (macOS)
+
+```bash
+npm install -g pmem-ai-semantic@1.2.0
+pmem semantic enable
+pmem semantic status
+```
+
+`semantic enable` explicitly prepares or reuses the one verified global model cache and builds the current project's derived index. The default install and `pmem init` never download a model. Operators may use `pmem semantic setup` and `pmem semantic rebuild` separately.
 
 ### Domain Presets & Custom Schemas (v0.7.0)
 

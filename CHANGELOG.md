@@ -6,6 +6,9 @@ All notable changes to pmem are documented here.
 
 ### Added
 
+- **Ready-after-init experience**: fresh projects build their first deterministic index during `pmem init`, so `recall`, `ask`, and `context` work immediately without a separate rebuild command.
+- **One-step semantic enablement**: `pmem semantic enable` guides companion validation, explicit model setup, and current-project indexing while preserving the expert `setup` and `rebuild` operations.
+- **Transactional two-package delivery**: CI packs, installs, audits, and smoke-tests both npm artifacts; main-branch releases publish and verify the semantic companion before publishing the base CLI that documents it.
 - **Opt-in local semantic retrieval for macOS**: `pmem semantic setup/status/rebuild/clear` manages a pinned multilingual E5 ONNX model and a derived SQLite vector index. ModelScope is the default download source; Hugging Face remains available with `--source huggingface`.
 - **Isolated semantic runtime**: the base `pmem-ai` production install no longer includes Transformers.js, ONNX Runtime, or sharp. Local inference is enabled explicitly by installing the separately distributed `pmem-ai-semantic@1.2.0` companion.
 - **One global model cache**: model artifacts are shared across projects under `~/.pmem-global/models/<model>/<revision>`; project-local `.pmem` stores only configuration and derived chunk vectors.

@@ -40,6 +40,32 @@ describe('pmem init domain presets', () => {
     try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
   });
 
+  it('fresh minimal init builds the first index and is immediately ready for ask/context', () => {
+    const testDir = path.join(TEMP_ROOT, 'init-zero-step');
+    fs.mkdirSync(testDir, { recursive: true });
+
+    const r = pmem('init zero-step', testDir);
+    assert.strictEqual(r.code, 0, `init failed: ${r.stdout}\n${r.stderr}`);
+    assert.ok(r.stdout.includes('Building first local index...'), r.stdout);
+    assert.ok(r.stdout.includes('pmem is ready for project "zero-step"'), r.stdout);
+    assert.ok(r.stdout.includes('pmem context "<your task>"'), r.stdout);
+    assert.ok(r.stdout.includes('pmem sync -s "<what changed>" -n "<next step>"'), r.stdout);
+    assert.ok(!r.stdout.includes('Next: run `pmem rebuild`'), r.stdout);
+
+    const pmemDir = path.join(testDir, '.pmem');
+    assert.ok(fs.existsSync(path.join(pmemDir, 'pmem.db')), 'init should create the SQLite index');
+    assert.ok(fs.existsSync(path.join(pmemDir, 'indexes', 'graph.json')), 'init should create graph.json');
+
+    const ask = pmem('ask "first module" --format compact', testDir);
+    assert.strictEqual(ask.code, 0, `ask should be ready immediately: ${ask.stdout}\n${ask.stderr}`);
+    assert.ok(!ask.stdout.includes('Run `pmem rebuild` first'), ask.stdout);
+
+    const context = pmem('context "create the first module" --format compact', testDir);
+    assert.strictEqual(context.code, 0, `context should be ready immediately: ${context.stdout}\n${context.stderr}`);
+    assert.ok(context.stdout.includes('# PMEM_CONTEXT_READY: create the first module'), context.stdout);
+    assert.ok(context.stdout.includes('**Project**: zero-step'), context.stdout);
+  });
+
   it('default pmem init is software domain (non-interactive)', () => {
     const testDir = path.join(TEMP_ROOT, 'init-default');
     fs.mkdirSync(testDir, { recursive: true });
@@ -50,6 +76,7 @@ describe('pmem init domain presets', () => {
 
     const pmemDir = path.join(testDir, '.pmem');
     assert.ok(fs.existsSync(pmemDir), '.pmem should exist');
+    assert.ok(fs.existsSync(path.join(pmemDir, 'pmem.db')), 'init should build the first SQLite index');
     assert.ok(fs.existsSync(path.join(pmemDir, 'modules')), 'modules directory should exist');
     assert.ok(fs.existsSync(path.join(pmemDir, 'features')), 'features directory should exist');
     assert.ok(fs.existsSync(path.join(pmemDir, 'decisions')), 'decisions directory should exist');
@@ -222,6 +249,33 @@ describe('pmem init domain presets', () => {
     checkNoExit1(path.join(testDir, '.pmem', 'integrations', 'claude-code', 'CLAUDE.md'));
     checkNoExit1(path.join(testDir, '.pmem', 'integrations', 'cursor', 'rules.example.md'));
     checkNoExit1(path.join(testDir, '.pmem', 'integrations', 'codex', 'AGENTS.md'));
+
+    for (const filePath of [
+      path.join(testDir, 'AGENTS.md'),
+      path.join(testDir, '.pmem', 'skills', 'task.md'),
+      path.join(testDir, '.pmem', 'integrations', 'claude-code', 'CLAUDE.md'),
+      path.join(testDir, '.pmem', 'integrations', 'cursor', 'rules.example.md'),
+      path.join(testDir, '.pmem', 'integrations', 'codex', 'AGENTS.md'),
+    ]) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      assert.ok(content.includes('pmem context'), `${filePath} should lead with task context`);
+      assert.ok(content.includes('pmem sync'), `${filePath} should use the one-command sync closeout`);
+    }
+  });
+
+  it('keeps the existing-project refusal and does not replace an initialized project', () => {
+    const testDir = path.join(TEMP_ROOT, 'init-existing');
+    fs.mkdirSync(testDir, { recursive: true });
+
+    const first = pmem('init original', testDir);
+    assert.strictEqual(first.code, 0, first.stderr);
+    const manifestPath = path.join(testDir, '.pmem', 'manifest.yml');
+    const before = fs.readFileSync(manifestPath, 'utf8');
+
+    const second = pmem('init replacement --domain novel', testDir);
+    assert.strictEqual(second.code, 0, second.stderr);
+    assert.ok(second.stdout.includes('.pmem already exists'), second.stdout);
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before, 'second init must not mutate the project');
   });
 
   it('rejects unknown domain preset with exit 2', () => {

@@ -13,7 +13,10 @@ created: "2026-07-24"
 updated: "2026-07-24"
 source_files:
   - package.json
+  - .github/workflows/ci.yml
   - packages/semantic-runtime/package.json
+  - src/commands/init.ts
+  - src/commands/semantic.ts
   - src/core/health/semantic.ts
   - src/core/semantic/cache.ts
   - src/core/query/ask.ts
@@ -114,3 +117,41 @@ All three review blockers were fixed and revalidated on Apple Silicon macOS on 2
 - Build and the final full automated suite passed: 392 tests, 0 failures, with the separately gated live test skipped in the ordinary suite.
 - The companion-backed live gate passed: Recall@5 `0.95`, MRR `0.865414`, exact success `60/60`, candidate Recall@50 `1.0`, and hard-negative NDCG@10 improved from `0.871031` to `0.947689` (`+0.076658`). The 300-card contextual rebuild took `1510.891 ms`; warm query p95 was `7.146 ms`.
 - Install smoke, real-workflow E2E, root and companion package dry-runs, isolated tarball installation, and `git diff --check` passed.
+
+## Final Release UX Reopen
+
+PR #17 remains Draft on 2026-07-24 because the separately distributed `pmem-ai-semantic@1.2.0` companion is not yet part of CI or the main-branch release transaction. The same final v1.2.0 acceptance unit also includes a deep user-journey cleanup rather than shipping a technically complete but unnecessarily fragmented workflow.
+
+### Locked UX and release scope
+
+- Pack, install, API-v1 smoke-test, and production-audit both root and companion artifacts in CI.
+- On main, compare both registry versions, publish the companion first, verify it is visible from npm, and only then publish `pmem-ai` and create the GitHub release. A partially published root release is forbidden.
+- Make a fresh `pmem init` immediately queryable without a separate first rebuild while preserving non-interactive and legacy behavior.
+- Add one guided semantic enable path that prepares the verified global model and builds the current project index in one command; retain setup/rebuild/status/clear as explicit expert operations.
+- Rework primary documentation and CLI next-step messages around three journeys: first project setup, daily context/capture loop, and optional semantic enhancement.
+- Default install and init remain zero-download for models; semantic enable remains explicit, macOS-gated, confirmation-gated, globally cached, offline after setup, and safely degradable.
+
+### Final close gate
+
+- New unit/integration coverage proves init produces a usable index and semantic enable performs setup then rebuild without changing expert command contracts.
+- Root and companion tarballs install independently; the companion exposes API v1; root contains none of the isolated native dependency graph.
+- Companion production audit is executed and its known upstream advisories are surfaced explicitly; root remains at zero high/critical advisories.
+- Full build/tests, all release E2E, live semantic quality/performance, both package dry-runs, workflow validation, `pmem rebuild`, and JSON verify pass.
+- PR #17 stays Draft and no merge/publish occurs until the user reviews this final acceptance report.
+
+### Local implementation evidence
+
+- Fresh installed tarballs now produce a ready project directly from `pmem init`; `.pmem/pmem.db`, `ask`, and `context` are available without a manual rebuild or model download. Success output presents only `context`, `ask`, and `sync`; generated Agent instructions follow the same daily loop and retain the expanded update flow as advanced diagnostics.
+- `pmem semantic enable` validates macOS/source/confirmation, prepares or reuses the global model, persists configuration only after setup succeeds, and builds a full current-project index. Cancellation and setup failure leave the manifest byte-identical; index failure preserves truthful enabled/cache state and returns a deterministic rebuild recovery command. Compact and JSON behavior are covered.
+- CI now treats `pmem-ai` and `pmem-ai-semantic` as two release artifacts: both are packed and installed from tarballs, root isolation and companion API v1 are smoke-tested, both production audits are parsed, and versions must match. Main publishes and confirms the companion's exact registry version before the root package can publish.
+- GitHub Release creation is reconciled independently from npm publication. If either npm package was already published but the `v1.2.0` release step failed, a main-branch workflow rerun detects the missing release and creates it instead of permanently skipping it.
+- Root production audit remains `0` high / `0` critical with `2` existing moderate advisories. The isolated companion audit currently reports `5` high / `0` critical across the allowlisted Transformers/ONNX/sharp graph, advisories `1123686` and `1124066`, with no available fix; new advisories, critical findings, newly available fixes, or expansion beyond the accepted baseline fail CI.
+- Build and the final automated suite pass: `405/405`, with the live semantic test separately gated. The setup JSON success, cancellation, and failure paths each emit exactly one parseable document. Every release E2E passes, including installed-tarball first-project, real workflow, non-Git, novel, research, sync, Agent UX, context restoration, and next-step de-duplication.
+- Companion-backed live evaluation still passes: Recall@5 `0.95`, MRR `0.865414`, exact success `60/60`, candidate Recall@50 `1.0`, hard-negative NDCG@10 improvement `+0.076658`, and 300-card warm query p95 `8.514 ms`.
+- Root and companion package dry-runs, real two-tarball sequential installation, companion API-v1 smoke, workflow `actionlint`, YAML parsing, and `git diff --check` pass.
+
+At the end of local acceptance, the implementation remained uncommitted and unpushed pending explicit user authorization.
+
+## User Acceptance and Publication Authorization
+
+The user accepted the complete local v1.2.0 report on 2026-07-24 and explicitly authorized committing, pushing, and updating PR #17 without waiting for CI. The local acceptance gates above are the release-close evidence; remote CI may run asynchronously and is not a blocker for this authorized PR update.

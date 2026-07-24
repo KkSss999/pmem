@@ -8,12 +8,15 @@ Install this package explicitly only on a machine where semantic retrieval is wa
 
 ```bash
 npm install -g pmem-ai-semantic@1.2.0
-pmem semantic setup
-pmem semantic rebuild
+pmem semantic enable
 ```
+
+`pmem semantic enable` performs the guided model setup and project index build. Operators can still run `pmem semantic setup` and `pmem semantic rebuild` separately.
 
 The runtime loads the pinned model exclusively from the cache prepared by `pmem semantic setup`;
 remote model loading remains disabled during inference.
+
+This companion intentionally contains the isolated Transformers.js native dependency graph. Its production dependency audit is run and reported separately from the base `pmem-ai` package so users who do not enable semantic retrieval never install that graph.
 
 Repository contributors can opt in without changing the root manifest or lockfile:
 

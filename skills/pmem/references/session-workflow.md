@@ -33,7 +33,17 @@ This finds relevant cards by:
 4. Graph neighbor expansion (cards related to matched ones)
 5. Keyword fallback (FTS5 full-text or LIKE)
 
-## After Editing Code (Manual Flow)
+## After Editing Code (Recommended Flow)
+
+If the completed change and next step are known, close the loop with one command:
+
+```bash
+pmem sync -s "<summary of changes>" -n "<next step>"
+```
+
+This detects changes, marks affected memory, records the update, and rebuilds the index.
+
+## Review-Heavy Manual Flow
 
 ```bash
 pmem status --format json
@@ -61,15 +71,7 @@ pmem update --confirm -s "<summary of changes>" -n "<next step>"
 
 Writes the confirmed changes and updates state/next files.
 
-### Shortcut: One-Command Sync (v0.7.1)
-
-Instead of running status, mark-dirty, update --suggest, and update --confirm individually, you can use the sync shortcut:
-
-```bash
-pmem sync -s "<summary of changes>" -n "<next step>"
-```
-
-This runs change detection, automatically marks affected cards as dirty, commits updates, and rebuilds the indexes inside an atomic transaction.
+Use the manual sequence when an agent needs to inspect suggestions before confirming them; it is not required for the ordinary daily loop.
 
 ## Session End
 

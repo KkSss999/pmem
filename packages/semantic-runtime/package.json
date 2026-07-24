@@ -2,10 +2,26 @@
   "name": "pmem-ai-semantic",
   "version": "1.2.0",
   "description": "Opt-in local semantic inference companion for pmem-ai",
+  "keywords": [
+    "pmem",
+    "semantic-search",
+    "embeddings",
+    "local-ai",
+    "onnx"
+  ],
   "main": "index.js",
   "exports": "./index.js",
   "type": "commonjs",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KkSss999/pmem.git",
+    "directory": "packages/semantic-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/KkSss999/pmem/issues"
+  },
+  "homepage": "https://github.com/KkSss999/pmem#optional-semantic-retrieval-v120-macos",
   "engines": {
     "node": ">=18"
   },

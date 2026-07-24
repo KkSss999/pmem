@@ -62,6 +62,152 @@ afterEach(() => {
 });
 
 describe('pmem semantic command', () => {
+  it('enable prepares the model, persists config, then builds a full current-project index', async () => {
+    const { cwd, manifestPath } = project();
+    const calls: string[] = [];
+    const output: string[] = [];
+
+    await semanticCommand('enable', { cwd, yes: true }, {
+      platform: 'darwin',
+      operations: fakeOperations({
+        prepareModel: async () => { calls.push('prepare'); },
+        rebuild: async (_pmemPath, spec, mode) => {
+          calls.push('rebuild');
+          assert.strictEqual(mode, 'full');
+          const persisted = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+          assert.strictEqual(persisted.embedding.enabled, true);
+          assert.strictEqual(persisted.embedding.cache_path, spec.cachePath);
+          return { indexedCards: 4, indexedChunks: 12 };
+        },
+      }),
+      log: line => output.push(line),
+    });
+
+    assert.deepStrictEqual(calls, ['prepare', 'rebuild']);
+    assert.ok(output.some(line => line.includes('4 cards / 12 chunks')));
+  });
+
+  it('enable cancellation leaves the manifest byte-for-byte unchanged and performs no work', async () => {
+    const { cwd, manifestPath } = project();
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    const calls: string[] = [];
+
+    await semanticCommand('enable', { cwd }, {
+      platform: 'darwin',
+      operations: fakeOperations({
+        prepareModel: async () => { calls.push('prepare'); },
+        rebuild: async () => { calls.push('rebuild'); return { indexedCards: 0, indexedChunks: 0 }; },
+      }),
+      confirm: async () => false,
+      log: () => {},
+    });
+
+    assert.deepStrictEqual(calls, []);
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
+  });
+
+  it('enable companion/model preparation failure does not half-enable the manifest or start indexing', async () => {
+    const { cwd, manifestPath } = project();
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    let rebuilt = false;
+    const setupError = new Error('Semantic runtime companion is not installed');
+
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
+      platform: 'darwin',
+      operations: fakeOperations({
+        prepareModel: async () => { throw setupError; },
+        rebuild: async () => { rebuilt = true; return { indexedCards: 0, indexedChunks: 0 }; },
+      }),
+      log: () => {},
+    }), error => error === setupError);
+
+    assert.strictEqual(rebuilt, false);
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
+  });
+
+  it('enable JSON prepare failure emits one structured setup_failed document without manifest changes', async () => {
+    const { cwd, manifestPath } = project();
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    const output: string[] = [];
+    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.0';
+
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ prepareModel: async () => { throw new Error(actionable); } }),
+      log: line => output.push(line),
+    }), new RegExp(actionable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.status, 'setup_failed');
+    assert.strictEqual(result.manifest_changed, false);
+    assert.strictEqual(result.index_ready, false);
+    assert.strictEqual(result.error, actionable);
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.0');
+    assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
+  });
+
+  it('enable rejects non-macOS before companion/model preparation', async () => {
+    const { cwd } = project();
+    let prepared = false;
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
+      platform: 'linux',
+      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
+      log: () => {},
+    }), /enable is supported on macOS only/);
+    assert.strictEqual(prepared, false);
+  });
+
+  it('enable index failure preserves truthful cached/enabled config and emits recovery guidance', async () => {
+    const { cwd, manifestPath } = project();
+    const output: string[] = [];
+
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
+      platform: 'darwin',
+      operations: fakeOperations({ rebuild: async () => { throw new Error('provider interrupted'); } }),
+      log: line => output.push(line),
+    }), /cached and enabled.*pmem semantic rebuild --full/);
+
+    const persisted = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+    assert.strictEqual(persisted.embedding.enabled, true);
+    assert.strictEqual(persisted.embedding.provider, 'local');
+    assert.ok(output.some(line => line.includes('setup succeeded')));
+    assert.ok(output.some(line => line.includes('pmem semantic rebuild --full')));
+  });
+
+  it('enable JSON output is one parseable readiness document on success', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ rebuild: async () => ({ indexedCards: 3, indexedChunks: 9 }) }),
+      log: line => output.push(line),
+    });
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.action, 'enable');
+    assert.strictEqual(result.status, 'ready');
+    assert.strictEqual(result.indexed_cards, 3);
+    assert.strictEqual(result.indexed_chunks, 9);
+  });
+
+  it('enable JSON failure output is one structured recovery document', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ rebuild: async () => { throw new Error('index unavailable'); } }),
+      log: line => output.push(line),
+    }), /index unavailable/);
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.status, 'index_failed');
+    assert.strictEqual(result.manifest_enabled, true);
+    assert.strictEqual(result.index_ready, false);
+    assert.strictEqual(result.recovery_command, 'pmem semantic rebuild --full');
+  });
+
   it('cancels setup without calling the downloader or mutating the manifest', async () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
@@ -80,6 +226,66 @@ describe('pmem semantic command', () => {
     assert.ok(output.some((line) => line.includes(SEMANTIC_MODEL)));
     assert.ok(output.some((line) => line.includes(SEMANTIC_MODEL_REVISION)));
     assert.ok(output.some((line) => line.includes('145 MB')));
+  });
+
+  it('setup JSON success emits one model_ready document', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+
+    await semanticCommand('setup', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations(),
+      log: line => output.push(line),
+    });
+
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.action, 'setup');
+    assert.strictEqual(result.status, 'model_ready');
+    assert.strictEqual(result.manifest_enabled, true);
+    assert.strictEqual(result.index_ready, false);
+    assert.strictEqual(result.next_command, 'pmem semantic rebuild');
+  });
+
+  it('setup JSON cancellation emits one cancelled document without manifest changes', async () => {
+    const { cwd, manifestPath } = project();
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    const output: string[] = [];
+
+    await semanticCommand('setup', { cwd, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations(),
+      confirm: async () => false,
+      log: line => output.push(line),
+    });
+
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.action, 'setup');
+    assert.strictEqual(result.status, 'cancelled');
+    assert.strictEqual(result.manifest_changed, false);
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
+  });
+
+  it('setup JSON failure emits one setup_failed document without manifest changes', async () => {
+    const { cwd, manifestPath } = project();
+    const before = fs.readFileSync(manifestPath, 'utf8');
+    const output: string[] = [];
+
+    await assert.rejects(semanticCommand('setup', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ prepareModel: async () => { throw new Error('download interrupted'); } }),
+      log: line => output.push(line),
+    }), /download interrupted/);
+
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.action, 'setup');
+    assert.strictEqual(result.status, 'setup_failed');
+    assert.strictEqual(result.manifest_changed, false);
+    assert.strictEqual(result.index_ready, false);
+    assert.strictEqual(result.error, 'download interrupted');
+    assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
 
   it('downloads only through setup and persists the exact pinned local configuration', async () => {

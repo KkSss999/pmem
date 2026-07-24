@@ -10,6 +10,8 @@ import {
   DEFAULT_SEMANTIC_DTYPE,
   DEFAULT_SEMANTIC_MODEL,
   DEFAULT_SEMANTIC_MODEL_REVISION,
+  SEMANTIC_COMPANION_PACKAGE,
+  SEMANTIC_COMPANION_VERSION,
 } from '../core/semantic/transformers';
 
 export const SEMANTIC_MODEL = DEFAULT_SEMANTIC_MODEL;
@@ -56,7 +58,7 @@ export interface SemanticOperations {
   clear(pmemPath: string): Promise<{ removedChunks: number }>;
 }
 
-export type SemanticAction = 'setup' | 'status' | 'rebuild' | 'clear';
+export type SemanticAction = 'enable' | 'setup' | 'status' | 'rebuild' | 'clear';
 
 export interface SemanticCommandOptions {
   yes?: boolean;
@@ -141,6 +143,21 @@ function writeOutput(log: (message: string) => void, format: 'compact' | 'json',
   }
 }
 
+function enableManifest(manifest: ManifestV03, spec: SemanticModelSpec): void {
+  manifest.embedding = {
+    enabled: true,
+    provider: 'local',
+    model: spec.model,
+    revision: spec.revision,
+    source: spec.source,
+    dtype: spec.dtype,
+    cache_path: spec.cachePath,
+    dimension: spec.dimension,
+    store: 'sqlite',
+    index: 'flat',
+  };
+}
+
 export async function semanticCommand(
   action: SemanticAction,
   options: SemanticCommandOptions = {},
@@ -157,48 +174,121 @@ export async function semanticCommand(
   };
   const format = options.format ?? 'compact';
 
-  if (action === 'setup') {
+  if (action === 'setup' || action === 'enable') {
     if (deps.platform !== 'darwin') {
-      throw new Error('Semantic setup is supported on macOS only in v1.2.0.');
+      throw new Error(`Semantic ${action} is supported on macOS only in v1.2.0.`);
     }
     const source = options.source ?? DEFAULT_SEMANTIC_SOURCE;
     if (source !== 'modelscope' && source !== 'huggingface') {
       throw new Error('Semantic model source must be `modelscope` or `huggingface`.');
     }
     const spec = modelSpec(defaultCachePath(), source);
-    writeOutput(deps.log, format, {
-      action: 'setup', model: spec.model, revision: spec.revision, dtype: spec.dtype,
-      source: spec.source, cache_path: spec.cachePath, approximate_download: SEMANTIC_APPROX_DOWNLOAD,
-    }, [
-      'Semantic model setup',
-      `Model: ${spec.model}`,
-      `Revision: ${spec.revision}`,
-      `Source: ${spec.source}`,
-      `ONNX dtype: ${spec.dtype} (model_${spec.dtype}.onnx)`,
-      `Cache: ${spec.cachePath}`,
-      `Approximate download: ${SEMANTIC_APPROX_DOWNLOAD}`,
-    ]);
-    if (!options.yes && !(await deps.confirm('Download and enable this semantic model? [y/N] '))) {
-      deps.log('Semantic setup cancelled; no files or configuration were changed.');
+    const downloadInfo = {
+      action,
+      model: spec.model,
+      revision: spec.revision,
+      dtype: spec.dtype,
+      source: spec.source,
+      cache_path: spec.cachePath,
+      approximate_download: SEMANTIC_APPROX_DOWNLOAD,
+    };
+    // Keep --format json machine-readable for the one-shot command: its final
+    // status is emitted as one JSON document after success/cancellation/failure.
+    if (format === 'compact') {
+      writeOutput(deps.log, format, downloadInfo, [
+        action === 'enable' ? 'Enable semantic retrieval' : 'Semantic model setup',
+        `Model: ${spec.model}`,
+        `Revision: ${spec.revision}`,
+        `Source: ${spec.source}`,
+        `ONNX dtype: ${spec.dtype} (model_${spec.dtype}.onnx)`,
+        `Cache: ${spec.cachePath}`,
+        `Approximate download: ${SEMANTIC_APPROX_DOWNLOAD}`,
+      ]);
+    }
+    if (!options.yes && !(await deps.confirm('Prepare or reuse this model cache and enable semantic retrieval? [y/N] '))) {
+      writeOutput(deps.log, format, { ...downloadInfo, status: 'cancelled', manifest_changed: false }, [
+        `Semantic ${action} cancelled; no files or configuration were changed.`,
+      ]);
       return;
     }
 
-    deps.log('Preparing model cache (this may take several minutes on the first run)...');
-    await deps.operations.prepareModel(spec);
-    manifest.embedding = {
-      enabled: true,
-      provider: 'local',
-      model: spec.model,
-      revision: spec.revision,
-      source: spec.source,
-      dtype: spec.dtype,
-      cache_path: spec.cachePath,
-      dimension: spec.dimension,
-      store: 'sqlite',
-      index: 'flat',
-    };
+    if (format === 'compact') {
+      deps.log('Preparing model cache (this may take several minutes on the first run)...');
+    }
+    try {
+      await deps.operations.prepareModel(spec);
+    } catch (error: any) {
+      if (format === 'json') {
+        const message = error?.message ?? String(error);
+        const companionMissing = /companion|ERR_MODULE_NOT_FOUND|not installed/i.test(message);
+        deps.log(JSON.stringify({
+          ...downloadInfo,
+          status: 'setup_failed',
+          manifest_changed: false,
+          index_ready: false,
+          error: message,
+          ...(companionMissing
+            ? { install_command: `npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}` }
+            : {}),
+          recovery_guidance: companionMissing
+            ? `Install the compatible semantic companion, then rerun pmem semantic ${action} --yes --format json.`
+            : `Resolve the setup error, then rerun pmem semantic ${action} --yes --format json.`,
+        }, null, 2));
+      }
+      // Compact mode deliberately preserves the companion/downloader's original
+      // actionable error. The manifest has not been touched at this point.
+      throw error;
+    }
+    enableManifest(manifest, spec);
     saveManifest(pmemPath, manifest);
-    deps.log('Semantic model is cached and enabled. Run `pmem semantic rebuild` to build the derived index.');
+
+    if (action === 'setup') {
+      writeOutput(deps.log, format, {
+        ...downloadInfo,
+        status: 'model_ready',
+        manifest_enabled: true,
+        index_ready: false,
+        next_command: 'pmem semantic rebuild',
+      }, [
+        'Semantic model is cached and enabled.',
+        'Next: run `pmem semantic rebuild` to build the derived index.',
+      ]);
+      return;
+    }
+
+    if (format === 'compact') deps.log('Building the current project semantic index...');
+    try {
+      const result = await deps.operations.rebuild(pmemPath, spec, 'full');
+      writeOutput(deps.log, format, {
+        ...downloadInfo,
+        status: 'ready',
+        manifest_enabled: true,
+        index_mode: 'full',
+        indexed_cards: result.indexedCards,
+        indexed_chunks: result.indexedChunks,
+      }, [
+        `Semantic retrieval enabled: ${result.indexedCards} cards / ${result.indexedChunks} chunks indexed.`,
+        'The model is cached locally and subsequent inference keeps remote loading disabled.',
+      ]);
+    } catch (error: any) {
+      const recovery = 'pmem semantic rebuild --full';
+      writeOutput(deps.log, format, {
+        ...downloadInfo,
+        status: 'index_failed',
+        manifest_enabled: true,
+        model_cached: true,
+        index_ready: false,
+        error: error?.message ?? String(error),
+        recovery_command: recovery,
+      }, [
+        'Semantic model setup succeeded and the manifest remains enabled, but index construction failed.',
+        `Recover with: ${recovery}`,
+      ]);
+      throw new Error(
+        `Semantic model is cached and enabled, but index construction failed: ${error?.message ?? error}. Recover with: ${recovery}`,
+        { cause: error },
+      );
+    }
     return;
   }
 

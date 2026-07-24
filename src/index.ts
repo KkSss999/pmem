@@ -94,9 +94,9 @@ program
   .option('--next <text>', 'Most important next step (non-interactive mode)')
   .option('--answers <path>', 'Path to JSON answers file for non-interactive init')
   .option('--domain <type>', 'Domain preset for the project (software, novel, research)', 'software')
-  .action((projectName?: string, options?: { guided?: boolean; description?: string; stage?: string; next?: string; answers?: string; domain?: string }) => {
+  .action(async (projectName?: string, options?: { guided?: boolean; description?: string; stage?: string; next?: string; answers?: string; domain?: string }) => {
     const opts = options || {};
-    initCommand({
+    await initCommand({
       projectName,
       guided: opts.guided,
       description: opts.description,
@@ -382,6 +382,16 @@ integration
 const semantic = program
   .command('semantic')
   .description('Manage optional local semantic retrieval');
+
+semantic
+  .command('enable')
+  .description('Download the pinned model, enable semantic retrieval, and build the current project index')
+  .option('-y, --yes', 'Confirm the displayed model download without prompting')
+  .option('--source <source>', 'Model registry (modelscope or huggingface)', 'modelscope')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    await semanticCommand('enable', { yes: options.yes, format: options.format, source: options.source });
+  });
 
 semantic
   .command('setup')

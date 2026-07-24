@@ -2,10 +2,10 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Commit and push the reviewed fixes to PR #17, then verify GitHub checks.
+Review PR #17 when desired; remote CI may complete asynchronously.
 
 ## Why
-The unified semantic retrieval, meaningful health scoring, explicit metadata migration, and local contextual reranking gates have passed on Apple Silicon macOS. Repository publication remains intentionally untouched until the user accepts the report.
+The complete v1.2.0 local acceptance report was approved, including the dual-package release transaction and installation-to-use UX. The user authorized updating PR #17 without waiting for CI.
 
 ## Needed Context
 - decision.v1_1_1_macos_semantic_retrieval_20260724

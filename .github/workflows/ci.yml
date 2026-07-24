@@ -46,7 +46,7 @@ jobs:
       - run: npm run test:e2e:v075-next-dedup
 
   pack:
-    name: Pack
+    name: Pack and audit release packages
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -57,21 +57,147 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm pack --dry-run
-      - name: Verify tarball excludes test and source files
+      - name: Audit root production dependencies
         run: |
-          TARBALL="$(npm pack --silent)"
-          echo "Packaging $TARBALL"
-          tar -tzf "$TARBALL" > tarball-contents.txt
-          echo "=== tarball contents ===" && cat tarball-contents.txt
-          echo "=== exclusions check ==="
-          ! grep -qE '(^|/)src/' tarball-contents.txt || { echo "FAIL: tarball contains src/"; exit 1; }
-          ! grep -q '\.test\.' tarball-contents.txt || { echo "FAIL: tarball contains test files"; exit 1; }
-          ! grep -qE '(^|/)temp/' tarball-contents.txt || { echo "FAIL: tarball contains temp/"; exit 1; }
-          ! grep -qE '(^|/)node_modules/' tarball-contents.txt || { echo "FAIL: tarball contains node_modules/"; exit 1; }
-          grep -q 'dist/index\.js' tarball-contents.txt || { echo "FAIL: tarball missing dist/index.js"; exit 1; }
-          grep -q 'README\.md' tarball-contents.txt || { echo "FAIL: tarball missing README.md"; exit 1; }
-          echo "Pack verification passed"
+          set +e
+          npm audit --omit=dev --json > root-audit.json
+          ROOT_AUDIT_STATUS=$?
+          set -e
+          if [ "$ROOT_AUDIT_STATUS" -ne 0 ] && [ "$ROOT_AUDIT_STATUS" -ne 1 ]; then
+            echo "Root production audit exited unexpectedly with status $ROOT_AUDIT_STATUS" >&2
+            exit "$ROOT_AUDIT_STATUS"
+          fi
+          node <<'NODE'
+          const report = require('./root-audit.json');
+          if (report.error) {
+            throw new Error(`Root production audit failed: ${report.error.summary ?? report.error.message}`);
+          }
+          const counts = report.metadata?.vulnerabilities;
+          if (!counts) throw new Error('Root production audit did not return vulnerability metadata');
+          if (counts.high !== 0 || counts.critical !== 0) {
+            throw new Error(`Root production audit has ${counts.high} high and ${counts.critical} critical vulnerabilities`);
+          }
+          if (counts.low || counts.moderate) {
+            console.log(`::warning title=Root production audit::${counts.low} low and ${counts.moderate} moderate vulnerabilities remain; high/critical gate passed.`);
+          }
+          console.log('Root production audit gate passed: 0 high, 0 critical.');
+          NODE
+      - name: Pack, install, and smoke test both packages
+        run: |
+          set -euo pipefail
+          PACK_DIR="$RUNNER_TEMP/pmem-packages"
+          ROOT_INSTALL_DIR="$RUNNER_TEMP/pmem-root-install"
+          COMPANION_AUDIT_DIR="$RUNNER_TEMP/pmem-companion-audit"
+          mkdir -p "$PACK_DIR" "$ROOT_INSTALL_DIR" "$COMPANION_AUDIT_DIR"
+
+          npm pack --dry-run
+          npm pack ./packages/semantic-runtime --dry-run
+          ROOT_TARBALL="$PACK_DIR/$(npm pack --silent --pack-destination "$PACK_DIR")"
+          COMPANION_TARBALL="$PACK_DIR/$(npm pack ./packages/semantic-runtime --silent --pack-destination "$PACK_DIR")"
+
+          tar -tzf "$ROOT_TARBALL" > root-tarball-contents.txt
+          ! grep -qE '(^|/)src/' root-tarball-contents.txt || { echo "FAIL: root tarball contains src/"; exit 1; }
+          ! grep -q '\.test\.' root-tarball-contents.txt || { echo "FAIL: root tarball contains test files"; exit 1; }
+          ! grep -qE '(^|/)temp/' root-tarball-contents.txt || { echo "FAIL: root tarball contains temp/"; exit 1; }
+          ! grep -qE '(^|/)node_modules/' root-tarball-contents.txt || { echo "FAIL: root tarball contains node_modules/"; exit 1; }
+          grep -q 'dist/index\.js' root-tarball-contents.txt || { echo "FAIL: root tarball missing dist/index.js"; exit 1; }
+          grep -q 'README\.md' root-tarball-contents.txt || { echo "FAIL: root tarball missing README.md"; exit 1; }
+
+          tar -tzf "$COMPANION_TARBALL" > companion-tarball-contents.txt
+          grep -q 'package/index\.js' companion-tarball-contents.txt || { echo "FAIL: companion tarball missing index.js"; exit 1; }
+          grep -q 'package/README\.md' companion-tarball-contents.txt || { echo "FAIL: companion tarball missing README.md"; exit 1; }
+          ! grep -qE '(^|/)node_modules/' companion-tarball-contents.txt || { echo "FAIL: companion tarball contains node_modules/"; exit 1; }
+
+          npm install --prefix "$ROOT_INSTALL_DIR" "$ROOT_TARBALL"
+          ROOT_INSTALL_DIR="$ROOT_INSTALL_DIR" node <<'NODE'
+          const { createRequire } = require('node:module');
+          const path = require('node:path');
+          const requireFromInstall = createRequire(path.join(process.env.ROOT_INSTALL_DIR, 'package.json'));
+          for (const dependency of ['@huggingface/transformers', 'onnxruntime-node', 'sharp', 'adm-zip']) {
+            try {
+              requireFromInstall.resolve(dependency);
+              throw new Error(`Root tarball unexpectedly installs ${dependency}`);
+            } catch (error) {
+              if (!String(error?.message).includes('Cannot find module')) throw error;
+            }
+          }
+          console.log('Root tarball excludes the isolated semantic dependency chain.');
+          NODE
+
+          npm install --prefix "$ROOT_INSTALL_DIR" "$COMPANION_TARBALL"
+          ROOT_INSTALL_DIR="$ROOT_INSTALL_DIR" node <<'NODE'
+          const { createRequire } = require('node:module');
+          const path = require('node:path');
+          const requireFromInstall = createRequire(path.join(process.env.ROOT_INSTALL_DIR, 'package.json'));
+          const companion = requireFromInstall('pmem-ai-semantic');
+          if (companion.apiVersion !== 1) throw new Error(`Expected companion API v1, received ${companion.apiVersion}`);
+          if (typeof companion.createOfflineTransformersProvider !== 'function') {
+            throw new Error('Companion is missing createOfflineTransformersProvider');
+          }
+          console.log('Companion tarball API v1 smoke test passed.');
+          NODE
+
+          cd "$COMPANION_AUDIT_DIR"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --package-lock-only "$COMPANION_TARBALL"
+          set +e
+          npm audit --omit=dev --json > companion-audit.json
+          COMPANION_AUDIT_STATUS=$?
+          set -e
+          if [ "$COMPANION_AUDIT_STATUS" -ne 0 ] && [ "$COMPANION_AUDIT_STATUS" -ne 1 ]; then
+            echo "Companion production audit exited unexpectedly with status $COMPANION_AUDIT_STATUS" >&2
+            exit "$COMPANION_AUDIT_STATUS"
+          fi
+          node <<'NODE'
+          const report = require('./companion-audit.json');
+          if (report.error) {
+            throw new Error(`Companion production audit failed: ${report.error.summary ?? report.error.message}`);
+          }
+          const counts = report.metadata?.vulnerabilities;
+          if (!counts) throw new Error('Companion production audit did not return vulnerability metadata');
+          const acceptedPackages = new Set([
+            'pmem-ai-semantic',
+            '@huggingface/transformers',
+            'onnxruntime-node',
+            'adm-zip',
+            'sharp',
+          ]);
+          const acceptedAdvisories = new Set([1123686, 1124066]);
+          const unexpectedPackages = Object.keys(report.vulnerabilities ?? {})
+            .filter(name => !acceptedPackages.has(name));
+          const observedAdvisories = Object.values(report.vulnerabilities ?? {})
+            .flatMap(vulnerability => vulnerability.via ?? [])
+            .filter(via => typeof via === 'object')
+            .map(via => via.source);
+          const unexpectedAdvisories = observedAdvisories
+            .filter(source => !acceptedAdvisories.has(source));
+          const nowFixable = Object.entries(report.vulnerabilities ?? {})
+            .filter(([, vulnerability]) => Boolean(vulnerability.fixAvailable))
+            .map(([name]) => name);
+          if (
+            counts.critical !== 0 ||
+            counts.high > 5 ||
+            unexpectedPackages.length ||
+            unexpectedAdvisories.length ||
+            nowFixable.length
+          ) {
+            throw new Error(
+              `Companion audit exceeded the accepted upstream baseline: ` +
+              `${counts.high} high, ${counts.critical} critical; ` +
+              `unexpected packages=${unexpectedPackages.join(',') || 'none'}; ` +
+              `unexpected advisories=${unexpectedAdvisories.join(',') || 'none'}; ` +
+              `fixes now available for=${nowFixable.join(',') || 'none'}`,
+            );
+          }
+          if (counts.high > 0) {
+            console.log(
+              `::warning title=Accepted isolated companion risk::${counts.high} high vulnerabilities remain in the opt-in ` +
+              `Transformers/ONNX/sharp chain (advisories 1123686 and 1124066). Any new advisory or critical finding fails this gate.`,
+            );
+          } else {
+            console.log('Companion upstream audit baseline is now clear; remove the temporary exception gate.');
+          }
+          NODE
 
   publish:
     name: Publish to npm
@@ -88,28 +214,127 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: npm run build
-      - name: Check if version changed
+      - name: Check registry versions
         id: version-check
         run: |
-          PACKAGE_VERSION="$(node -e "console.log(require('./package.json').version)")"
-          PUBLISHED_VERSION="$(npm view pmem-ai version 2>/dev/null || echo '0.0.0')"
-          echo "package.json: $PACKAGE_VERSION"
-          echo "npm registry: $PUBLISHED_VERSION"
-          if [ "$PACKAGE_VERSION" != "$PUBLISHED_VERSION" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
-            echo "Will publish $PACKAGE_VERSION"
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "Version $PACKAGE_VERSION already published, skipping"
+          set -euo pipefail
+          ROOT_VERSION="$(node -p "require('./package.json').version")"
+          COMPANION_VERSION="$(node -p "require('./packages/semantic-runtime/package.json').version")"
+          if [ "$ROOT_VERSION" != "$COMPANION_VERSION" ]; then
+            echo "Root ($ROOT_VERSION) and companion ($COMPANION_VERSION) versions must match" >&2
+            exit 1
           fi
-      - name: Publish
-        if: steps.version-check.outputs.changed == 'true'
+
+          registry_version_exists() {
+            local package_name="$1"
+            local package_version="$2"
+            local error_file
+            local output
+            error_file="$(mktemp)"
+            if output="$(npm view "$package_name@$package_version" version --json 2>"$error_file")"; then
+              local resolved_version
+              resolved_version="$(node -p "JSON.parse(process.argv[1])" "$output")"
+              if [ "$resolved_version" != "$package_version" ]; then
+                echo "Registry returned unexpected version for $package_name: $resolved_version" >&2
+                exit 2
+              fi
+              return 0
+            fi
+            if grep -qE 'E404|404 Not Found' "$error_file"; then
+              return 1
+            fi
+            echo "Registry lookup failed for $package_name@$package_version:" >&2
+            cat "$error_file" >&2
+            exit 2
+          }
+
+          for spec in "root:pmem-ai:$ROOT_VERSION" "companion:pmem-ai-semantic:$COMPANION_VERSION"; do
+            IFS=: read -r output_name package_name package_version <<< "$spec"
+            set +e
+            registry_version_exists "$package_name" "$package_version"
+            lookup_status=$?
+            set -e
+            case "$lookup_status" in
+              0)
+                echo "${output_name}_changed=false" >> "$GITHUB_OUTPUT"
+                echo "$package_name@$package_version is already published"
+                ;;
+              1)
+                echo "${output_name}_changed=true" >> "$GITHUB_OUTPUT"
+                echo "$package_name@$package_version is not published yet"
+                ;;
+              *) exit "$lookup_status" ;;
+            esac
+          done
+          echo "version=$ROOT_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Publish semantic companion first
+        if: steps.version-check.outputs.companion_changed == 'true'
+        working-directory: packages/semantic-runtime
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Confirm semantic companion is visible in registry
+        if: steps.version-check.outputs.companion_changed == 'true' || steps.version-check.outputs.root_changed == 'true'
+        run: |
+          VERSION="${{ steps.version-check.outputs.version }}"
+          for attempt in {1..30}; do
+            PUBLISHED_VERSION="$(npm view "pmem-ai-semantic@$VERSION" version 2>/dev/null || true)"
+            if [ "$PUBLISHED_VERSION" = "$VERSION" ]; then
+              echo "pmem-ai-semantic@$VERSION is visible in the registry"
+              exit 0
+            fi
+            echo "Waiting for pmem-ai-semantic@$VERSION to become visible ($attempt/30)"
+            sleep 2
+          done
+          echo "pmem-ai-semantic@$VERSION was not visible after 60 seconds" >&2
+          npm view "pmem-ai-semantic@$VERSION" version
+          exit 1
+      - name: Publish root package
+        if: steps.version-check.outputs.root_changed == 'true'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Check GitHub release
+        id: release-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version-check.outputs.version }}"
+          RESPONSE_FILE="$(mktemp)"
+          set +e
+          HTTP_STATUS="$(curl \
+            --silent \
+            --show-error \
+            --output "$RESPONSE_FILE" \
+            --write-out '%{http_code}' \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          CURL_STATUS=$?
+          set -e
+          if [ "$CURL_STATUS" -ne 0 ]; then
+            echo "GitHub release lookup failed with curl status $CURL_STATUS" >&2
+            exit "$CURL_STATUS"
+          fi
+          case "$HTTP_STATUS" in
+            200)
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "GitHub release $TAG already exists"
+              ;;
+            404)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "GitHub release $TAG is missing and will be created"
+              ;;
+            *)
+              echo "GitHub release lookup returned HTTP $HTTP_STATUS" >&2
+              cat "$RESPONSE_FILE" >&2
+              exit 1
+              ;;
+          esac
       - name: Create GitHub Release
-        if: steps.version-check.outputs.changed == 'true'
+        if: steps.release-check.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version-check.outputs.version }}
