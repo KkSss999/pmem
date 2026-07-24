@@ -11,7 +11,6 @@ source_files:
   - src/types.ts
   - src/commands/new.ts
   - src/commands/verify.ts
-  - docs/v0.7.0 pre-design.md
 depends_on: []
 related_to:
   - decision.v0_7_0_zero_migration_compatibility_20260602

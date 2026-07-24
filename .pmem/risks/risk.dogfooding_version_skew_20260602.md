@@ -10,7 +10,6 @@ source_files:
   - package.json
   - package-lock.json
   - CHANGELOG.md
-  - docs/project-roadmap.md
 depends_on: []
 related_to:
   - decision.dogfood_pmem_for_pmem_development_20260602

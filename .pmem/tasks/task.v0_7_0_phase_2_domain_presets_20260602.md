@@ -12,7 +12,6 @@ source_files:
   - src/index.ts
   - src/types.ts
   - scripts/e2e-v07-novel.sh
-  - docs/v0.7.0 pre-design.md
 depends_on:
   - feature.v0_7_0_universal_agent_memory_20260602
   - decision.v0_7_0_zero_migration_compatibility_20260602

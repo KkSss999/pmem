@@ -1,5 +1,5 @@
 ---
-id: feature.v0_9_contextual_rerank_retrieval_20260626
+id: feature.v1_1_2_contextual_rerank_retrieval_20260626
 type: feature
 title: "v1.1.2 Contextual Retrieval and Reranking"
 status: draft

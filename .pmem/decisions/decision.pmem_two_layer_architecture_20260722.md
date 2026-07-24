@@ -6,8 +6,6 @@ status: active
 tags: [positioning, two-layer, agentic-memory-runtime, sdk, software-preset]
 created: "2026-07-22"
 updated: "2026-07-22T00:00:00.000Z"
-source_files:
-  - docs/v1.0 pre-design.md
 related_to:
   - feature.v1_0_agentic_memory_runtime_20260722
   - decision.project_rag_os_positioning_20260626

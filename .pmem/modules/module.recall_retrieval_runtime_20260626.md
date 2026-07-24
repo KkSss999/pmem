@@ -24,7 +24,7 @@ depends_on:
 related_to:
   - decision.structure_first_hybrid_recall_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
-  - feature.v0_9_contextual_rerank_retrieval_20260626
+  - feature.v1_1_2_contextual_rerank_retrieval_20260626
 last_verified: "2026-07-03T00:00:00.000Z"
 ---
 # Recall and Retrieval Runtime

@@ -7,7 +7,6 @@ tags: [v0.8, retrieval, hybrid-search, bm25, scoring, explain, budget, architect
 created: "2026-07-03"
 updated: "2026-07-03T00:00:00.000Z"
 source_files:
-  - docs/v0.8 pre-design.md
   - src/commands/ask.ts
   - src/commands/recall.ts
   - src/core/format.ts
@@ -31,7 +30,7 @@ last_verified: "2026-07-03T00:00:00.000Z"
 
 ## Decision
 
-v0.8 implements a five-stage deterministic retrieval pipeline: intent parse → multi-channel candidate generation (exact id / alias / tag / **source_files** / **always-on FTS5 bm25 with field weights**) → graph expansion with score inheritance and hop decay → multiplicative score fusion (base × type_weight × recency × staleness_penalty × status) → L0-L3 budgeted context packing. Full design in `docs/v0.8 pre-design.md`.
+v0.8 implements a five-stage deterministic retrieval pipeline: intent parse → multi-channel candidate generation (exact id / alias / tag / **source_files** / **always-on FTS5 bm25 with field weights**) → graph expansion with score inheritance and hop decay → multiplicative score fusion (base × type_weight × recency × staleness_penalty × status) → L0-L3 budgeted context packing. This decision card is the durable architecture record.
 
 ## Key Points
 

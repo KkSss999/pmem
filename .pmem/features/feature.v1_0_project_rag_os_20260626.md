@@ -9,7 +9,6 @@ updated: "2026-07-22T11:30:00.000Z"
 last_verified: "2026-07-22T11:30:00.000Z"
 source_files:
   - .pmem/manifest.yml
-  - docs/v1.0 pre-design.md
   - src/runtime/index.ts
   - src/sdk/index.ts
   - src/mcp/server.ts

@@ -9,7 +9,6 @@ updated: "2026-06-26T12:15:00.000Z"
 token_policy: relaxed
 source_files:
   - README.md
-  - docs/project-roadmap.md
   - skills/pmem/SKILL.md
 depends_on: []
 related_to:

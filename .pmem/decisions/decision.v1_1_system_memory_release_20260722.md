@@ -6,8 +6,6 @@ status: active
 tags: [v1.1, system-memory, miao, security-model, multi-agent, reliability, three-red-lines]
 created: "2026-07-22"
 updated: "2026-07-22T00:00:00.000Z"
-source_files:
-  - docs/v1.1 pre-design.md
 depends_on:
   - decision.pmem_two_layer_architecture_20260722
 related_to:

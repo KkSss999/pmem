@@ -46,6 +46,8 @@ pmem verify
 - Markdown cards in `.pmem/**/*.md` are canonical.
 - `.pmem/pmem.db` is a rebuildable SQLite runtime index.
 - Run `pmem rebuild` after changing memory cards.
+- Do not create or retain a repository `docs/` directory. Record durable plans,
+  decisions, release context, and handoffs as `.pmem` cards instead.
 
 ## More Workflows
 

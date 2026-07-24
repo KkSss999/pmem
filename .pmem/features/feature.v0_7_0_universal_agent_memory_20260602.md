@@ -7,7 +7,6 @@ tags: [v0.7.0, universal-memory, domain-presets, dogfooding]
 created: "2026-06-02"
 updated: "2026-06-02T19:52:43.628Z"
 source_files:
-  - docs/v0.7.0 pre-design.md
   - src/types.ts
   - src/core/manifest.ts
   - src/commands/init.ts
