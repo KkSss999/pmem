@@ -43,7 +43,8 @@
     "test:e2e:v07-sync-flow": "bash scripts/e2e-v07-sync-flow.sh",
     "test:e2e:v074-agent-ux": "bash scripts/e2e-v074-agent-ux.sh",
     "test:e2e:v075-context-restoration": "bash scripts/e2e-v075-context-restoration.sh",
-    "test:e2e:v075-next-dedup": "bash scripts/e2e-v075-next-dedup.sh"
+    "test:e2e:v075-next-dedup": "bash scripts/e2e-v075-next-dedup.sh",
+    "test:release-registry": "node --test scripts/npm-release-state.test.js"
   },
   "keywords": [
     "agent",

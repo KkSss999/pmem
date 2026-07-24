@@ -57,6 +57,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run test:release-registry
       - name: Audit root production dependencies
         run: |
           set +e
@@ -225,45 +226,27 @@ jobs:
             exit 1
           fi
 
-          registry_version_exists() {
-            local package_name="$1"
-            local package_version="$2"
-            local error_file
-            local output
-            error_file="$(mktemp)"
-            if output="$(npm view "$package_name@$package_version" version --json 2>"$error_file")"; then
-              local resolved_version
-              resolved_version="$(node -p "JSON.parse(process.argv[1])" "$output")"
-              if [ "$resolved_version" != "$package_version" ]; then
-                echo "Registry returned unexpected version for $package_name: $resolved_version" >&2
-                exit 2
-              fi
-              return 0
-            fi
-            if grep -qE 'E404|404 Not Found' "$error_file"; then
-              return 1
-            fi
-            echo "Registry lookup failed for $package_name@$package_version:" >&2
-            cat "$error_file" >&2
-            exit 2
-          }
-
           for spec in "root:pmem-ai:$ROOT_VERSION" "companion:pmem-ai-semantic:$COMPANION_VERSION"; do
             IFS=: read -r output_name package_name package_version <<< "$spec"
-            set +e
-            registry_version_exists "$package_name" "$package_version"
-            lookup_status=$?
-            set -e
-            case "$lookup_status" in
-              0)
+            registry_state="$(node scripts/npm-release-state.js "$package_name" "$package_version")"
+            echo "${output_name}_state=$registry_state" >> "$GITHUB_OUTPUT"
+            case "$registry_state" in
+              public)
                 echo "${output_name}_changed=false" >> "$GITHUB_OUTPUT"
-                echo "$package_name@$package_version is already published"
+                echo "$package_name@$package_version is publicly available"
                 ;;
-              1)
+              accepted_pending)
+                echo "${output_name}_changed=false" >> "$GITHUB_OUTPUT"
+                echo "$package_name@$package_version was accepted by npm and is awaiting public replication"
+                ;;
+              missing)
                 echo "${output_name}_changed=true" >> "$GITHUB_OUTPUT"
                 echo "$package_name@$package_version is not published yet"
                 ;;
-              *) exit "$lookup_status" ;;
+              *)
+                echo "Unknown registry state for $package_name@$package_version: $registry_state" >&2
+                exit 2
+                ;;
             esac
           done
           echo "version=$ROOT_VERSION" >> "$GITHUB_OUTPUT"
@@ -274,26 +257,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Confirm semantic companion is visible in registry
-        if: steps.version-check.outputs.companion_changed == 'true' || steps.version-check.outputs.root_changed == 'true'
+        env:
+          NPM_VISIBILITY_ATTEMPTS: 90
+          NPM_VISIBILITY_INTERVAL_SECONDS: 10
         run: |
-          VERSION="${{ steps.version-check.outputs.version }}"
-          for attempt in {1..30}; do
-            PUBLISHED_VERSION="$(npm view "pmem-ai-semantic@$VERSION" version 2>/dev/null || true)"
-            if [ "$PUBLISHED_VERSION" = "$VERSION" ]; then
-              echo "pmem-ai-semantic@$VERSION is visible in the registry"
-              exit 0
-            fi
-            echo "Waiting for pmem-ai-semantic@$VERSION to become visible ($attempt/30)"
-            sleep 2
-          done
-          echo "pmem-ai-semantic@$VERSION was not visible after 60 seconds" >&2
-          npm view "pmem-ai-semantic@$VERSION" version
-          exit 1
+          bash scripts/wait-for-npm-package.sh \
+            pmem-ai-semantic \
+            "${{ steps.version-check.outputs.version }}"
       - name: Publish root package
         if: steps.version-check.outputs.root_changed == 'true'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Confirm root package is visible in registry
+        env:
+          NPM_VISIBILITY_ATTEMPTS: 90
+          NPM_VISIBILITY_INTERVAL_SECONDS: 10
+        run: |
+          bash scripts/wait-for-npm-package.sh \
+            pmem-ai \
+            "${{ steps.version-check.outputs.version }}"
       - name: Check GitHub release
         id: release-check
         env:
