@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Merge the registry visibility hotfix, then let the main release transaction publish pmem-ai@1.2.0 and create v1.2.0 only after both packages are publicly installable.
+Review v1.2.0 adoption and choose the next version scope.
 
 ## Why
 The complete v1.2.0 local acceptance report was approved, including the dual-package release transaction and installation-to-use UX. The user authorized updating PR #17 without waiting for CI.

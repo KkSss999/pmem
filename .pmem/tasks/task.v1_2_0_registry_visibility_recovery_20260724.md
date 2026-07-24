@@ -2,7 +2,7 @@
 id: task.v1_2_0_registry_visibility_recovery_20260724
 type: task
 title: "Recover v1.2.0 npm registry visibility transaction"
-status: in_progress
+status: completed
 priority: P0
 classification: plan
 trust_label: user_confirmed
@@ -62,3 +62,14 @@ Merge the hotfix, allow the main-branch transaction to skip the already
 published companion, publish and confirm `pmem-ai@1.2.0`, and create the
 `v1.2.0` GitHub Release. Do not mark this task completed merely because the
 hotfix PR is open.
+
+## Release Evidence
+
+- PR #18 merged to `main` as `bd90a774b563964e604a2e127983d4a9424a8699`.
+- Main CI run `30092747045` completed successfully across Node 18/20/22, E2E,
+  package audit/pack smoke tests, and the npm publish transaction.
+- The transaction safely skipped the already-public
+  `pmem-ai-semantic@1.2.0`, published `pmem-ai@1.2.0`, and confirmed public
+  metadata plus downloadable tarballs for both exact versions.
+- GitHub Release `v1.2.0` was published from `main` at
+  `2026-07-24T12:26:58Z`.
