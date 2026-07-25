@@ -1,16 +1,14 @@
 import * as path from 'path';
-import { execSync } from 'child_process';
-import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir, isPathMatch } from '../core/fs';
+import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
 import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../core/db';
 import type { DirtyFlagDetailed } from '../core/db';
-import { parseGitStatusPorcelain } from '../core/git';
 import { checkStaleMemory } from '../core/consistency';
 import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
 
 import { writeManagedNext } from '../core/next';
-import { statusQuery } from '../core/query/status';
+import { acknowledgeStatusChanges, statusQuery } from '../core/query/status';
 const PMEM_DIR = '.pmem';
 
 export function updateCommand(options: {
@@ -166,48 +164,37 @@ export function markDirtyCommand(
     }
   }
 
-  // --auto: detect changed files via git and mark related cards as dirty
+  // --auto: use the canonical git/mtime status snapshot and mark exact matches.
   if (options.auto) {
     const dbPath = path.join(pmemPath, 'pmem.db');
     if (fileExists(dbPath)) {
-      // Check git availability before attempting git commands
-      const useGit = (() => {
-        try { execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore' }); return true; }
-        catch { return false; }
-      })();
-
-      if (!useGit) {
-        console.log('Cannot auto-detect changes: this directory is not inside a Git repository.');
-        console.log('Next: run `pmem status` (uses mtime fallback) or initialize git with `git init`.');
-        process.exit(2);
-      }
-
       try {
         const db = openDatabase(pmemPath);
-        const output = execSync('git status --porcelain -u', { encoding: 'utf8', cwd });
-        const changedFiles = parseGitStatusPorcelain(output).map(change => change.path);
+        const status = statusQuery(pmemPath, { cwd, db });
+        const changedFiles = status.changes.map(change => change.path);
 
         const activeSession = getActiveSession(db);
         const dirtyCards: string[] = [];
+        const acknowledgedPaths = new Set<string>();
 
-        const allPaths = db.prepare(
-          "SELECT card_id, path FROM paths"
-        ).all() as Array<{ card_id: string; path: string }>;
-
-        for (const filePath of changedFiles) {
-          for (const p of allPaths) {
-            if (isPathMatch(filePath, p.path)) {
-              if (!dirtyCards.includes(p.card_id)) {
-                insertDirtyFlag(db, 'card', p.card_id, 'file_changed: ' + filePath, activeSession?.id);
-                dirtyCards.push(p.card_id);
-              }
+        for (const change of status.changes) {
+          for (const related of change.related_cards) {
+            if (related.match_type !== 'exact') continue;
+            if (!dirtyCards.includes(related.card_id)) {
+              insertDirtyFlag(db, 'card', related.card_id, 'file_changed: ' + change.path, activeSession?.id);
+              dirtyCards.push(related.card_id);
             }
+            acknowledgedPaths.add(change.path);
           }
         }
 
         closeDatabase();
 
         if (dirtyCards.length > 0) {
+          // Acknowledge only after the dirty flags have been durably written.
+          // A preceding read-only `pmem status` therefore cannot consume the
+          // changes before this mutation runs.
+          acknowledgeStatusChanges(pmemPath, [...acknowledgedPaths]);
           if (format === 'json') {
             console.log(JSON.stringify({
               command: 'mark-dirty --auto',
@@ -238,6 +225,7 @@ export function markDirtyCommand(
           return;
         }
       } catch (err) {
+        try { closeDatabase(); } catch {}
         console.error('Could not auto-detect changed files.');
         console.error('Run `pmem status` to check change detection, or `pmem update --confirm` to manually record changes.');
         process.exit(2);

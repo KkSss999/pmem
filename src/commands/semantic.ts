@@ -43,6 +43,7 @@ export interface SemanticRuntimeStatus {
   eligibleCards?: number;
   excludedCards?: number;
   excludedByReason?: Record<string, number>;
+  excludedByTrustDetail?: Record<string, number>;
 }
 
 export interface SemanticRebuildResult {
@@ -130,7 +131,7 @@ function configuredSpec(manifest: ManifestV03): SemanticModelSpec {
     || !config.cache_path
     || !path.isAbsolute(config.cache_path)
   ) {
-    throw new Error('Semantic manifest configuration is incompatible with v1.2.0. Run `pmem semantic setup` to repair it.');
+    throw new Error('Semantic manifest configuration is incompatible with v1.2.1. Run `pmem semantic setup` to repair it.');
   }
   return modelSpec(config.cache_path, config.source ?? DEFAULT_SEMANTIC_SOURCE);
 }
@@ -176,7 +177,7 @@ export async function semanticCommand(
 
   if (action === 'setup' || action === 'enable') {
     if (deps.platform !== 'darwin') {
-      throw new Error(`Semantic ${action} is supported on macOS only in v1.2.0.`);
+      throw new Error(`Semantic ${action} is supported on macOS only in v1.2.1.`);
     }
     const source = options.source ?? DEFAULT_SEMANTIC_SOURCE;
     if (source !== 'modelscope' && source !== 'huggingface') {
@@ -314,6 +315,7 @@ export async function semanticCommand(
       `Index: ${status.indexedCards} cards / ${status.indexedChunks} chunks`,
       `Readiness: ${status.eligibleCards ?? 0} eligible / ${status.excludedCards ?? 0} excluded; pipeline ${status.pipelineVersion ?? 'none'} (${status.indexCompatible ? 'compatible' : 'incompatible'}, ${status.indexFresh ? 'fresh' : 'stale'})`,
       `Excluded: ${Object.entries(status.excludedByReason ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
+      `Trust exclusions: ${Object.entries(status.excludedByTrustDetail ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
     ]);
     return;
   }

@@ -1,11 +1,14 @@
 import * as path from 'path';
 import { ensureDir, atomicWrite, fileExists } from '../core/fs';
-import { loadManifest } from '../core/manifest';
-import { resolveConfig } from '../core/manifest';
+import { loadManifest, renderIdPattern, resolveConfig } from '../core/manifest';
 
 const PMEM_DIR = '.pmem';
 
-export function newCommand(type: string, title: string): void {
+export interface NewCommandOptions {
+  id?: string;
+}
+
+export function newCommand(type: string, title: string, options: NewCommandOptions = {}): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -40,14 +43,54 @@ export function newCommand(type: string, title: string): void {
 
   const trimmedTitle = title.trim();
 
-  // Generate ID from title
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const slug = trimmedTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '')
-    .slice(0, 50);
-  const id = `${type}.${slug}_${today}`;
+  let id: string;
+  if (options.id !== undefined) {
+    const requestedId = options.id.trim();
+    if (!requestedId) {
+      console.log('Error: --id must not be empty.');
+      process.exit(2);
+    }
+
+    // Accept either a meaningful slug (`protagonist`) or an exact ID whose
+    // prefix matches the positional card type (`character.protagonist`).
+    // A prefix belonging to another declared type is almost certainly a typo,
+    // so reject it instead of silently producing `character.task.foo`.
+    const declaredPrefix = [...config.card_types]
+      .sort((a, b) => b.length - a.length)
+      .find(cardType => requestedId.startsWith(`${cardType}.`));
+    if (declaredPrefix && declaredPrefix !== type) {
+      console.log(`Error: Custom ID type "${declaredPrefix}" does not match requested card type "${type}".`);
+      process.exit(2);
+    }
+    id = declaredPrefix === type ? requestedId : `${type}.${requestedId}`;
+
+    const renderedPattern = renderIdPattern(manifest.card_policy.id_pattern, config.card_types);
+    const manifestPattern = new RegExp(renderedPattern);
+    const manifestRecognizesType = manifestPattern.test(`${type}.valid`);
+    // Some v0.7 custom-schema projects retained the legacy fixed-type
+    // id_pattern. They already permit creating their declared custom types, so
+    // preserve that compatibility while still enforcing a path-safe suffix.
+    const escapedType = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const compatiblePattern = `^${escapedType}\\.[a-z0-9][a-z0-9._-]*$`;
+    const valid = manifestRecognizesType
+      ? (new RegExp(renderedPattern)).test(id)
+      : (new RegExp(compatiblePattern)).test(id);
+    if (!valid) {
+      console.log(`Error: Custom card ID "${id}" does not match the project naming pattern.`);
+      console.log(`Expected: ${manifestRecognizesType ? renderedPattern : compatiblePattern}`);
+      process.exit(2);
+    }
+  } else {
+    // Preserve the historical date-stamped default for callers that do not
+    // opt into a stable meaningful ID.
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const slug = trimmedTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 50);
+    id = `${type}.${slug}_${today}`;
+  }
 
   // Determine target directory from resolved config
   // Built-in preset types have explicit mappings; custom types fall back to `${type}s`

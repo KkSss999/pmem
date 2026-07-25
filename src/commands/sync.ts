@@ -19,6 +19,7 @@ import {
   closeDatabase
 } from '../core/db';
 import { getChangedFiles } from './status';
+import { acknowledgeStatusChanges } from '../core/query/status';
 
 import { writeManagedNext } from '../core/next';
 
@@ -66,6 +67,7 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
 
     const activeSession = getActiveSession(db);
     const dirtyCards: string[] = [];
+    const matchedChangedPaths = new Set<string>();
 
     // Retrieve all paths for precise relative path matching
     const allPaths = db.prepare(
@@ -79,6 +81,7 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
             insertDirtyFlag(db, 'card', p.card_id, 'file_changed: ' + change.path, activeSession?.id);
             dirtyCards.push(p.card_id);
           }
+          matchedChangedPaths.add(change.path);
         }
       }
     }
@@ -150,9 +153,11 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
       }
       console.log('Rebuilding indexes...');
       rebuildCommand();
+      acknowledgeStatusChanges(pmemPath, changes.map(change => change.path));
       console.log('\n✓ Memory sync and update completed.');
     } else {
       if (dirtyCards.length > 0) {
+        acknowledgeStatusChanges(pmemPath, [...matchedChangedPaths]);
         console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
         console.log('\nRecommended: run `pmem sync -s "<summary>" -n "<next>"` to confirm and sync memory.');
       } else {

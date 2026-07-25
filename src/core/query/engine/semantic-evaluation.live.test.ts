@@ -18,6 +18,7 @@ import {
   DEFAULT_SEMANTIC_MODEL,
   DEFAULT_SEMANTIC_MODEL_REVISION,
   rebuildSemanticIndex,
+  searchSemanticCardsDetailed,
 } from '../../semantic';
 import { askQueryWithSemantic } from '../ask';
 import type { CardRow } from '../../../types';
@@ -25,6 +26,7 @@ import fixture from './fixtures/retrieval-v1.1.1.json';
 import baseline from './fixtures/retrieval-v1.1.1-baseline.json';
 import semanticBaseline from './fixtures/retrieval-v1.1.1-semantic.json';
 import hardNegatives from './fixtures/retrieval-v1.2.0-hard-negatives.json';
+import oodFixture from './fixtures/retrieval-v1.2.1-ood.json';
 
 type Slice = 'zh' | 'en' | 'code_path_mixed';
 type FixtureCard = (typeof fixture.cards)[number];
@@ -118,8 +120,22 @@ describe('v1.2.0 live contextual retrieval evaluation', { skip: process.env.PMEM
       await rebuildSemanticIndex(db, semanticDocuments(), provider, { mode: 'full' });
       await provider.embedQuery('warmup');
 
-      const results: Array<{ query: FixtureQuery; ids: string[]; baseIds: string[]; latency: number; baseLatency: number }> = [];
+      const oodResults = [];
+      for (const query of oodFixture.queries) {
+        const search = await searchSemanticCardsDetailed(db, query.query, provider, 20);
+        oodResults.push({
+          id: query.id,
+          accepted: search.matches.length,
+          abstained_reason: search.diagnostics.abstainedReason,
+          top: round(search.diagnostics.topSimilarity ?? 0),
+          margin: round((search.diagnostics.topSimilarity ?? 0) - (search.diagnostics.medianSimilarity ?? 0)),
+          head_gap: round((search.diagnostics.topSimilarity ?? 0) - (search.diagnostics.runnerUpSimilarity ?? 0)),
+        });
+      }
+
+      const results: Array<{ query: FixtureQuery; ids: string[]; baseIds: string[]; latency: number; baseLatency: number; semanticReason: string | null; semanticTop: number; semanticMargin: number; semanticHeadGap: number }> = [];
       for (const query of fixture.queries) {
+        const semantic = await searchSemanticCardsDetailed(db, query.query, provider, 20);
         const baseStarted = performance.now();
         const base = await askQueryWithSemantic('.pmem', query.query, provider, {
           db,
@@ -134,7 +150,14 @@ describe('v1.2.0 live contextual retrieval evaluation', { skip: process.env.PMEM
           limit: 20,
           now: Date.parse('2026-07-24T00:00:00.000Z'),
         });
-        results.push({ query, ids: response.matched.map(match => match.id), baseIds: base.matched.map(match => match.id), latency: performance.now() - started, baseLatency });
+        results.push({
+          query, ids: response.matched.map(match => match.id), baseIds: base.matched.map(match => match.id),
+          latency: performance.now() - started, baseLatency,
+          semanticReason: semantic.diagnostics.abstainedReason,
+          semanticTop: round(semantic.diagnostics.topSimilarity ?? 0),
+          semanticMargin: round((semantic.diagnostics.topSimilarity ?? 0) - (semantic.diagnostics.medianSimilarity ?? 0)),
+          semanticHeadGap: round((semantic.diagnostics.topSimilarity ?? 0) - (semantic.diagnostics.runnerUpSimilarity ?? 0)),
+        });
       }
 
       const metricsFor = (slice?: Slice, key: 'ids' | 'baseIds' = 'ids') => {
@@ -258,6 +281,16 @@ describe('v1.2.0 live contextual retrieval evaluation', { skip: process.env.PMEM
           reranked_ndcg_at_10: hardNdcg('reranked'),
           improvement: round(hardNdcg('reranked') - hardNdcg('base')),
         },
+        ood: {
+          fixture_version: oodFixture.fixture_version,
+          query_count: oodResults.length,
+          abstained_count: oodResults.filter(result => result.accepted === 0).length,
+          leaked_ids: oodResults.filter(result => result.accepted > 0).map(result => result.id),
+          details: oodResults,
+        },
+        semantic_gate_rejected_relevant_queries: results.filter(result => result.semanticReason).map(result => ({
+          id: result.query.id, reason: result.semanticReason, top: result.semanticTop, margin: result.semanticMargin, head_gap: result.semanticHeadGap,
+        })),
       };
       if (process.env.PMEM_PRINT_RERANK_DETAILS === '1') {
         process.stdout.write(`PMEM_RERANK_DETAILS=${JSON.stringify(results.map(result => ({
@@ -282,6 +315,7 @@ describe('v1.2.0 live contextual retrieval evaluation', { skip: process.env.PMEM
       assert.equal(report.candidate_recall_at_50, 1);
       assert.equal(report.hard_negatives.query_count, 30);
       assert.ok(report.hard_negatives.reranked_ndcg_at_10 >= report.hard_negatives.base_ndcg_at_10 + 0.05);
+      assert.equal(report.ood.abstained_count, report.ood.query_count, `OOD semantic leaks: ${report.ood.leaked_ids.join(', ')}`);
       assert.ok(report.performance_300_cards.full_index_build_ms <= semanticBaseline.performance_300_cards.full_index_build_ms * 1.25);
       assert.ok(report.performance_300_cards.warm_query_p95_ms <= 12);
       assert.ok(report.warm_query_latency_ms.rerank_overhead_p50 <= 2);

@@ -19,13 +19,30 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
-# Init a project and create a basic DB so mark-dirty --auto can check for git
+# Init a project and create a mapped source/card pair.
 "${PMEM[@]}" init test-v06-nongit --description "x" --stage "y" --next "z" >/dev/null
+mkdir -p src .pmem/modules
+cat > src/core.ts <<'SRC'
+export const value = 1;
+SRC
+cat > .pmem/modules/module.core.md <<'CARD'
+---
+id: module.core
+type: module
+source_files: [src/core.ts]
+---
+# Core
+CARD
 "${PMEM[@]}" rebuild >/dev/null
 
-# mark-dirty --auto in non-git context: may exit non-zero, but must not show a raw stack trace
+# Status is intentionally called first: it must not consume the mtime change.
+STATUS_OUTPUT="$("${PMEM[@]}" status --format json)"
+echo "$STATUS_OUTPUT" | grep -q '"source": "mtime"'
+echo "$STATUS_OUTPUT" | grep -q 'src/core.ts'
+
+# mark-dirty --auto must use the same mtime snapshot and succeed.
 set +e
-DIRTY_OUTPUT="$("${PMEM[@]}" mark-dirty --auto 2>&1)"
+DIRTY_OUTPUT="$("${PMEM[@]}" mark-dirty --auto --format json 2>&1)"
 DIRTY_CODE="$?"
 set -e
 
@@ -36,12 +53,15 @@ if echo "$DIRTY_OUTPUT" | grep -q "Error:" && echo "$DIRTY_OUTPUT" | grep -qE "^
   exit 1
 fi
 
-# Output should contain guidance about git
-if ! echo "$DIRTY_OUTPUT" | grep -qi "git"; then
-  echo "FAIL: mark-dirty --auto output missing git guidance"
+if [ "$DIRTY_CODE" -ne 0 ]; then
+  echo "FAIL: mark-dirty --auto should succeed outside git"
   echo "$DIRTY_OUTPUT"
   exit 1
 fi
+
+echo "$DIRTY_OUTPUT" | grep -q '"state": "marked_dirty"'
+echo "$DIRTY_OUTPUT" | grep -q '"module.core"'
+echo "$DIRTY_OUTPUT" | grep -q '"src/core.ts"'
 
 rm -rf "$PROJECT"
 echo "non-git ux passed"

@@ -3,7 +3,7 @@
 ## Step 1: Install pmem globally
 
 ```bash
-npm install -g pmem-ai@1.2.0
+npm install -g pmem-ai@1.2.1
 pmem --version
 ```
 
@@ -116,7 +116,7 @@ pmem verify
 Optional semantic enhancement on macOS is a separate, explicit journey:
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.0
+npm install -g pmem-ai-semantic@1.2.1
 pmem semantic enable
 ```
 

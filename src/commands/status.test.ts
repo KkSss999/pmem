@@ -19,6 +19,7 @@ import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as yaml from 'js-yaml';
 
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-status-u8-test-${Date.now()}-${process.pid}`);
@@ -204,7 +205,7 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
   });
 
   after(() => {
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   it('reports a new .pmem/**/*.md file as affected_card (reason=new_card) and sets needs_rebuild=true', () => {
@@ -287,5 +288,115 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
       .filter((c) => c.reason === 'new_card' || c.reason === 'modified_card');
     assert.strictEqual(memChanges.length, 0,
       `no card should have reason new_card/modified_card, got: ${JSON.stringify(memChanges)}`);
+  });
+});
+
+describe('pmem status non-git snapshot reliability (issues #27 and #28)', () => {
+  const cwd = path.join(TEMP_ROOT, 'status-mtime-snapshot');
+
+  before(() => {
+    fs.mkdirSync(cwd, { recursive: true });
+    const init = pmem('init status-mtime-snapshot --domain novel', cwd);
+    assert.strictEqual(init.code, 0, init.stdout);
+
+    const manifestPath = path.join(cwd, '.pmem', 'manifest.yml');
+    fs.appendFileSync(manifestPath, `
+change_detection:
+  mtime_scan_dirs:
+    - .pmem
+`, 'utf8');
+
+    // Establish the v1 snapshot format, then place new files exactly on the
+    // persisted boundary. Strict `mtime > checkpoint` used to miss these.
+    const baseline = pmem('status --format json', cwd);
+    assert.strictEqual(baseline.code, 0, baseline.stdout);
+    const chapterPath = path.join(cwd, '.pmem', 'chapters', 'chapter.ch01.md');
+    const decisionPath = path.join(cwd, '.pmem', 'decisions', 'decision.pov.md');
+    writeFile(chapterPath, cardFile('chapter.ch01', 'chapter'));
+    writeFile(decisionPath, cardFile('decision.pov', 'decision'));
+    const boundarySeconds = Math.floor(Date.now() / 1000);
+    fs.utimesSync(chapterPath, boundarySeconds, boundarySeconds);
+    fs.utimesSync(decisionPath, boundarySeconds, boundarySeconds);
+    const boundary = fs.statSync(chapterPath).mtimeMs;
+    assert.strictEqual(fs.statSync(decisionPath).mtimeMs, boundary);
+    fs.writeFileSync(path.join(cwd, '.pmem', '.last-status'), JSON.stringify({
+      version: 1,
+      watermark_ms: boundary,
+      pending: [],
+      acknowledged: [],
+    }, null, 2));
+  });
+
+  after(() => {
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('detects boundary-time cards once across overlapping roots and classifies them as new', () => {
+    const r = pmem('status --format json', cwd);
+    assert.strictEqual(r.code, 0, r.stdout);
+    const out = JSON.parse(r.stdout);
+    assert.strictEqual(out.source, 'mtime');
+
+    const paths = (out.changes as Array<{ path: string }>).map(change => change.path);
+    assert.strictEqual(new Set(paths).size, paths.length, `changed paths must be unique: ${JSON.stringify(paths)}`);
+    assert.strictEqual(paths.filter(path => path === '.pmem/chapters/chapter.ch01.md').length, 1);
+    assert.strictEqual(paths.filter(path => path === '.pmem/decisions/decision.pov.md').length, 1);
+
+    const chapter = (out.affected_cards as Array<{ id: string; reason: string }>)
+      .find(card => card.id === 'chapter.ch01');
+    assert.ok(chapter, JSON.stringify(out.affected_cards));
+    assert.strictEqual(chapter!.reason, 'new_card');
+  });
+
+  it('does not consume pending changes when status is read repeatedly', () => {
+    const first = JSON.parse(pmem('status --format json', cwd).stdout);
+    const second = JSON.parse(pmem('status --format json', cwd).stdout);
+    for (const out of [first, second]) {
+      assert.ok(out.changes.some((change: { path: string }) => change.path === '.pmem/chapters/chapter.ch01.md'));
+      assert.strictEqual(new Set(out.changes.map((change: { path: string }) => change.path)).size, out.changes.length);
+    }
+  });
+});
+
+describe('pmem status legacy non-git compatibility', () => {
+  const cwd = path.join(TEMP_ROOT, 'status-mtime-legacy');
+
+  before(() => {
+    fs.mkdirSync(cwd, { recursive: true });
+    const init = pmem('init status-mtime-legacy', cwd);
+    assert.strictEqual(init.code, 0, init.stdout);
+
+    const manifestPath = path.join(cwd, '.pmem', 'manifest.yml');
+    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
+    delete manifest.schema;
+    manifest.change_detection = { mtime_scan_dirs: ['.pmem'] };
+    fs.writeFileSync(manifestPath, yaml.dump(manifest, { lineWidth: -1 }), 'utf8');
+
+    const baseline = pmem('status --format json', cwd);
+    assert.strictEqual(baseline.code, 0, baseline.stdout);
+  });
+
+  after(() => {
+    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('detects a newly created card under resolved v0.6.x directories', () => {
+    const cardPath = path.join(cwd, '.pmem', 'modules', 'module.new.md');
+    writeFile(cardPath, cardFile('module.new', 'module'));
+
+    const result = pmem('status --format json', cwd);
+    assert.strictEqual(result.code, 0, result.stdout);
+    const report = JSON.parse(result.stdout);
+    assert.strictEqual(report.source, 'mtime');
+    assert.strictEqual(report.needs_rebuild, true, JSON.stringify(report));
+    assert.ok(
+      report.changes.some((change: { path: string }) => change.path === '.pmem/modules/module.new.md'),
+      JSON.stringify(report.changes),
+    );
+    assert.ok(
+      report.affected_cards.some((card: { id: string; reason: string }) =>
+        card.id === 'module.new' && card.reason === 'new_card'),
+      JSON.stringify(report.affected_cards),
+    );
   });
 });

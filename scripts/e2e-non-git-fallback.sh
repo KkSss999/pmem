@@ -44,16 +44,14 @@ CARD
 
 "${PMEM[@]}" rebuild >/dev/null
 
-# First status run: no changes yet, establishes .last-status baseline
-sleep 1
+# First status run establishes the durable non-consuming snapshot.
 FIRST_STATUS="$("${PMEM[@]}" status --format json)"
 echo "$FIRST_STATUS" | grep -q '"source": "mtime"'
 
 # Verify .last-status was written
 test -f .pmem/.last-status || { echo "FAIL: .pmem/.last-status not created"; exit 1; }
 
-# Modify a source file
-sleep 1
+# Modify a source file without relying on coarse sleep-based timestamp gaps.
 cat > src/index.ts <<'SRC'
 export const value = 2;
 SRC
@@ -62,6 +60,12 @@ SRC
 SECOND_STATUS="$("${PMEM[@]}" status --format json)"
 echo "$SECOND_STATUS" | grep -q '"source": "mtime"'
 echo "$SECOND_STATUS" | grep -q "src/index.ts"
+
+# A prior status read must not consume the change before mark-dirty.
+DIRTY_STATUS="$("${PMEM[@]}" mark-dirty --auto --format json)"
+echo "$DIRTY_STATUS" | grep -q '"state": "marked_dirty"'
+echo "$DIRTY_STATUS" | grep -q '"module.core"'
+echo "$DIRTY_STATUS" | grep -q '"src/index.ts"'
 
 # Also test verify works in non-git project
 "${PMEM[@]}" verify >/dev/null

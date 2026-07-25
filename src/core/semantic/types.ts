@@ -106,6 +106,28 @@ export interface SemanticCardMatch {
   modelRevision: string;
 }
 
+export type SemanticAbstentionReason =
+  | 'index_unavailable'
+  | 'no_positive_similarity'
+  | 'below_absolute_floor'
+  | 'flat_score_distribution';
+
+export interface SemanticSearchDiagnostics {
+  rawChunkCount: number;
+  rawCardCount: number;
+  acceptedCardCount: number;
+  topSimilarity: number | null;
+  medianSimilarity: number | null;
+  runnerUpSimilarity: number | null;
+  cutoff: number | null;
+  abstainedReason: SemanticAbstentionReason | null;
+}
+
+export interface SemanticCardSearchResult {
+  matches: SemanticCardMatch[];
+  diagnostics: SemanticSearchDiagnostics;
+}
+
 export interface SemanticProjectRebuildOptions extends ChunkingOptions {
   mode: 'full' | 'incremental';
   batchSize?: number;

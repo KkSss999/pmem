@@ -340,19 +340,85 @@ export async function searchSemanticCards(
   provider: EmbeddingProvider,
   limit: number = 10,
 ): Promise<SemanticCardMatch[]> {
+  return (await searchSemanticCardsDetailed(db, queryText, provider, limit)).matches;
+}
+
+export const SEMANTIC_RELEVANCE_FLOOR = 0.805;
+export const SEMANTIC_HAN_RELEVANCE_FLOOR = 0.765;
+export const SEMANTIC_MIN_TOP_MEDIAN_MARGIN = 0.012;
+
+export function semanticRelevanceGate(scores: readonly number[], queryText = ''): {
+  topSimilarity: number | null;
+  medianSimilarity: number | null;
+  runnerUpSimilarity: number | null;
+  cutoff: number | null;
+  abstainedReason: import('./types').SemanticAbstentionReason | null;
+} {
+  if (scores.length === 0) {
+    return { topSimilarity: null, medianSimilarity: null, runnerUpSimilarity: null, cutoff: null, abstainedReason: 'no_positive_similarity' };
+  }
+  const sorted = [...scores].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  const top = sorted[sorted.length - 1];
+  const runnerUp = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+  const hanOnlyQuery = /[\u3400-\u9fff]/.test(queryText) && (queryText.match(/[a-z]/gi)?.length ?? 0) < 4;
+  const baseFloor = hanOnlyQuery ? SEMANTIC_HAN_RELEVANCE_FLOOR : SEMANTIC_RELEVANCE_FLOOR;
+  // In the narrow non-Han boundary band, a lone low-confidence outlier is
+  // still OOD noise even if its corpus median happens to be lower.
+  const absoluteFloor = !hanOnlyQuery && top < 0.81 && top - median > 0.025 ? 0.81 : baseFloor;
+  const cutoff = sorted.length >= 4
+    ? Math.max(0.75, median + 0.02, top - 0.05)
+    : Math.max(0.75, top - 0.05);
+  const abstainedReason = top < absoluteFloor
+    ? 'below_absolute_floor'
+    : (sorted.length >= 4 && top >= 0.81 && top < 0.825 && top - median < SEMANTIC_MIN_TOP_MEDIAN_MARGIN
+      ? 'flat_score_distribution'
+      : null);
+  return { topSimilarity: top, medianSimilarity: median, runnerUpSimilarity: runnerUp, cutoff, abstainedReason };
+}
+
+/**
+ * Semantic parent-card search with a calibrated noise gate. The gate runs
+ * before candidate fusion/graph expansion so flat OOD similarity bands cannot
+ * seed a large irrelevant result graph. Exact/lexical channels are unaffected.
+ */
+export async function searchSemanticCardsDetailed(
+  db: SemanticDatabase,
+  queryText: string,
+  provider: EmbeddingProvider,
+  limit: number = 10,
+): Promise<import('./types').SemanticCardSearchResult> {
   validateProvider(provider);
   const status = getSemanticStatus(db);
-  if (!status.available) return [];
+  const empty = (abstainedReason: import('./types').SemanticAbstentionReason): import('./types').SemanticCardSearchResult => ({
+    matches: [],
+    diagnostics: {
+      rawChunkCount: 0, rawCardCount: 0, acceptedCardCount: 0,
+      topSimilarity: null, medianSimilarity: null, runnerUpSimilarity: null, cutoff: null, abstainedReason,
+    },
+  });
+  if (!status.available) return empty('index_unavailable');
   if (status.modelId !== provider.modelId || status.revision !== provider.revision || status.dimension !== provider.dimension) {
     throw new Error('Embedding provider is incompatible with the stored semantic index');
   }
   const vector = await provider.embedQuery(queryText);
-  const chunks = searchSemanticChunks(db, vector, Math.max(limit * 8, limit));
+  const chunks = searchSemanticChunks(db, vector, 1_000_000);
+  if (chunks.length === 0) return empty('no_positive_similarity');
   const bestByCard = new Map<string, SemanticChunkMatch>();
   for (const chunk of chunks) {
     if (!bestByCard.has(chunk.card_id)) bestByCard.set(chunk.card_id, chunk);
   }
-  return Array.from(bestByCard.values()).slice(0, limit).map(chunk => ({
+  const best = Array.from(bestByCard.values());
+  // Calibrated against the v1.2.1 OOD fixture. E5 cosine has a high baseline;
+  // for normal-size corpora the top result must separate from that background.
+  const gate = semanticRelevanceGate(best.map(chunk => chunk.similarity), queryText);
+  const { cutoff, abstainedReason } = gate;
+  // The calibrated gate is query-level: either abstain entirely or preserve
+  // the established candidate pool for fusion/reranking. Per-card clipping
+  // here regresses reranker quality by removing useful contrast candidates.
+  const accepted = abstainedReason ? [] : best.slice(0, limit);
+  return { matches: accepted.map(chunk => ({
     cardId: chunk.card_id,
     chunkId: chunk.chunk_id,
     heading: chunk.heading,
@@ -362,5 +428,14 @@ export async function searchSemanticCards(
     similarity: chunk.similarity,
     modelId: chunk.model_id,
     modelRevision: chunk.model_revision,
-  }));
+  })), diagnostics: {
+    rawChunkCount: chunks.length,
+    rawCardCount: best.length,
+    acceptedCardCount: accepted.length,
+    topSimilarity: gate.topSimilarity,
+    medianSimilarity: gate.medianSimilarity,
+    runnerUpSimilarity: gate.runnerUpSimilarity,
+    cutoff,
+    abstainedReason,
+  } };
 }

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { fileExists, getLockInfo } from '../core/fs';
+import { fileExists, getLockInfo, listFiles } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, closeDatabase } from '../core/db';
 import type { CliFormat } from '../types';
@@ -18,6 +18,7 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const checks: DoctorCheck[] = [];
+  const sourceCardCount = fileExists(pmemPath) ? countSourceCardFiles(pmemPath) : 0;
 
   // 1. .pmem/ exists
   if (!fileExists(pmemPath)) {
@@ -53,6 +54,8 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
       // Card count
       const cardRow = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0').get() as { count: number };
       const cardCount = cardRow?.count ?? 0;
+      const deletedRow = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 1').get() as { count: number };
+      const deletedCardCount = deletedRow?.count ?? 0;
       const isCandidate = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0 AND is_candidate = 1').get() as { count: number };
 
       checks.push({
@@ -62,8 +65,27 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
       });
 
       // 4. Cards
-      if (cardCount === 0) {
-        checks.push({ name: 'cards', status: 'warn', message: 'No memory cards found.', fix: 'Create a module card with source_files, then run: pmem rebuild' });
+      if (cardCount === 0 && sourceCardCount > 0) {
+        checks.push({
+          name: 'card_index',
+          status: 'warn',
+          message: `${sourceCardCount} source card file(s) exist but 0 active cards are indexed${deletedCardCount > 0 ? ` (${deletedCardCount} tombstone row(s) remain)` : ''}. The SQLite index may be stale or the cards may be invalid.`,
+          fix: 'Run: pmem rebuild, then review any skipped-card diagnostics.',
+        });
+      } else if (sourceCardCount === 0) {
+        checks.push({
+          name: 'cards',
+          status: 'warn',
+          message: 'No memory card files found.',
+          fix: 'Create one with: pmem new module "Core" --id core',
+        });
+      } else if (sourceCardCount !== cardCount) {
+        checks.push({
+          name: 'card_index',
+          status: 'warn',
+          message: `${sourceCardCount} source card file(s) exist but ${cardCount} active card(s) are indexed${deletedCardCount > 0 ? ` (${deletedCardCount} tombstone row(s) remain)` : ''}.`,
+          fix: 'Run: pmem rebuild, then review any skipped-card diagnostics.',
+        });
       } else {
         checks.push({ name: 'cards', status: 'ok', message: `${cardCount} active card(s).` });
       }
@@ -136,11 +158,21 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
   outputDoctor(checks, format);
 }
 
+function countSourceCardFiles(pmemPath: string): number {
+  return listFiles(pmemPath, /\.md$/).filter(filePath => {
+    const relative = path.relative(pmemPath, filePath).split(path.sep).join('/');
+    if (['index.md', 'state.md', 'next.md'].includes(relative)) return false;
+    return ![
+      'skills/', 'integrations/', 'summaries/', 'indexes/', 'backups/', 'candidates/',
+    ].some(prefix => relative.startsWith(prefix));
+  }).length;
+}
+
 function outputDoctor(checks: DoctorCheck[], format: CliFormat): void {
+  const okCount = checks.filter(c => c.status === 'ok').length;
+  const warnCount = checks.filter(c => c.status === 'warn').length;
+  const errorCount = checks.filter(c => c.status === 'error').length;
   if (format === 'json') {
-    const okCount = checks.filter(c => c.status === 'ok').length;
-    const warnCount = checks.filter(c => c.status === 'warn').length;
-    const errorCount = checks.filter(c => c.status === 'error').length;
     console.log(JSON.stringify({
       overall: errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok',
       summary: `${okCount} ok, ${warnCount} warning(s), ${errorCount} error(s)`,
@@ -157,10 +189,10 @@ function outputDoctor(checks: DoctorCheck[], format: CliFormat): void {
       console.log(`${icons[check.status]} ${check.message}`);
       if (check.fix) console.log(`  ${check.fix}`);
     }
-    const errorCount = checks.filter(c => c.status === 'error').length;
-    const warnCount = checks.filter(c => c.status === 'warn').length;
-    if (errorCount > 0 || warnCount > 0) {
-      process.exit(errorCount > 0 ? 2 : 1);
-    }
   }
+
+  // Output format must never change automation semantics. Warnings are a
+  // successful diagnostic result (like `pmem verify`); actual errors use the
+  // CLI's operational failure code in both compact and JSON modes.
+  process.exitCode = errorCount > 0 ? 2 : 0;
 }

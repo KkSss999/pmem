@@ -3,12 +3,38 @@ import { fileExists } from '../core/fs';
 import { formatOutput } from '../core/format';
 import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
+import type { AskResultV03 } from '../core/query/ask';
 
 const PMEM_DIR = '.pmem';
 
 export interface AskCommandOptions {
   explain?: boolean;
   limit?: number;
+}
+
+function noResultNextSteps(result: AskResultV03): string[] {
+  switch (result.diagnostics?.no_result_reason) {
+    case 'project_empty':
+      return ['Create a memory card with `pmem new`, then run `pmem rebuild`'];
+    case 'semantic_all_cards_excluded':
+      return [
+        'Run `pmem semantic status` to inspect semantic eligibility',
+        'Run `pmem health migrate` to preview missing trust and sensitivity metadata',
+      ];
+    case 'semantic_below_relevance_threshold':
+      return [
+        'No semantic candidate cleared the relevance threshold; try a more project-specific keyword',
+        'Use an exact card ID, title, tag, alias, or source path when known',
+      ];
+    case 'semantic_index_unavailable':
+      return ['Run `pmem semantic rebuild --full` to rebuild the semantic index'];
+    default:
+      return [
+        'Try a different query keyword',
+        'Run `pmem recall` for full project context',
+        'Check that cards have relevant aliases and tags',
+      ];
+  }
 }
 
 export async function askCommand(query: string, format: CliFormat = 'compact', options: AskCommandOptions = {}): Promise<void> {
@@ -49,11 +75,7 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
   const askMessage = result.matched.length > 0
     ? `Found ${result.matched.length} match(es).`
     : 'No matching memory cards found.';
-  const askNextSteps = result.matched.length > 0 ? [] : [
-    'Try a different query keyword',
-    'Run `pmem recall` for full project context',
-    'Check that cards have relevant aliases and tags',
-  ];
+  const askNextSteps = result.matched.length > 0 ? [] : noResultNextSteps(result);
 
   if (format === 'json') {
     console.log(JSON.stringify({
@@ -67,6 +89,16 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
     const lines: string[] = [`Query: ${result.query}`, ''];
     if (result.matched.length === 0) {
       lines.push('No matching memory cards found.');
+      const diagnostics = result.diagnostics;
+      if (diagnostics?.no_result_reason === 'semantic_all_cards_excluded') {
+        const trust = diagnostics.semantic.excluded_by_trust_detail;
+        const trustSummary = Object.entries(trust).map(([reason, count]) => `${reason}=${count}`).join(', ');
+        lines.push(`Semantic index: ${diagnostics.semantic.indexed_cards} cards; ${diagnostics.semantic.excluded_cards} excluded${trustSummary ? ` (${trustSummary})` : ''}.`);
+      } else if (diagnostics?.no_result_reason === 'semantic_below_relevance_threshold') {
+        lines.push(`Semantic candidates were rejected as noise (top=${diagnostics.semantic.top_similarity?.toFixed(4) ?? 'n/a'}, cutoff=${diagnostics.semantic.cutoff?.toFixed(4) ?? 'n/a'}).`);
+      } else if (diagnostics?.no_result_reason === 'project_empty') {
+        lines.push('This project has no indexed memory cards yet.');
+      }
       lines.push('');
       for (const step of askNextSteps) lines.push(`  - ${step}`);
     } else {
@@ -93,6 +125,15 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
         lines.push('');
         lines.push('Evidence:');
         for (const f of result.evidence_paths.slice(0, 8)) lines.push(`  ${f}`);
+      }
+    }
+    if (options.explain && result.diagnostics) {
+      lines.push('');
+      lines.push('Diagnostics:');
+      lines.push(`  deterministic candidates: ${result.diagnostics.deterministic_candidate_count}`);
+      lines.push(`  semantic: ${result.diagnostics.semantic.raw_card_hits} raw / ${result.diagnostics.semantic.accepted_card_hits} accepted`);
+      if (result.diagnostics.semantic.abstained_reason) {
+        lines.push(`  semantic abstention: ${result.diagnostics.semantic.abstained_reason}`);
       }
     }
     if (result.warnings && result.warnings.length > 0) {

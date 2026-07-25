@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { isTrustLabel, validTrustLabelsMessage } from './trustLabels';
 import { statSync } from 'fs';
 import { fileExists, readFile } from './fs';
 import { openDatabase } from './db';
@@ -301,9 +302,16 @@ export function checkTrustLabels(pmemPath: string): ConsistencyIssue[] {
           type: 'untrusted_memory',
           severity: 'info',
           card_id: card.id,
-          message: `${card.id} has no trust_label. Consider labeling as: system_trusted, user_confirmed, agent_generated, tool_observed, imported_external, untrusted_content.`,
+          message: `${card.id} has no trust_label. Valid values: ${validTrustLabelsMessage()}.`,
         });
-      } else if (typeof trustLabel === 'string' && trustLabel.trim() === 'untrusted_content') {
+      } else if (!isTrustLabel(trustLabel)) {
+        issues.push({
+          type: 'invalid_trust_label',
+          severity: 'warning',
+          card_id: card.id,
+          message: `${card.id} has invalid trust_label "${String(trustLabel)}". Valid values: ${validTrustLabelsMessage()}.`,
+        });
+      } else if (trustLabel.trim() === 'untrusted_content') {
         issues.push({
           type: 'untrusted_content',
           severity: 'warning',

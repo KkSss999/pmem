@@ -634,6 +634,46 @@ function printHealthSummary(result: VerifyResult): void {
   );
 }
 
+const COMPACT_GROUPED_METADATA_TYPES = new Set([
+  'unclassified_card',
+  'untrusted_memory',
+  'unclassified_sensitivity',
+  'invalid_trust_label',
+  'missing_contract_field',
+]);
+
+/** Presentation-only grouping. The VerifyResult used by JSON, scoring, and fingerprints is untouched. */
+export function compactVerifyIssues(issues: readonly VerifyIssue[]): VerifyIssue[] {
+  const grouped = new Map<string, VerifyIssue[]>();
+  for (const issue of issues) {
+    if (!COMPACT_GROUPED_METADATA_TYPES.has(issue.type)) continue;
+    const values = grouped.get(issue.type) ?? [];
+    values.push(issue);
+    grouped.set(issue.type, values);
+  }
+  const emitted = new Set<string>();
+  const output: VerifyIssue[] = [];
+  for (const issue of issues) {
+    const group = grouped.get(issue.type);
+    if (!group || group.length < 2) {
+      output.push(issue);
+      continue;
+    }
+    if (emitted.has(issue.type)) continue;
+    emitted.add(issue.type);
+    const ids = group.flatMap(item => item.card_id ? [item.card_id] : []).slice(0, 5);
+    const remaining = Math.max(0, group.length - ids.length);
+    const sample = ids.length > 0 ? ` Cards: ${ids.join(', ')}${remaining > 0 ? ` (+${remaining} more)` : ''}.` : '';
+    output.push({
+      ...issue,
+      card_id: undefined,
+      evidence_count: group.length,
+      message: `${group.length} cards reported ${issue.type}.${sample}`,
+    });
+  }
+  return output;
+}
+
 function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', deferred = false): void {
   if (format === 'json') {
     console.log(JSON.stringify(result, null, 2));
@@ -646,7 +686,7 @@ function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', de
   console.log(`Score: ${result.score}/100`);
   printHealthSummary(result);
   if (result.issues.length > 0) console.log('');
-  for (const issue of result.issues) {
+  for (const issue of compactVerifyIssues(result.issues)) {
     const icon = issue.severity === 'error' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ';
     console.log(`${icon} [${issue.type}] ${issue.message}`);
     console.log(`  Fix: ${issue.fix}`);

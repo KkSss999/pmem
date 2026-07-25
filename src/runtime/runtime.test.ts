@@ -97,6 +97,30 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
     await memory.close();
   }
 });
+
+test('Pmem.forget rejects an unknown card or event without writing a tombstone', async () => {
+  const root = makeProject();
+  const memory = await Pmem.open({ root });
+  const dbPath = path.join(root, '.pmem', 'pmem.db');
+  try {
+    const countEvents = (): number => {
+      const db = new Database(dbPath);
+      try {
+        return (db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number }).count;
+      } finally {
+        db.close();
+      }
+    };
+    const before = countEvents();
+    await assert.rejects(
+      memory.forget({ id: 'module.does_not_exist', reason: 'typo' }),
+      /Memory not found: module\.does_not_exist/,
+    );
+    assert.equal(countEvents(), before);
+  } finally {
+    await memory.close();
+  }
+});
 test('Pmem keeps status, capture, recall, and context rooted after process.chdir', async () => {
   const root = makeProject();
   const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-runtime-elsewhere-'));
@@ -131,6 +155,53 @@ test('Pmem keeps status, capture, recall, and context rooted after process.chdir
     process.chdir(previous);
     await memory.close();
     fs.rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('Pmem.context keeps non-git changed_files unique and non-consuming', async () => {
+  const root = makeProject();
+  const pmemPath = path.join(root, '.pmem');
+  const manifest = getDefaultManifest('runtime-context-mtime');
+  manifest.schema = {
+    card_types: ['trace'],
+    type_dirs: { trace: 'traces' },
+    foundational_types: [],
+    evidence_types: ['trace'],
+    default_type: 'trace',
+    creatable_types: ['trace'],
+  };
+  (manifest as any).change_detection = { mtime_scan_dirs: ['.pmem'] };
+  saveManifest(pmemPath, manifest);
+
+  // This test locks non-consuming/deduplicated runtime output. The exact
+  // boundary-time race is covered separately by status.test.ts; leave enough
+  // filesystem timestamp headroom here to avoid platform precision flakes.
+  const boundary = Date.now() - 1000;
+  writeFile(path.join(pmemPath, '.last-status'), JSON.stringify({
+    version: 1,
+    watermark_ms: boundary,
+    pending: [],
+  }, null, 2));
+  const tracePath = path.join(pmemPath, 'traces', 'trace.context-change.md');
+  writeFile(tracePath, `---
+id: trace.context-change
+type: trace
+---
+# Context change
+`);
+  fs.utimesSync(tracePath, (boundary + 500) / 1000, (boundary + 500) / 1000);
+
+  const memory = await Pmem.open({ root });
+  try {
+    const first = await memory.context('changed files');
+    const second = await memory.context('changed files again');
+    for (const result of [first, second]) {
+      const paths = result.changed_files.map(change => change.path);
+      assert.equal(new Set(paths).size, paths.length, JSON.stringify(paths));
+      assert.equal(paths.filter(filePath => filePath === '.pmem/traces/trace.context-change.md').length, 1);
+    }
+  } finally {
+    await memory.close();
   }
 });
 

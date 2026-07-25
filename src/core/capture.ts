@@ -17,7 +17,7 @@ import {
   insertRuntimeEvent
 } from './db';
 import { getCurrentBranch } from './git';
-import { statusQuery } from './query/status';
+import { acknowledgeStatusChanges, statusQuery } from './query/status';
 import type { PmemSessionData } from '../types';
 import { buildTraceSummary } from './traceSummary';
 import { writeManagedNext } from './next';
@@ -464,6 +464,8 @@ ${listItems(traceSummary.next)}
   } catch (err: any) {
     // Verification warning only, do not fail capture
   }
+
+  acknowledgeStatusChanges(pmemPath, changedFiles.map(change => change.path));
 
   return {
     success: true,

@@ -71,6 +71,8 @@ export interface SemanticReadinessSummary {
   eligible_cards: number;
   excluded_cards: number;
   excluded_by_reason: Record<string, number>;
+  /** Additive detail while `excluded_by_reason.untrusted` remains backward-compatible. */
+  excluded_by_trust_detail?: Record<string, number>;
   pipeline_version: number | null;
   index_compatible: boolean;
   index_fresh: boolean;

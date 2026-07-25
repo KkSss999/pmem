@@ -20,9 +20,29 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { VerifyIssue } from '../types';
+import { compactVerifyIssues } from './verify';
 
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-u5-verify-test-${Date.now()}`);
+
+describe('compact verify metadata grouping', () => {
+  it('groups repeated metadata issues for display while leaving source issues serializable per card', () => {
+    const issues: VerifyIssue[] = Array.from({ length: 7 }, (_, index) => ({
+      severity: 'warning',
+      type: 'unclassified_card',
+      card_id: `module.${index}`,
+      message: `module.${index} is missing classification`,
+      fix: 'Run: pmem health migrate',
+    }));
+    const originalJson = JSON.stringify(issues);
+    const compact = compactVerifyIssues(issues);
+    assert.strictEqual(compact.length, 1);
+    assert.match(compact[0].message, /7 cards.*module\.0.*\(\+2 more\)/);
+    assert.strictEqual(compact[0].evidence_count, 7);
+    assert.strictEqual(JSON.stringify(issues), originalJson);
+    assert.strictEqual(JSON.parse(originalJson).length, 7);
+  });
+});
 
 function pmem(args: string, cwd: string): { stdout: string; stderr: string; code: number } {
   try {

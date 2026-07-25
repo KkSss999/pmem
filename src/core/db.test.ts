@@ -594,4 +594,18 @@ describe('runtime events and forget', () => {
       db.close();
     }
   });
+
+  it('forgetMemory rejects an unknown card without recording an event', () => {
+    const db = createInMemoryDb();
+    createSchema(db);
+    try {
+      const before = getRecentRuntimeEvents(db, 10).length;
+      const result = forgetMemory(db, 'module.does_not_exist', { reason: 'typo' });
+      assert.strictEqual(result.success, false);
+      assert.match(result.message, /Memory not found/);
+      assert.strictEqual(getRecentRuntimeEvents(db, 10).length, before);
+    } finally {
+      db.close();
+    }
+  });
 });

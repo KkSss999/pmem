@@ -1,9 +1,9 @@
 import * as path from 'node:path';
 import { atomicWrite, copyFile, ensureDir, listFiles, readFile, withLock } from '../fs';
 import { parseFrontmatter } from '../yaml';
+import { isTrustLabel, validTrustLabelsMessage } from '../trustLabels';
 
 const CLASSIFICATIONS = new Set(['fact', 'decision', 'assumption', 'plan', 'risk', 'question']);
-const TRUST_LABELS = new Set(['system_trusted', 'user_confirmed', 'application_trusted', 'agent_generated', 'tool_observed', 'imported_external', 'untrusted_content']);
 const SENSITIVITIES = new Set(['public', 'internal', 'personal', 'confidential', 'secret']);
 const SAFE_CLASSIFICATION_BY_TYPE: Record<string, string> = {
   decision: 'decision', task: 'plan', feature: 'plan', risk: 'risk', assumption: 'assumption',
@@ -51,7 +51,9 @@ export function parseClassificationByType(value: string | undefined): Record<str
 }
 
 function validateOptions(options: HealthMigrationOptions): void {
-  if (options.trustLabel && !TRUST_LABELS.has(options.trustLabel)) throw new Error(`Invalid trust label: ${options.trustLabel}`);
+  if (options.trustLabel && !isTrustLabel(options.trustLabel)) {
+    throw new Error(`Invalid trust label "${options.trustLabel}". Valid values: ${validTrustLabelsMessage()}.`);
+  }
   if (options.sensitivity && !SENSITIVITIES.has(options.sensitivity)) throw new Error(`Invalid sensitivity: ${options.sensitivity}`);
   for (const value of Object.values(options.classificationByType ?? {})) {
     if (!CLASSIFICATIONS.has(value)) throw new Error(`Invalid classification: ${value}`);

@@ -44,7 +44,7 @@ function sourceUrl(spec: SemanticModelSpec, file: string): URL {
 function getWithRedirects(url: URL, redirects = 0): Promise<import('node:http').IncomingMessage> {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
-      headers: { 'user-agent': 'pmem-semantic-setup/1.2.0', accept: 'application/octet-stream' },
+      headers: { 'user-agent': 'pmem-semantic-setup/1.2.1', accept: 'application/octet-stream' },
     }, response => {
       const status = response.statusCode ?? 0;
       if (status >= 300 && status < 400 && response.headers.location) {
@@ -168,6 +168,7 @@ export function createDefaultSemanticOperations(
           eligibleCards: readiness?.eligible_cards ?? 0,
           excludedCards: readiness?.excluded_cards ?? 0,
           excludedByReason: readiness?.excluded_by_reason ?? {},
+          excludedByTrustDetail: readiness?.excluded_by_trust_detail ?? {},
         };
       } catch {
         return {
@@ -182,6 +183,7 @@ export function createDefaultSemanticOperations(
           eligibleCards: 0,
           excludedCards: 0,
           excludedByReason: {},
+          excludedByTrustDetail: {},
         };
       }
     },

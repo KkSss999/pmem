@@ -30,7 +30,7 @@ export async function forgetCommand(memoryId: string, options: { reason?: string
     console.log(`Tombstone event: ${result.id}`);
   } catch (err: any) {
     console.error(`Error: ${err.message}`);
-    process.exit(2);
+    process.exitCode = 2;
   } finally {
     await memory.close();
   }

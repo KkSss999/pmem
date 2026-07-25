@@ -460,8 +460,9 @@ program
 program
   .command('new <type> <title>')
   .description('Create a new memory card with frontmatter template')
-  .action((type: string, title: string) => {
-    newCommand(type, title);
+  .option('--id <id>', 'Use a stable ID slug or an exact ID matching the card type')
+  .action((type: string, title: string, options) => {
+    newCommand(type, title, { id: options.id });
   });
 
 program
