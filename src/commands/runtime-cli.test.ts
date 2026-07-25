@@ -74,6 +74,34 @@ describe('read/query CLI commands use Pmem Runtime', () => {
     ]);
   });
 
+  it('askCommand explains an all-excluded semantic index with aggregate safe next steps', async () => {
+    const root = makePmemProject();
+    process.chdir(root);
+    (Pmem as any).open = async () => ({
+      ask: async (query: string) => ({
+        query, matched: [], recommended_files: [], evidence_paths: [],
+        diagnostics: {
+          card_count: 2, deterministic_candidate_count: 0, no_result_reason: 'semantic_all_cards_excluded',
+          semantic: {
+            enabled: true, index_available: true, indexed_cards: 0, indexed_chunks: 0,
+            eligible_cards: 0, excluded_cards: 2, excluded_by_reason: { untrusted: 2 },
+            excluded_by_trust_detail: { missing_trust_label: 2 }, raw_chunk_hits: 0,
+            raw_card_hits: 0, accepted_card_hits: 0, top_similarity: null,
+            median_similarity: null, runner_up_similarity: null, cutoff: null,
+            abstained_reason: 'no_positive_similarity',
+          },
+        },
+      }),
+      close: async () => {},
+    });
+
+    const out = await withCapturedConsole(() => askCommand('private token value', 'json'));
+    const json = JSON.parse(out.stdout.join('\n'));
+    assert.strictEqual(json.diagnostics.no_result_reason, 'semantic_all_cards_excluded');
+    assert.match(json.next_steps.join(' '), /health migrate/);
+    assert.strictEqual(JSON.stringify(json).includes('secret='), false);
+  });
+
   it('captureCommand routes through Pmem.capture(), preserves options/output, and closes Runtime', async () => {
     const root = makePmemProject();
     process.chdir(root);

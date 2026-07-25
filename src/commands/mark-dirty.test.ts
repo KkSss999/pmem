@@ -310,6 +310,73 @@ source_files:
   });
 });
 
+describe('pmem mark-dirty --auto non-git fallback (issue #22)', () => {
+  const cwd = path.join(TEMP_ROOT, 'mtime-mark-dirty');
+
+  before(() => {
+    fs.mkdirSync(path.join(cwd, '.pmem'), { recursive: true });
+    writeManifest(path.join(cwd, '.pmem'));
+    fs.mkdirSync(path.join(cwd, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'src', 'core.ts'), 'export const value = 1;\n', 'utf8');
+    fs.mkdirSync(path.join(cwd, '.pmem', 'modules'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.pmem', 'modules', 'module.core.md'), `---
+id: module.core
+type: module
+source_files: [src/core.ts]
+---
+# Core
+`, 'utf8');
+    const rebuild = pmem('rebuild --full', cwd);
+    assert.strictEqual(rebuild.code, 0, rebuild.stdout);
+  });
+
+  it('succeeds after a prior status read and marks the mapped card via mtime', () => {
+    // Keep both files inside several consecutive scan windows. The matched
+    // file must be acknowledged by exact content fingerprint, while the
+    // concurrently observed unmatched file must remain pending.
+    const unhandledPath = path.join(cwd, 'src', 'unhandled.ts');
+    fs.writeFileSync(unhandledPath, 'export const pending = true;\n', 'utf8');
+    const futureSeconds = (Date.now() + 60_000) / 1000;
+    fs.utimesSync(path.join(cwd, 'src', 'core.ts'), futureSeconds, futureSeconds);
+    fs.utimesSync(unhandledPath, futureSeconds, futureSeconds);
+
+    const status = pmem('status --format json', cwd);
+    assert.strictEqual(status.code, 0, status.stdout);
+    const statusPayload = JSON.parse(status.stdout);
+    assert.strictEqual(statusPayload.source, 'mtime');
+    assert.ok(statusPayload.changes.some((change: { path: string }) => change.path === 'src/core.ts'));
+
+    const dirty = pmem('mark-dirty --auto --format json', cwd);
+    assert.strictEqual(dirty.code, 0, `expected mtime fallback success: ${dirty.stdout}\n${dirty.stderr}`);
+    const payload = JSON.parse(dirty.stdout);
+    assert.strictEqual(payload.state, 'marked_dirty');
+    assert.ok(payload.changed_files.includes('src/core.ts'));
+    assert.ok(payload.marked_card_ids.includes('module.core'));
+
+    const after = pmem('status --format json', cwd);
+    assert.strictEqual(after.code, 0, after.stdout);
+    const afterPayload = JSON.parse(after.stdout);
+    assert.ok(
+      !afterPayload.changes.some((change: { path: string }) => change.path === 'src/core.ts'),
+      `acknowledged unchanged file must not reappear: ${after.stdout}`,
+    );
+    assert.ok(
+      afterPayload.changes.some((change: { path: string }) => change.path === 'src/unhandled.ts'),
+      `unhandled concurrent file must remain visible: ${after.stdout}`,
+    );
+
+    // Same mtime and same byte size, different content: mtime/size alone
+    // cannot distinguish this edit, but the acknowledgement fingerprint must.
+    fs.writeFileSync(path.join(cwd, 'src', 'core.ts'), 'export const value = 2;\n', 'utf8');
+    fs.utimesSync(path.join(cwd, 'src', 'core.ts'), futureSeconds, futureSeconds);
+    const changedAgain = JSON.parse(pmem('status --format json', cwd).stdout);
+    assert.ok(
+      changedAgain.changes.some((change: { path: string }) => change.path === 'src/core.ts'),
+      `a later same-mtime same-size content edit must reappear: ${JSON.stringify(changedAgain)}`,
+    );
+  });
+});
+
 // Clean up temp root after all tests
 after(() => {
   try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}

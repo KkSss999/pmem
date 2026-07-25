@@ -5,6 +5,7 @@ import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
+import { acknowledgeStatusChanges } from '../core/query/status';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
 
 const PMEM_DIR = '.pmem';
@@ -24,6 +25,20 @@ interface ParsedCard {
   bodyText: string;
   frontmatter: CardFrontmatter;
 }
+
+type CardParseDiagnosticCode = 'empty_file' | 'invalid_frontmatter' | 'missing_id' | 'missing_type';
+
+type CardParseResult =
+  | { ok: true; card: ParsedCard }
+  | {
+      ok: false;
+      diagnostic: {
+        filePath: string;
+        code: CardParseDiagnosticCode;
+        message: string;
+        parsedId?: string;
+      };
+    };
 
 export function rebuildCommand(options: RebuildOptions = {}): void {
   const cwd = options.cwd ?? process.cwd();
@@ -142,12 +157,21 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   const ftsRows: CardFtsRow[] = [];
   const ftsSkippedIds: string[] = [];
 
-  // Pre-scan all card IDs for wikilink validation (so [[card-id]] refs
-  // resolve even when the target card hasn't been processed yet)
+  // Parse each file exactly once. The previous two-pass implementation
+  // collapsed every parse failure to null and silently skipped it twice.
+  const parsedCardFiles = cardFiles.map(file => ({ file, result: parseCard(file) }));
+  const parseDiagnostics = parsedCardFiles
+    .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: false }> } => !entry.result.ok)
+    .map(entry => entry.result.diagnostic)
+    // Candidate reports are advisory Markdown artifacts, not canonical cards.
+    .filter(diagnostic => !path.relative(pmemPath, diagnostic.filePath).startsWith(`candidates${path.sep}`))
+    .filter(diagnostic => !isSingleCard || diagnostic.parsedId === options.card);
+
+  // Pre-scan all valid card IDs for wikilink validation (so [[card-id]] refs
+  // resolve even when the target card hasn't been processed yet).
   const validCardIds = new Set<string>();
-  for (const file of cardFiles) {
-    const parsed = parseCard(file);
-    if (parsed) validCardIds.add(parsed.frontmatter.id);
+  for (const entry of parsedCardFiles) {
+    if (entry.result.ok) validCardIds.add(entry.result.card.frontmatter.id);
   }
 
   // Wrap all per-card SQLite writes in a single transaction for performance
@@ -206,9 +230,10 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
       snappedEdges = allEdges;
     }
 
-    for (const file of cardFiles) {
-      const parsed = parseCard(file);
-      if (!parsed) continue;
+    for (const entry of parsedCardFiles) {
+      if (!entry.result.ok) continue;
+      const file = entry.file;
+      const parsed = entry.result.card;
 
       // In --card mode, skip cards that don't match the target ID
       if (isSingleCard && parsed.frontmatter.id !== options.card) continue;
@@ -429,12 +454,15 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   // Wrapped in a transaction so a crash mid-cleanup leaves the DB in a
   // consistent state (all-or-nothing per stale card batch).
   let cleanedStaleCards = 0;
+  let invalidatedCards = 0;
   {
+    const invalidFilePaths = new Set(parseDiagnostics.map(diagnostic => path.relative(cwd, diagnostic.filePath)));
     const cleanupTx = db.transaction(() => {
       const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
       for (const card of staleCards) {
         const absPath = path.join(cwd, card.file_path);
-        if (!fileExists(absPath)) {
+        const invalid = invalidFilePaths.has(card.file_path);
+        if (!fileExists(absPath) || invalid) {
           db.prepare("UPDATE cards SET is_deleted = 1 WHERE id = ?").run(card.id);
           // Bidirectional edge cleanup — covers both outgoing and incoming edges
           // for the deleted card, matching the verify.ts cleanupMissingCards pattern.
@@ -443,7 +471,8 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
           deleteCardTags(db, card.id);
           deleteCardPaths(db, card.id);
           deleteCardFts(db, card.id);
-          cleanedStaleCards++;
+          if (invalid) invalidatedCards++;
+          else cleanedStaleCards++;
         }
       }
     });
@@ -558,6 +587,20 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   ensureDir(indexesDir);
   writeJson(path.join(indexesDir, 'graph.json'), graphIndex);
 
+  // Only successfully parsed cards are acknowledged. Invalid files remain
+  // pending so status continues to signal that user action is required.
+  acknowledgeStatusChanges(
+    pmemPath,
+    parsedCardFiles
+      .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: true }> } => entry.result.ok)
+      .filter(entry => !isSingleCard || entry.result.card.frontmatter.id === options.card)
+      .map(entry => path.relative(cwd, entry.file)),
+  );
+
+  for (const diagnostic of parseDiagnostics) {
+    console.log(`Warning: skipped ${path.relative(cwd, diagnostic.filePath)}: ${diagnostic.message}`);
+  }
+
   // Output summary
   const preservedParts: string[] = [];
   if (preservedSessions > 0) preservedParts.push(`${preservedSessions} session${preservedSessions === 1 ? '' : 's'}`);
@@ -579,6 +622,9 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     if (cleanedStaleCards > 0) {
       console.log(`Cleaned ${cleanedStaleCards} stale card(s) (source files deleted)`);
     }
+    if (invalidatedCards > 0) {
+      console.log(`Invalidated ${invalidatedCards} stale indexed card(s) whose source files are invalid`);
+    }
   }
 
   closeDatabase();
@@ -589,21 +635,62 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
  * Reads the file once, extracts YAML frontmatter (between --- markers),
  * the markdown body, and parses the frontmatter into a CardFrontmatter object.
  */
-function parseCard(filePath: string): ParsedCard | null {
-  const fullContent = readFile(filePath);
-  if (!fullContent) return null;
+function parseCard(filePath: string): CardParseResult {
+  let fullContent: string | null;
+  try {
+    fullContent = readFile(filePath);
+  } catch (error: any) {
+    return {
+      ok: false,
+      diagnostic: {
+        filePath,
+        code: 'empty_file',
+        message: `file could not be read (${error?.message ?? String(error)})`,
+      },
+    };
+  }
+  if (!fullContent) {
+    return {
+      ok: false,
+      diagnostic: { filePath, code: 'empty_file', message: 'file is empty or unreadable' },
+    };
+  }
 
   const parsed = parseFrontmatter(fullContent);
-  if (!parsed) return null;
+  if (!parsed) {
+    return {
+      ok: false,
+      diagnostic: { filePath, code: 'invalid_frontmatter', message: 'missing or malformed YAML frontmatter' },
+    };
+  }
 
   const frontmatter = parsed.data as unknown as CardFrontmatter;
-  if (!frontmatter.id) return null;
+  const parsedId = typeof frontmatter.id === 'string' ? frontmatter.id.trim() : '';
+  if (!parsedId) {
+    return {
+      ok: false,
+      diagnostic: { filePath, code: 'missing_id', message: 'missing required frontmatter field "id"' },
+    };
+  }
+  if (typeof frontmatter.type !== 'string' || !frontmatter.type.trim()) {
+    return {
+      ok: false,
+      diagnostic: {
+        filePath,
+        code: 'missing_type',
+        message: 'missing required frontmatter field "type"',
+        parsedId,
+      },
+    };
+  }
+  frontmatter.id = parsedId;
+  frontmatter.type = frontmatter.type.trim();
 
   // Extract frontmatter text for hash computation
   const fmMatch = fullContent.match(/^---\n([\s\S]*?)\n---/);
   const frontmatterText = fmMatch ? fmMatch[1] : '';
 
-  return { fullContent, frontmatterText, bodyText: parsed.body, frontmatter };
+  return { ok: true, card: { fullContent, frontmatterText, bodyText: parsed.body, frontmatter } };
 }
 
 /** Extract the first # heading from markdown body text as the card title. */

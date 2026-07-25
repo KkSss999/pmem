@@ -4,13 +4,20 @@ import { closeDatabase, openOwnedDatabase } from '../db';
 import { chunkCard } from '../semantic/chunks';
 import { inspectModelCacheSync } from '../semantic/cache';
 import { loadSemanticProjectDocuments, getSemanticProjectStatus } from '../semantic/project';
-import { filterSafeSemanticCards, semanticExclusionReason, type SemanticExclusionReason } from '../semantic/safety';
+import {
+  filterSafeSemanticCards,
+  semanticExclusionReason,
+  semanticTrustExclusionDetail,
+  type SemanticExclusionReason,
+  type SemanticTrustExclusionDetail,
+} from '../semantic/safety';
 
 export interface SemanticReadinessResult {
   applicable: boolean;
   eligible_cards: number;
   excluded_cards: number;
   excluded_by_reason: Partial<Record<SemanticExclusionReason, number>>;
+  excluded_by_trust_detail: Partial<Record<SemanticTrustExclusionDetail, number>>;
   pipeline_version: number | null;
   index_compatible: boolean;
   index_fresh: boolean;
@@ -21,18 +28,27 @@ export function summarizeSemanticEligibility(documents: ReturnType<typeof loadSe
   eligible_cards: number;
   excluded_cards: number;
   excluded_by_reason: Partial<Record<SemanticExclusionReason, number>>;
+  excluded_by_trust_detail: Partial<Record<SemanticTrustExclusionDetail, number>>;
 } {
   const excludedByReason: Partial<Record<SemanticExclusionReason, number>> = {};
+  const excludedByTrustDetail: Partial<Record<SemanticTrustExclusionDetail, number>> = {};
   let eligibleCards = 0;
   for (const document of documents) {
     const reason = semanticExclusionReason(document);
-    if (reason) excludedByReason[reason] = (excludedByReason[reason] ?? 0) + 1;
+    if (reason) {
+      excludedByReason[reason] = (excludedByReason[reason] ?? 0) + 1;
+      const trustDetail = semanticTrustExclusionDetail(document);
+      if (reason === 'untrusted' && trustDetail) {
+        excludedByTrustDetail[trustDetail] = (excludedByTrustDetail[trustDetail] ?? 0) + 1;
+      }
+    }
     else eligibleCards++;
   }
   return {
     eligible_cards: eligibleCards,
     excluded_cards: documents.length - eligibleCards,
     excluded_by_reason: excludedByReason,
+    excluded_by_trust_detail: excludedByTrustDetail,
   };
 }
 
@@ -43,7 +59,7 @@ function semanticIssue(type: string, message: string, fix: string): VerifyIssue 
 export function inspectSemanticReadiness(pmemPath: string, manifest: Manifest): SemanticReadinessResult {
   if (!('embedding' in manifest) || !manifest.embedding.enabled) {
     return {
-      applicable: false, eligible_cards: 0, excluded_cards: 0, excluded_by_reason: {},
+      applicable: false, eligible_cards: 0, excluded_cards: 0, excluded_by_reason: {}, excluded_by_trust_detail: {},
       pipeline_version: null, index_compatible: false, index_fresh: false, issues: [],
     };
   }
@@ -53,6 +69,7 @@ export function inspectSemanticReadiness(pmemPath: string, manifest: Manifest): 
   const safe = filterSafeSemanticCards(documents);
   const eligibility = summarizeSemanticEligibility(documents);
   const excludedByReason = eligibility.excluded_by_reason;
+  const excludedByTrustDetail = eligibility.excluded_by_trust_detail;
   let pipelineVersion: number | null = null;
   let indexCompatible = false;
   let indexFresh = false;
@@ -60,7 +77,8 @@ export function inspectSemanticReadiness(pmemPath: string, manifest: Manifest): 
     issues.push(semanticIssue('semantic_config_invalid', 'Semantic retrieval is enabled but its manifest configuration is incomplete.', 'Run: pmem semantic setup'));
     return {
       applicable: true, eligible_cards: safe.length, excluded_cards: documents.length - safe.length,
-      excluded_by_reason: excludedByReason, pipeline_version: null, index_compatible: false, index_fresh: false, issues,
+      excluded_by_reason: excludedByReason, excluded_by_trust_detail: excludedByTrustDetail,
+      pipeline_version: null, index_compatible: false, index_fresh: false, issues,
     };
   }
   const spec = { model: config.model, revision: config.revision, dtype: config.dtype, dimension: config.dimension, source: config.source ?? undefined, cachePath: config.cache_path };
@@ -102,6 +120,7 @@ export function inspectSemanticReadiness(pmemPath: string, manifest: Manifest): 
     eligible_cards: safe.length,
     excluded_cards: documents.length - safe.length,
     excluded_by_reason: excludedByReason,
+    excluded_by_trust_detail: excludedByTrustDetail,
     pipeline_version: pipelineVersion,
     index_compatible: indexCompatible,
     index_fresh: indexFresh,

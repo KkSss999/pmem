@@ -1,0 +1,18 @@
+{
+  "fixture_version": "v1.2.1-ood-2026-07-24.1",
+  "description": "Out-of-domain queries with no relevant card in the locked pmem retrieval corpus.",
+  "queries": [
+    {"id":"ood-zh-01","slice":"zh","query":"附近哪家披萨店现在可以送餐"},
+    {"id":"ood-zh-02","slice":"zh","query":"明天上海会不会下雨需要带伞吗"},
+    {"id":"ood-zh-03","slice":"zh","query":"如何给阳台上的番茄苗施肥"},
+    {"id":"ood-zh-04","slice":"zh","query":"推荐一部适合周末看的科幻电影"},
+    {"id":"ood-en-01","slice":"en","query":"best sourdough recipe for a humid kitchen"},
+    {"id":"ood-en-02","slice":"en","query":"who won the football match last night"},
+    {"id":"ood-en-03","slice":"en","query":"plan a three day hiking trip in the alps"},
+    {"id":"ood-en-04","slice":"en","query":"compare mortgage rates for a first home"},
+    {"id":"ood-mix-01","slice":"code_path_mixed","query":"kubectl drain node-7 --ignore-daemonsets"},
+    {"id":"ood-mix-02","slice":"code_path_mixed","query":"SELECT rainfall FROM weather_forecast WHERE city = 'Tokyo'"},
+    {"id":"ood-mix-03","slice":"code_path_mixed","query":"photos/holiday/italy/beach.jpg EXIF rotation"},
+    {"id":"ood-mix-04","slice":"code_path_mixed","query":"blender render GPU samples 如何降低噪点"}
+  ]
+}

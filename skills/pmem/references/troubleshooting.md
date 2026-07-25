@@ -40,7 +40,7 @@ companion. On macOS, install the matching release and enable it for the current
 project:
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.0
+npm install -g pmem-ai-semantic@1.2.1
 pmem semantic enable
 pmem semantic status
 ```

@@ -2,10 +2,10 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Review v1.2.0 adoption and choose the next version scope.
+Merge the v1.2.1 PR and verify both npm packages plus GitHub Release are publicly available.
 
 ## Why
-The complete v1.2.0 local acceptance report was approved, including the dual-package release transaction and installation-to-use UX. The user authorized updating PR #17 without waiting for CI.
+Both deep-review blockers pass the full release gate, and the user authorized commit, PR merge, automatic publication, and closure of Issues #19-#28. Release completion still requires final workflow and public-registry evidence.
 
 ## Needed Context
 - decision.v1_1_1_macos_semantic_retrieval_20260724
@@ -14,4 +14,5 @@ The complete v1.2.0 local acceptance report was approved, including the dual-pac
 - task.v1_2_0_unified_release_20260724
 - feature.v1_1_1_lightweight_semantic_layer_20260626
 - module.recall_retrieval_runtime_20260626
+- task.v1_2_1_deep_usage_reliability_20260724
 <!-- pmem:next:end -->

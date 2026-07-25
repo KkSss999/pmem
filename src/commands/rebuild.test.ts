@@ -295,6 +295,68 @@ They discuss the events of [[chapter.vol1]].`;
   });
 });
 
+describe('issue #19: rebuild reports invalid cards without aborting valid siblings', () => {
+  const testDir = path.join(TEMP_ROOT, 'invalid-card-diagnostics');
+
+  before(() => {
+    fs.mkdirSync(path.join(testDir, '.pmem', 'modules'), { recursive: true });
+    writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest(CARD_GLOBS));
+  });
+
+  after(() => {
+    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('warns once per path, indexes valid cards, and invalidates a card that becomes invalid', () => {
+    writeFile(path.join(testDir, '.pmem', 'modules', 'module.valid.md'), card('module.valid', 'module'));
+    writeFile(path.join(testDir, '.pmem', 'modules', 'module.missing-type.md'), `---
+id: module.missing-type
+---
+# Missing type
+`);
+    writeFile(path.join(testDir, '.pmem', 'modules', 'module.missing-id.md'), `---
+type: module
+---
+# Missing id
+`);
+    writeFile(path.join(testDir, '.pmem', 'modules', 'module.bad-frontmatter.md'), '# No frontmatter\n');
+
+    const first = pmem('rebuild --full', testDir);
+    assert.strictEqual(first.code, 0, first.stdout);
+    for (const expected of [
+      ['.pmem/modules/module.missing-type.md', 'missing required frontmatter field "type"'],
+      ['.pmem/modules/module.missing-id.md', 'missing required frontmatter field "id"'],
+      ['.pmem/modules/module.bad-frontmatter.md', 'missing or malformed YAML frontmatter'],
+    ]) {
+      const matchingLines = first.stdout.split('\n').filter(line => line.includes(expected[0]!) && line.includes(expected[1]!));
+      assert.strictEqual(matchingLines.length, 1, `expected one diagnostic for ${expected[0]}: ${first.stdout}`);
+    }
+    assert.deepStrictEqual(queryEdges(testDir, "SELECT id FROM cards WHERE is_deleted = 0 ORDER BY id"), [
+      { id: 'module.valid' },
+    ]);
+
+    const changingPath = path.join(testDir, '.pmem', 'modules', 'module.changing.md');
+    writeFile(changingPath, card('module.changing', 'module'));
+    assert.strictEqual(pmem('rebuild', testDir).code, 0);
+    assert.deepStrictEqual(queryEdges(testDir, "SELECT id FROM cards WHERE id = 'module.changing' AND is_deleted = 0"), [
+      { id: 'module.changing' },
+    ]);
+
+    writeFile(changingPath, `---
+type: module
+---
+# Lost id
+`);
+    const invalidated = pmem('rebuild', testDir);
+    assert.strictEqual(invalidated.code, 0, invalidated.stdout);
+    assert.ok(invalidated.stdout.includes('Warning: skipped .pmem/modules/module.changing.md: missing required frontmatter field "id"'));
+    assert.ok(invalidated.stdout.includes('Invalidated 1 stale indexed card'));
+    assert.deepStrictEqual(queryEdges(testDir, "SELECT id, is_deleted FROM cards WHERE id = 'module.changing'"), [
+      { id: 'module.changing', is_deleted: 1 } as any,
+    ]);
+  });
+});
+
 // ── Issue #6: rebuild --full leaves orphan + stale edges ───────────────
 
 describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card split/delete', () => {

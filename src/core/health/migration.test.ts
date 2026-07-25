@@ -65,6 +65,16 @@ describe('health metadata migration', () => {
     assert.throws(() => parseClassificationByType('module=wrong'), /Invalid classification/);
   });
 
+  it('lists every accepted trust label when validation fails without writing files', () => {
+    const { root, pmemPath, card } = fixture();
+    const before = fs.readFileSync(card, 'utf8');
+    assert.throws(
+      () => planHealthMigration(pmemPath, { cwd: root, trustLabel: 'trusted' }),
+      /Invalid trust label "trusted"\. Valid values: system_trusted, user_confirmed, application_trusted, agent_generated, tool_observed, imported_external, untrusted_content\./,
+    );
+    assert.equal(fs.readFileSync(card, 'utf8'), before);
+  });
+
   it('rebuilds the restored Markdown snapshot when post-commit index work fails', () => {
     const { root, pmemPath, card } = fixture('module');
     saveManifest(pmemPath, getDefaultManifest('migration-rollback'));

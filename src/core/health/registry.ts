@@ -8,6 +8,7 @@ const METADATA = new Set([
   'card_id_violation', 'card_too_large', 'card_too_large_relaxed',
   'too_many_relations', 'low_confidence', 'unclassified_card',
   'untrusted_memory', 'unclassified_sensitivity', 'secret_memory',
+  'invalid_trust_label',
   'missing_contract_field', 'untracked_card', 'conflicting_classifications',
   'agent_only_decision',
 ]);

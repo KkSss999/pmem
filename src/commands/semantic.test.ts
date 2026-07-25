@@ -129,7 +129,7 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.0';
+    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.1';
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
@@ -143,7 +143,7 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.0');
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.1');
     assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
@@ -425,7 +425,7 @@ describe('pmem semantic command', () => {
   it('rejects an incompatible semantic companion API', async () => {
     await assert.rejects(
       loadSemanticCompanion(async () => ({ apiVersion: 2 })),
-      /incompatible.*pmem-ai-semantic@1\.2\.0/i,
+      new RegExp(`incompatible.*${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`, 'i'),
     );
   });
 
@@ -440,7 +440,7 @@ describe('pmem semantic command', () => {
         source: 'modelscope',
         cachePath: '/tmp/shared-model',
       }),
-      /Semantic runtime companion is not installed.*npm install -g pmem-ai-semantic@1\.2\.0/,
+      new RegExp(`Semantic runtime companion is not installed.*npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`),
     );
   });
 

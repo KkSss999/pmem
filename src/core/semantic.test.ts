@@ -14,6 +14,7 @@ import {
   isSemanticSafeCard,
   rebuildSemanticIndex,
   searchSemanticCards,
+  semanticRelevanceGate,
   SEMANTIC_PIPELINE_VERSION,
   type EmbeddingProvider,
   type SemanticCardDocument,
@@ -138,6 +139,17 @@ describe('semantic chunking and vectors', () => {
 });
 
 describe('semantic safety and SQLite lifecycle', () => {
+  it('abstains on flat positive cosine bands but keeps a clearly separated relevant head', () => {
+    const flat = semanticRelevanceGate([0.811, 0.812, 0.813, 0.814]);
+    assert.strictEqual(flat.abstainedReason, 'flat_score_distribution');
+    assert.strictEqual(flat.topSimilarity, 0.814);
+
+    const separated = semanticRelevanceGate([0.79, 0.8, 0.82, 0.92]);
+    assert.strictEqual(separated.abstainedReason, null);
+    assert.ok(separated.cutoff! > 0.84);
+    assert.ok(separated.cutoff! <= 0.92);
+  });
+
   it('creates the two derived semantic tables idempotently', () => {
     const db = dbWithCards([]);
     try {
@@ -151,7 +163,7 @@ describe('semantic safety and SQLite lifecycle', () => {
   });
 
   it('excludes every unsafe class before the embedding provider is invoked', async () => {
-    const ids = ['safe', 'secret', 'untrusted', 'imported', 'agent', 'tool', 'missing', 'candidate', 'deleted', 'superseded'];
+    const ids = ['safe', 'secret', 'untrusted', 'imported', 'agent', 'tool', 'missing', 'invalid', 'candidate', 'deleted', 'superseded'];
     const db = dbWithCards(ids);
     const provider = new SpyProvider();
     const docs = [
@@ -162,13 +174,14 @@ describe('semantic safety and SQLite lifecycle', () => {
       document('agent', 'AGENT NEVER', { frontmatter: { trust_label: 'agent_generated' } }),
       document('tool', 'TOOL NEVER', { frontmatter: { trust_label: 'tool_observed' } }),
       document('missing', 'MISSING NEVER', { frontmatter: {} }),
+      document('invalid', 'INVALID NEVER', { frontmatter: { trust_label: 'trusted' as any } }),
       document('candidate', 'CANDIDATE NEVER', { isCandidate: true }),
       document('deleted', 'DELETED NEVER', { isDeleted: true }),
       document('superseded', 'SUPERSEDED NEVER', { frontmatter: { trust_label: 'user_confirmed', superseded_by: ['new'] } }),
     ];
     try {
       const result = await rebuildSemanticIndex(db, docs, provider, { mode: 'full' });
-      assert.strictEqual(result.cardsExcluded, 9);
+      assert.strictEqual(result.cardsExcluded, 10);
       assert.ok(provider.passages.length > 0);
       assert.ok(provider.passages.every(text => text.includes('SAFE ONLY')));
       assert.ok(provider.passages.every(text => !text.includes('SECRET ALIAS NEVER') && !text.includes('secret/path.ts')));

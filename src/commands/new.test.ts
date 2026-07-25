@@ -203,6 +203,7 @@ describe('pmem new (CLI) — old project (no schema)', () => {
     const files = fs.readdirSync(modulesDir);
     const cardFile = files.find(f => f.startsWith('module.'));
     assert.ok(cardFile, `expected a module.*.md file in modules/, found: ${files.join(', ')}`);
+    assert.match(cardFile!, /^module\.core_module_\d{8}\.md$/, 'default ID remains date-stamped');
     const content = fs.readFileSync(path.join(modulesDir, cardFile!), 'utf8');
     assert.ok(content.includes('type: module'), 'frontmatter should contain type: module');
   });
@@ -244,6 +245,38 @@ schema:
     assert.ok(cardFile, `expected a character.*.md file in characters/, found: ${files.join(', ')}`);
     const content = fs.readFileSync(path.join(charactersDir, cardFile!), 'utf8');
     assert.ok(content.includes('type: character'), 'frontmatter should contain type: character');
+  });
+
+  it('accepts a meaningful custom ID slug without a date suffix', () => {
+    const r = pmem('new character "Lin Xiao" --id protagonist', cwd);
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stdout}`);
+    const cardPath = path.join(cwd, '.pmem', 'characters', 'character.protagonist.md');
+    assert.ok(fs.existsSync(cardPath));
+    assert.match(fs.readFileSync(cardPath, 'utf8'), /^id: character\.protagonist$/m);
+    assert.match(r.stdout, /ID: character\.protagonist/);
+  });
+
+  it('accepts an exact custom ID with the matching type prefix', () => {
+    const r = pmem('new character "Mentor" --id character.mentor', cwd);
+    assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stdout}`);
+    assert.ok(fs.existsSync(path.join(cwd, '.pmem', 'characters', 'character.mentor.md')));
+  });
+
+  it('rejects mismatched, unsafe, and uppercase custom IDs without writing cards', () => {
+    for (const customId of ['chapter.wrong_type', '../escape', 'Uppercase', '']) {
+      const before = fs.readdirSync(path.join(cwd, '.pmem', 'characters')).sort();
+      const r = pmem(`new character "Invalid" --id "${customId}"`, cwd);
+      assert.strictEqual(r.code, 2, `expected exit 2 for ${customId}, got ${r.code}`);
+      assert.deepStrictEqual(fs.readdirSync(path.join(cwd, '.pmem', 'characters')).sort(), before);
+    }
+  });
+
+  it('does not overwrite an existing custom-ID card', () => {
+    const cardPath = path.join(cwd, '.pmem', 'characters', 'character.protagonist.md');
+    const before = fs.readFileSync(cardPath, 'utf8');
+    const r = pmem('new character "Replacement" --id protagonist', cwd);
+    assert.strictEqual(r.code, 2);
+    assert.strictEqual(fs.readFileSync(cardPath, 'utf8'), before);
   });
 
   it('rejects unknown type (exit 2)', () => {

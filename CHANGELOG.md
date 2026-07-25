@@ -2,6 +2,27 @@
 
 All notable changes to pmem are documented here.
 
+## v1.2.1 — Deep-Usage Reliability (2026-07-25)
+
+### Added
+
+- **Meaningful card IDs**: `pmem new` accepts `--id` for stable, human-readable identifiers, with namespace/type/collision validation and the existing generated-ID behavior as the default (#21).
+- **Actionable retrieval diagnostics**: explain and zero-result responses report aggregate trust-label exclusions without exposing card IDs, paths, content, or secrets (#20).
+- **Semantic out-of-domain abstention**: low-relevance semantic queries now return no semantic candidates instead of flooding results with flat, unrelated scores (#25).
+
+### Fixed
+
+- Invalid Markdown cards are reported once per file during rebuild while valid siblings continue indexing; a formerly valid card that becomes invalid is removed from derived indexes (#19).
+- Non-Git dirty detection now uses canonical content fingerprints, distinguishes new from modified cards, survives repeated `status` calls, and only acknowledges the exact handled file version (#22, #27).
+- `pmem forget` now fails for unknown card/event IDs and never appends a false tombstone (#23).
+- `pmem doctor` now uses the same success semantics in text and JSON modes, distinguishes warnings from errors, diagnoses stale/empty indexes, and gives concrete recovery commands (#24, #26).
+- `pmem context --format json` emits stable, deduplicated `changed_files` entries (#28).
+
+### Compatibility
+
+- The base CLI and optional `pmem-ai-semantic` companion advance together to `1.2.1`; Markdown cards and derived database formats remain backward compatible.
+- Existing semantic security boundaries remain unchanged: missing, invalid, untrusted, non-indexable, secret, deleted, and superseded content is excluded before local inference.
+
 ## v1.2.0 — Unified Memory Intelligence (2026-07-24)
 
 ### Added

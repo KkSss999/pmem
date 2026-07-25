@@ -209,6 +209,13 @@ export class Pmem implements PmemInstance {
       branch: scope.startsWith('branch:') ? scope.slice('branch:'.length) : null,
       sessionId: scope.startsWith('session:') ? scope.slice('session:'.length) : null,
     });
+    // `forget` accepts either a durable card ID or an existing runtime event
+    // ID. A target that is neither must not create a success-shaped tombstone:
+    // that would turn a typo into misleading history. Existing event IDs still
+    // use the EventStore tombstone path for backward compatibility.
+    if (!durable.success && !target) {
+      throw new Error(durable.message);
+    }
     const event = durable.success
       ? this.events.find(String(durable.eventId)) ?? this.events.append({
           id: String(durable.eventId),
@@ -313,7 +320,7 @@ export class Pmem implements PmemInstance {
       || (embedding.source !== 'modelscope' && embedding.source !== 'huggingface')
       || !embedding.cache_path
     ) {
-      throw new Error('Semantic manifest configuration is incompatible with v1.2.0. Run `pmem semantic setup`.');
+      throw new Error('Semantic manifest configuration is incompatible with v1.2.1. Run `pmem semantic setup`.');
     }
     return {
       model: embedding.model,

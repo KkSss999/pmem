@@ -39,8 +39,23 @@ describe('semantic health eligibility', () => {
       eligible_cards: 1,
       excluded_cards: 5,
       excluded_by_reason: { secret: 1, untrusted: 1, candidate: 1, deleted: 1, superseded: 1 },
+      excluded_by_trust_detail: { non_indexable_trust_label: 1 },
     });
     assert.equal(JSON.stringify(result).includes('body'), false);
+  });
+
+  it('splits missing, invalid, and explicitly non-indexable trust labels without weakening the aggregate', () => {
+    const result = summarizeSemanticEligibility([
+      card('decision.missing', { frontmatter: { sensitivity: 'internal' } }),
+      card('decision.invalid', { frontmatter: { trust_label: 'trusted' as any, sensitivity: 'internal' } }),
+      card('decision.external', { frontmatter: { trust_label: 'imported_external', sensitivity: 'internal' } }),
+    ]);
+    assert.deepEqual(result.excluded_by_reason, { untrusted: 3 });
+    assert.deepEqual(result.excluded_by_trust_detail, {
+      missing_trust_label: 1,
+      invalid_trust_label: 1,
+      non_indexable_trust_label: 1,
+    });
   });
 
   it('rejects same-size model corruption instead of trusting receipt metadata', () => {
