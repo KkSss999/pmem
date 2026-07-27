@@ -78,6 +78,15 @@ npm run build
 npm link
 ```
 
+> **Working on this repository?** Use `npm run pmem:local -- <command>` for dogfooding and development. It rebuilds `dist/` and runs the CLI from the current checkout, so it cannot silently use an older global `pmem` installation. For example:
+>
+> ```bash
+> npm run pmem:local -- --version
+> npm run pmem:local -- recall --format compact --budget 2000
+> ```
+>
+> Use bare `pmem` only to validate the separately installed published package; record which runtime was tested in release or bug reports.
+
 ### Installing Agent Skills
 
 After installing the CLI, add pmem skills to your agent so it knows how to use pmem:

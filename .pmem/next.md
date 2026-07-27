@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Merge the v1.2.1 PR and verify both npm packages plus GitHub Release are publicly available.
+Commit the local CLI guard and release-plan cards, then execute the v1.2.2 runtime/trust/health workstream beginning with #40 regression tests.
 
 ## Why
 Both deep-review blockers pass the full release gate, and the user authorized commit, PR merge, automatic publication, and closure of Issues #19-#28. Release completion still requires final workflow and public-registry evidence.
