@@ -176,8 +176,8 @@ export async function semanticCommand(
   const format = options.format ?? 'compact';
 
   if (action === 'setup' || action === 'enable') {
-    if (deps.platform !== 'darwin') {
-      throw new Error(`Semantic ${action} is supported on macOS only in v1.2.1.`);
+    if (deps.platform !== 'darwin' && deps.platform !== 'win32') {
+      throw new Error(`Semantic ${action} is supported on macOS and Windows only in v1.2.3.`);
     }
     const source = options.source ?? DEFAULT_SEMANTIC_SOURCE;
     if (source !== 'modelscope' && source !== 'huggingface') {

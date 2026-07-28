@@ -5,7 +5,7 @@ export const DEFAULT_SEMANTIC_MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac389
 export const DEFAULT_SEMANTIC_DTYPE = 'uint8' as const;
 export const DEFAULT_SEMANTIC_DIMENSION = 384;
 export const SEMANTIC_COMPANION_PACKAGE = 'pmem-ai-semantic';
-export const SEMANTIC_COMPANION_VERSION = '1.2.1';
+export const SEMANTIC_COMPANION_VERSION = '1.2.3';
 
 export interface TransformersModelSpec {
   model: string;

@@ -129,7 +129,7 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.1';
+    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.3';
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
@@ -143,7 +143,7 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.1');
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.3');
     assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
@@ -155,7 +155,7 @@ describe('pmem semantic command', () => {
       platform: 'linux',
       operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
       log: () => {},
-    }), /enable is supported on macOS only/);
+    }), /enable is supported on macOS and Windows only/);
     assert.strictEqual(prepared, false);
   });
 
@@ -330,9 +330,19 @@ describe('pmem semantic command', () => {
         platform: 'linux',
         operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
       }),
-      /macOS only/,
+      /macOS and Windows only/,
     );
     assert.strictEqual(prepared, false);
+  });
+
+  it('accepts setup on win32', async () => {
+    const { cwd } = project();
+    let prepared = false;
+    await semanticCommand('setup', { cwd, yes: true }, {
+      platform: 'win32',
+      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
+    });
+    assert.strictEqual(prepared, true);
   });
 
   it('status is read-only and does not invoke model preparation', async () => {

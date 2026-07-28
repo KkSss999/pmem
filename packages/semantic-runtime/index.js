@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('node:path');
+
 function nativeDynamicImport(specifier) {
   const importer = new Function('specifier', 'return import(specifier)');
   return importer(specifier);
@@ -24,7 +26,7 @@ async function withTransformersEnvironment(transformers, spec, allowRemoteModels
 }
 
 async function createOfflineTransformersProvider(spec, importTransformers = nativeDynamicImport) {
-  if (!spec.cachePath || !spec.cachePath.startsWith('/')) {
+  if (!spec.cachePath || !path.isAbsolute(spec.cachePath)) {
     throw new Error(`Semantic model path must be absolute: ${spec.cachePath}`);
   }
   const transformers = await importTransformers('@huggingface/transformers');
