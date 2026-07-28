@@ -395,7 +395,7 @@ semantic
 
 semantic
   .command('setup')
-  .description('Explicitly download and enable the pinned semantic model (macOS only)')
+  .description('Explicitly download and enable the pinned semantic model (macOS, Windows)')
   .option('-y, --yes', 'Confirm the displayed model download without prompting')
   .option('--source <source>', 'Model registry (modelscope or huggingface)', 'modelscope')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')

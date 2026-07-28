@@ -2,6 +2,21 @@
 
 All notable changes to pmem are documented here.
 
+## v1.2.3 — Windows Semantic Retrieval (2026-07-29)
+
+### Added
+
+- **Windows joins macOS as a supported platform for semantic retrieval**: `pmem semantic setup`/`enable` now accept `win32` in addition to `darwin`. Verified end to end on a real Windows machine — model download/cache, `pmem semantic rebuild`, and `pmem ask --explain` returning a semantic-scored (cosine) match fused with deterministic candidates.
+
+### Fixed
+
+- **`pmem-ai-semantic`'s absolute-path check rejected every Windows path**: `createOfflineTransformersProvider` checked `cachePath.startsWith('/')`, which is never true for a Windows path (`C:\...`), so semantic setup failed at the rebuild step even after the platform gate was lifted. Replaced with `path.isAbsolute()`.
+
+### Compatibility
+
+- Linux remains unsupported for both the base CLI and the semantic companion.
+- No behavior change on macOS; the underlying retrieval pipeline, model, and storage boundary are unchanged.
+
 ## v1.2.2 — Windows Compatibility (2026-07-29)
 
 ### Fixed
