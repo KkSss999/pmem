@@ -2,6 +2,18 @@
 
 All notable changes to pmem are documented here.
 
+## v1.2.2 — Windows Compatibility (2026-07-29)
+
+### Fixed
+
+- **`atomicWrite` no longer throws `EPERM` on Windows**: the temp file used for atomic writes was opened read-only (`'r'`) before `fsync`, which Windows rejects. Every card/index write that went through `atomicWrite`/`writeJson` was affected.
+- **Relative paths are normalized to `/` before being persisted or compared**: `rebuild`, `recall`, module inference, and health migration built card `file_path` values and directory-prefix checks directly from `path.relative()`, which returns `\`-separated paths on Windows. A new `toPosixPath()` helper is now applied at every such call site; this also fixes `candidates/`/`skills/`/`integrations/` directory filtering in `rebuild`, which silently matched nothing on Windows.
+
+### Compatibility
+
+- **Windows joins macOS as a mandatory supported platform** for the base CLI, SDK, and runtime (`pmem-ai`), superseding the macOS-only platform policy from v1.1.1 for this scope. Linux remains unsupported. The semantic companion (`pmem-ai-semantic`) remains macOS-only.
+- No behavior change on macOS/Linux; fixes are path-normalization and fsync-mode corrections, not platform-specific branches.
+
 ## v1.2.1 — Deep-Usage Reliability (2026-07-25)
 
 ### Added

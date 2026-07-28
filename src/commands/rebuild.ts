@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock } from '../core/fs';
+import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock, toPosixPath } from '../core/fs';
 import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
@@ -126,7 +126,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   } else {
     // Scan all .md files under .pmem/, excluding non-card files
     cardFiles = listFiles(pmemPath, /\.md$/).filter(f => {
-      const rel = path.relative(pmemPath, f);
+      const rel = toPosixPath(path.relative(pmemPath, f));
       return !['index.md', 'state.md', 'next.md'].includes(rel) &&
              !rel.startsWith('skills/') &&
              !rel.startsWith('integrations/') &&
@@ -164,7 +164,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: false }> } => !entry.result.ok)
     .map(entry => entry.result.diagnostic)
     // Candidate reports are advisory Markdown artifacts, not canonical cards.
-    .filter(diagnostic => !path.relative(pmemPath, diagnostic.filePath).startsWith(`candidates${path.sep}`))
+    .filter(diagnostic => !toPosixPath(path.relative(pmemPath, diagnostic.filePath)).startsWith('candidates/'))
     .filter(diagnostic => !isSingleCard || diagnostic.parsedId === options.card);
 
   // Pre-scan all valid card IDs for wikilink validation (so [[card-id]] refs
@@ -238,7 +238,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
       // In --card mode, skip cards that don't match the target ID
       if (isSingleCard && parsed.frontmatter.id !== options.card) continue;
 
-      const relPath = path.relative(cwd, file);
+      const relPath = toPosixPath(path.relative(cwd, file));
       processed++;
 
       const fm = parsed.frontmatter;
@@ -456,7 +456,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   let cleanedStaleCards = 0;
   let invalidatedCards = 0;
   {
-    const invalidFilePaths = new Set(parseDiagnostics.map(diagnostic => path.relative(cwd, diagnostic.filePath)));
+    const invalidFilePaths = new Set(parseDiagnostics.map(diagnostic => toPosixPath(path.relative(cwd, diagnostic.filePath))));
     const cleanupTx = db.transaction(() => {
       const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
       for (const card of staleCards) {
@@ -594,11 +594,11 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     parsedCardFiles
       .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: true }> } => entry.result.ok)
       .filter(entry => !isSingleCard || entry.result.card.frontmatter.id === options.card)
-      .map(entry => path.relative(cwd, entry.file)),
+      .map(entry => toPosixPath(path.relative(cwd, entry.file))),
   );
 
   for (const diagnostic of parseDiagnostics) {
-    console.log(`Warning: skipped ${path.relative(cwd, diagnostic.filePath)}: ${diagnostic.message}`);
+    console.log(`Warning: skipped ${toPosixPath(path.relative(cwd, diagnostic.filePath))}: ${diagnostic.message}`);
   }
 
   // Output summary

@@ -199,6 +199,7 @@ describe('v0.8 ask pipeline integration', () => {
   });
 
   after(() => {
+    closeDatabase();
     fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
   });
 

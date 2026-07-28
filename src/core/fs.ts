@@ -1,6 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// NEW: Normalize a relative path to forward slashes for storage in cards,
+// the SQLite `file_path` column, and any output compared against a fixed
+// posix-style shape (e.g. `.pmem/traces/...`). Windows' `path.relative`
+// returns backslash-separated paths; callers that persist or display a
+// relative path must run it through this first.
+export function toPosixPath(relPath: string): string {
+  return relPath.split(path.sep).join('/');
+}
+
 export function ensureDir(dirPath: string): void {
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -17,7 +26,7 @@ export function atomicWrite(filePath: string, content: string): void {
   ensureDir(path.dirname(filePath));
   const tmpPath = filePath + '.tmp';
   fs.writeFileSync(tmpPath, content, 'utf-8');
-  const fd = fs.openSync(tmpPath, 'r');
+  const fd = fs.openSync(tmpPath, 'r+');
   fs.fsyncSync(fd);
   fs.closeSync(fd);
   fs.renameSync(tmpPath, filePath);

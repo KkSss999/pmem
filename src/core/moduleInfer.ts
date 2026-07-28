@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { fileExists, ensureDir, atomicWrite } from './fs';
+import { fileExists, ensureDir, atomicWrite, toPosixPath } from './fs';
 
 export interface InferredModule {
   id: string;
@@ -79,7 +79,7 @@ const MODULE_HINTS: Record<string, { title: string; purpose: string; keywords: s
 
 function buildSourceFiles(file: string, coarse: boolean): string[] {
   if (!coarse) return [file];
-  const parts = file.split(path.sep);
+  const parts = file.split('/');
   if (parts[0] === 'src' && parts.length > 2) {
     return [`src/${parts[1]}/`];
   }
@@ -187,7 +187,7 @@ function scanDir(dir: string, cwd: string, fileList: string[]) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    const relPath = path.relative(cwd, fullPath);
+    const relPath = toPosixPath(path.relative(cwd, fullPath));
     if (['node_modules', '.git', '.pmem', 'dist', 'build', 'temp', 'walkthrough.md'].includes(entry.name)) continue;
     if (entry.isDirectory()) {
       scanDir(fullPath, cwd, fileList);

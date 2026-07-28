@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type Database from 'better-sqlite3';
-import { readFile, fileExists } from '../fs';
+import { readFile, fileExists, toPosixPath } from '../fs';
 import { openDatabase, createSchema, getRecentRuntimeEvents } from '../db';
 import { getCurrentBranch } from '../git';
 import { loadManifest, resolveConfig } from '../manifest';
@@ -186,7 +186,7 @@ export function recallQuery(pmemPath: string, options?: {
               id: parsed.id,
               title: parsed.title,
               summary: parsed.summary,
-              file_path: path.relative(cwd, filePath),
+              file_path: toPosixPath(path.relative(cwd, filePath)),
               created_at: parsed.createdAt,
               changed_files: parsed.changedFiles,
               what_changed: parsed.whatChanged,
