@@ -12,6 +12,7 @@ import { verifyCommand } from './verify';
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  closeDatabase();
   for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
 

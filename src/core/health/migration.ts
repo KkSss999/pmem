@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { atomicWrite, copyFile, ensureDir, listFiles, readFile, withLock } from '../fs';
+import { atomicWrite, copyFile, ensureDir, listFiles, readFile, withLock, toPosixPath } from '../fs';
 import { parseFrontmatter } from '../yaml';
 import { isTrustLabel, validTrustLabelsMessage } from '../trustLabels';
 
@@ -108,7 +108,7 @@ export function planHealthMigration(pmemPath: string, options: HealthMigrationOp
       cards.push({
         id: parsed.data.id,
         type: parsed.data.type,
-        file_path: path.relative(cwd, file),
+        file_path: toPosixPath(path.relative(cwd, file)),
         add,
         unresolved,
         reasons,
