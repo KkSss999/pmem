@@ -2,10 +2,10 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Merge the v1.2.1 PR and verify both npm packages plus GitHub Release are publicly available.
+Reproduce #33 against the target production corpus, implement or retest semantic ranking, and obtain a real Windows global-install acceptance before publishing v1.2.4.
 
 ## Why
-Both deep-review blockers pass the full release gate, and the user authorized commit, PR merge, automatic publication, and closure of Issues #19-#28. Release completion still requires final workflow and public-registry evidence.
+The v1.2.4 implementation and local release gates are complete. Commit/push, CI, npm publication, GitHub Release creation, and issue-state updates remain explicitly separate release actions.
 
 ## Needed Context
 - decision.v1_1_1_macos_semantic_retrieval_20260724

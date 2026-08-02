@@ -8,6 +8,7 @@ v064-*/
 .pmem/.lock
 .pmem/indexes/
 .pmem/traces/*.md
+.pmem/backups/
 node_modules/
 *.zip
 .DS_Store

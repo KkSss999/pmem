@@ -11,6 +11,9 @@ depends_on:
 related_to:
   - feature.v1_1_system_memory_release_20260722
   - feature.v1_0_agentic_memory_runtime_20260722
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # v1.1: System Memory Release
 

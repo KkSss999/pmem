@@ -1,24 +1,24 @@
 import { RecallResult, AskResult, AskMatch, CliFormat } from '../types';
-import { pack } from './query/engine/pack';
+import { estimateTokens, pack } from './query/engine/pack';
 
 export function formatOutput(result: unknown, format: CliFormat, budget: number = 1600): string {
   switch (format) {
-    case 'compact': return formatCompact(result);
+    case 'compact': return formatCompact(result, budget);
     case 'json': return formatJson(result);
     case 'paths': return formatPaths(result);
     case 'pack': return formatPack(result, budget);
-    default: return formatCompact(result);
+    default: return formatCompact(result, budget);
   }
 }
 
-function formatCompact(result: unknown): string {
+function formatCompact(result: unknown, budget: number): string {
   const r = result as Record<string, unknown>;
 
   if (r.query !== undefined) {
     return formatAskCompact(r);
   }
   if (r.project !== undefined) {
-    return formatRecallCompact(r);
+    return formatRecallCompact(r, budget);
   }
   if (r.related !== undefined) {
     return formatRelatedCompact(r);
@@ -78,11 +78,18 @@ function formatPack(result: unknown, budget: number): string {
       l1: [
         ...arch.slice(0, 5).map(m => `ARCH: ${m.id}${m.summary ? ` — ${m.summary}` : ''}`),
         ...decisions.slice(0, 5).map(d => `DECISION: ${d.id || d.title}${d.summary ? ` — ${d.summary}` : ''}`),
+        ...(Array.isArray(r.foundation_summaries) ? (r.foundation_summaries as any[]).map(card =>
+          `FOUNDATION: ${card.title}${card.summary ? ` — ${card.summary}` : card.snippet ? ` — ${card.snippet}` : ''}`) : []),
       ],
-      l2: [],
+      l2: Array.isArray(r.recent_summaries) ? (r.recent_summaries as any[]).map(card => ({
+        id: card.id,
+        title: card.title,
+        summary: card.summary || card.snippet,
+        file_path: card.file_path,
+      })) : [],
       l3: Array.isArray(r.mustRead) ? r.mustRead as string[] : [],
     }, { budget, mode });
-    return packed.lines.join('\n');
+    return fitToBudget(packed.lines, budget);
   }
 
   const parts: string[] = [];
@@ -131,7 +138,7 @@ function formatPack(result: unknown, budget: number): string {
   return parts.join('\n');
 }
 
-function formatRecallCompact(r: Record<string, unknown>): string {
+function formatRecallCompact(r: Record<string, unknown>, budget: number): string {
   const lines: string[] = [];
   const mode = r.recall_mode === 'brief' || r.recall_mode === 'deep' ? r.recall_mode : 'normal';
   lines.push(`PROJECT: ${r.project || 'Unknown'}`);
@@ -149,7 +156,7 @@ function formatRecallCompact(r: Record<string, unknown>): string {
       lines.push('READ_IF_NEEDED:');
       for (const f of r.mustRead as string[]) lines.push(`  ${f}`);
     }
-    return lines.join('\n');
+    return fitToBudget(lines, budget);
   }
 
   // 1. CURRENT CONTEXT
@@ -207,6 +214,26 @@ function formatRecallCompact(r: Record<string, unknown>): string {
     }
   } else {
     lines.push('- No recent changes recorded.');
+  }
+
+  const foundations = r.foundation_summaries as any[] | undefined;
+  if (Array.isArray(foundations) && foundations.length > 0) {
+    lines.push('');
+    lines.push('FOUNDATION CONTENT:');
+    for (const card of foundations) {
+      const content = card.summary || card.snippet;
+      if (content) lines.push(`- ${card.title} — ${content}`);
+    }
+  }
+
+  const recentSummaries = r.recent_summaries as any[] | undefined;
+  if (Array.isArray(recentSummaries) && recentSummaries.length > 0) {
+    lines.push('');
+    lines.push('RECENT CONTENT:');
+    for (const card of recentSummaries) {
+      const content = card.summary || card.snippet;
+      if (content) lines.push(`- ${card.title} — ${content}`);
+    }
   }
 
   // 3. ARCHITECTURE
@@ -307,7 +334,20 @@ function formatRecallCompact(r: Record<string, unknown>): string {
       lines.push(`  ${f}`);
     }
   }
-  return lines.join('\n');
+  return fitToBudget(lines, budget);
+}
+
+function fitToBudget(lines: string[], budget: number): string {
+  if (budget <= 0) return '';
+  let output = lines.join('\n');
+  if (estimateTokens(output) <= budget) return output;
+  // Keep the deterministic beginning of the context and drop lowest-priority
+  // tail sections until the serialized text is within the requested budget.
+  let end = output.length;
+  while (end > 0 && estimateTokens(output.slice(0, end)) > budget) {
+    end = Math.max(0, Math.floor(end * 0.9));
+  }
+  return output.slice(0, end).trimEnd();
 }
 
 function formatAskCompact(r: Record<string, unknown>): string {
@@ -326,6 +366,8 @@ function formatAskCompact(r: Record<string, unknown>): string {
         const cSup = m.superseded_by ? ` [superseded]` : '';
         const cClass = m.classification ? ` [${m.classification}]` : '';
         lines.push(`  - ${m.id}${cClass} by ${m.matchType || m.match_type}: "${m.title}"${cConf}${cSup}`);
+        if (m.summary) lines.push(`    Summary: ${m.summary}`);
+        if (m.snippet && m.snippet !== m.summary) lines.push(`    Excerpt: ${m.snippet}`);
       }
     }
     if (expanded.length > 0) {

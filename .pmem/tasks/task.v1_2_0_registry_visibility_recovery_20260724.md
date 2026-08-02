@@ -18,6 +18,7 @@ source_files:
   - package.json
 related_to:
   - task.v1_2_0_unified_release_20260724
+last_verified: "2026-08-02T08:44:58.628Z"
 ---
 # v1.2.0 Registry Visibility Recovery
 

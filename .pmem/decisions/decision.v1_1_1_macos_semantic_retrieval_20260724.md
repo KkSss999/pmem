@@ -17,6 +17,10 @@ depends_on:
 related_to:
   - feature.v1_1_1_lightweight_semantic_layer_20260626
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
+last_verified: "2026-08-02T08:44:58.629Z"
 ---
 # v1.1.1 macOS Semantic Retrieval
 

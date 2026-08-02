@@ -12,7 +12,7 @@ allowed-tools: Bash(pmem:*)
 
 ```bash
 # Install the complete model-free base CLI
-npm install -g pmem-ai@1.2.1
+npm install -g pmem-ai@1.2.4
 
 # First time in a project: init also builds the first local index
 pmem init my-project
@@ -52,8 +52,8 @@ review-heavy maintenance.
 
 | Mode | Install | User outcome |
 |---|---|---|
-| Base, recommended | `npm install -g pmem-ai@1.2.1` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
-| Semantic enhancement, macOS | Base package plus `npm install -g pmem-ai-semantic@1.2.1` | Adds local multilingual embeddings and contextual reranking |
+| Base, recommended | `npm install -g pmem-ai@1.2.4` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
+| Semantic enhancement, macOS and Windows | Base package plus `npm install -g pmem-ai-semantic@1.2.4` | Adds local multilingual embeddings and contextual reranking |
 
 `pmem-ai-semantic` is an optional runtime companion, not another CLI. If the
 companion, shared model, or semantic index is unavailable, `ask`, `context`, and
@@ -93,10 +93,10 @@ pmem rebuild --full          # full rebuild, clear all tables
 pmem rebuild --card module.core  # rebuild single card
 ```
 
-### Optional Semantic Retrieval (macOS)
+### Optional Semantic Retrieval (macOS and Windows)
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.1
+npm install -g pmem-ai-semantic@1.2.4
 pmem semantic enable
 pmem semantic status
 ```
@@ -284,6 +284,8 @@ pmem verify
 pmem verify --fix         # repair structural issues (stale index, missing DB, orphan edges)
 pmem verify --fix-stale   # --fix + refresh stale_memory last_verified timestamps (one-shot cleanup)
 pmem verify --relaxed     # temporarily double token limits for verification
+pmem health migrate       # dry-run missing classification/trust/sensitivity metadata
+pmem health migrate --apply --trust-label <label> --sensitivity <level>  # apply explicit choices
 
 # Record a release milestone
 pmem milestone v0.8.0 -m "Graph visualization closeout"
@@ -291,6 +293,10 @@ pmem milestone v1.0.0 --tag v1.0.0-rc1
 
 # Create a new card template
 pmem new decision "Choice of library"
+
+# `pmem new` gives structured cards explicit `user_confirmed` trust and
+# `internal` sensitivity; trace cards remain `agent_generated` and are not
+# implicitly admitted to semantic retrieval.
 
 # Batch replace text in card bodies
 pmem rename --find "old-lib" --replace "new-lib" --write

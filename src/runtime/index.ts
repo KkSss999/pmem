@@ -18,6 +18,7 @@ import {
   type DisposableEmbeddingProvider,
 } from '../core/semantic';
 import { loadRuntimeConfig } from './config';
+import { PACKAGE_VERSION } from '../version';
 import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
@@ -320,7 +321,7 @@ export class Pmem implements PmemInstance {
       || (embedding.source !== 'modelscope' && embedding.source !== 'huggingface')
       || !embedding.cache_path
     ) {
-      throw new Error('Semantic manifest configuration is incompatible with v1.2.1. Run `pmem semantic setup`.');
+      throw new Error(`Semantic manifest configuration is incompatible with ${PACKAGE_VERSION}. Run \`pmem semantic setup\`.`);
     }
     return {
       model: embedding.model,

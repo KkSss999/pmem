@@ -18,6 +18,9 @@ related_to:
   - decision.structure_first_hybrid_recall_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
 last_verified: "2026-07-22T00:00:00.000Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # pmem Positioning: Project RAG OS
 

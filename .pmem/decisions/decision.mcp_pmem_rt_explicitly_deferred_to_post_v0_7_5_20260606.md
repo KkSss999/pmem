@@ -14,6 +14,9 @@ related_to:
   - feature.v0_7_5_graph_visualization_20260606
   - decision.pmem_rt_v1_thin_mcp_adapter_20260606
 last_verified: "2026-06-26T12:25:00.000Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # MCP / pmem-rt Remains Deferred
 

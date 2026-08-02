@@ -5,6 +5,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getDefaultManifest, saveManifest } from '../core/manifest';
+import { createSchema, openOwnedDatabase } from '../core/db';
+import { createSemanticSchema } from '../core/semantic';
 import {
   DEFAULT_SEMANTIC_SOURCE,
   SEMANTIC_DIMENSION,
@@ -13,11 +15,13 @@ import {
   SEMANTIC_MODEL_REVISION,
   semanticCommand,
   type SemanticModelSpec,
+  type SemanticRuntimeStatus,
   type SemanticOperations,
 } from './semantic';
 import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
 import {
   createOfflineTransformersProvider,
+  assertSemanticRuntimeAvailable,
   loadSemanticCompanion,
   SEMANTIC_COMPANION_PACKAGE,
   SEMANTIC_COMPANION_VERSION,
@@ -35,22 +39,30 @@ function project(): { cwd: string; manifestPath: string } {
   return { cwd, manifestPath: path.join(pmemPath, 'manifest.yml') };
 }
 
+function fakeStatus(overrides: Partial<SemanticRuntimeStatus> = {}): SemanticRuntimeStatus {
+  return {
+    modelCached: true,
+    cacheIntegrity: 'ok',
+    available: true,
+    indexedCards: 2,
+    indexedChunks: 7,
+    indexRevision: SEMANTIC_MODEL_REVISION,
+    pipelineVersion: 2,
+    indexCompatible: true,
+    indexFresh: true,
+    eligibleCards: 2,
+    excludedCards: 3,
+    excludedByReason: { untrusted: 2, secret: 1 },
+    failedCardCount: 0,
+    failedCardIds: [],
+    ...overrides,
+  };
+}
+
 function fakeOperations(overrides: Partial<SemanticOperations> = {}): SemanticOperations {
   return {
     prepareModel: async () => {},
-    status: async () => ({
-      modelCached: true,
-      cacheIntegrity: 'ok',
-      indexedCards: 2,
-      indexedChunks: 7,
-      indexRevision: SEMANTIC_MODEL_REVISION,
-      pipelineVersion: 2,
-      indexCompatible: true,
-      indexFresh: true,
-      eligibleCards: 2,
-      excludedCards: 3,
-      excludedByReason: { untrusted: 2, secret: 1 },
-    }),
+    status: async () => fakeStatus(),
     rebuild: async () => ({ indexedCards: 2, indexedChunks: 7 }),
     clear: async () => ({ removedChunks: 7 }),
     ...overrides,
@@ -129,7 +141,7 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.3';
+    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.4';
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
@@ -143,7 +155,7 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.3');
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.4');
     assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
@@ -206,6 +218,29 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_enabled, true);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.recovery_command, 'pmem semantic rebuild --full');
+  });
+
+  it('enable JSON partial result remains one truthful failure document', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ rebuild: async () => ({
+        indexedCards: 2,
+        indexedChunks: 4,
+        eligibleCards: 3,
+        excludedCards: 0,
+        buildStatus: 'partial',
+        cardsFailed: 1,
+        failedCardIds: ['module.bad'],
+      }) }),
+      log: line => output.push(line),
+    }), /index construction failed/);
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.status, 'index_failed');
+    assert.strictEqual(result.index_ready, false);
+    assert.deepStrictEqual(result.failed_card_ids, ['module.bad']);
   });
 
   it('cancels setup without calling the downloader or mutating the manifest', async () => {
@@ -363,6 +398,87 @@ describe('pmem semantic command', () => {
     assert.strictEqual(status.indexFresh, true);
     assert.strictEqual(status.eligibleCards, 2);
     assert.deepStrictEqual(status.excludedByReason, { untrusted: 2, secret: 1 });
+    assert.strictEqual(status.recovery_command, undefined);
+  });
+
+  it('status marks partial indexes unavailable and exposes failed cards and recovery in JSON', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await semanticCommand('setup', { cwd, yes: true }, {
+      platform: 'darwin', operations: fakeOperations(), log: () => {},
+    });
+    await semanticCommand('status', { cwd, format: 'json' }, {
+      operations: fakeOperations({
+        status: async () => fakeStatus({
+          available: false,
+          indexCompatible: true,
+          buildStatus: 'partial',
+          failedCardCount: 2,
+          failedCardIds: ['module.bad', 'module.worse'],
+        }),
+      }),
+      log: line => output.push(line),
+    });
+    const status = JSON.parse(output.join('\n'));
+    assert.strictEqual(status.available, false);
+    assert.strictEqual(status.indexCompatible, false);
+    assert.strictEqual(status.buildStatus, 'partial');
+    assert.strictEqual(status.failedCardCount, 2);
+    assert.deepStrictEqual(status.failedCardIds, ['module.bad', 'module.worse']);
+    assert.strictEqual(status.recovery_command, 'pmem semantic rebuild --full');
+  });
+
+  it('status compact output names partial failures and the full rebuild recovery command', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await semanticCommand('setup', { cwd, yes: true }, {
+      platform: 'darwin', operations: fakeOperations(), log: () => {},
+    });
+    await semanticCommand('status', { cwd }, {
+      operations: fakeOperations({
+        status: async () => fakeStatus({
+          available: false,
+          indexCompatible: true,
+          buildStatus: 'partial',
+          failedCardCount: 1,
+          failedCardIds: ['module.bad'],
+        }),
+      }),
+      log: line => output.push(line),
+    });
+    assert.ok(output.some(line => line.includes('Index:') && line.includes('unavailable') && line.includes('partial')));
+    assert.ok(output.some(line => line.includes('Failed cards: 1 (module.bad)')));
+    assert.ok(output.some(line => line.includes('pmem semantic rebuild --full')));
+  });
+
+  it('runtime status does not report a partial compatible pipeline as queryable', async () => {
+    const { cwd } = project();
+    const pmemPath = path.join(cwd, '.pmem');
+    const db = openOwnedDatabase(pmemPath);
+    createSchema(db);
+    createSemanticSchema(db);
+    db.prepare(`
+      INSERT INTO semantic_meta (
+        id, pipeline_version, model_id, model_revision, dimension,
+        index_content_hash, chunk_count, built_at, build_status,
+        failed_card_count, failed_card_ids
+      ) VALUES (1, 2, ?, ?, ?, ?, ?, ?, 'partial', 1, ?)
+    `).run(SEMANTIC_MODEL, SEMANTIC_MODEL_REVISION, SEMANTIC_DIMENSION, 'hash', 1, new Date(0).toISOString(), JSON.stringify(['module.bad']));
+    db.close();
+
+    const status = await createDefaultSemanticOperations().status(pmemPath, {
+      model: SEMANTIC_MODEL,
+      revision: SEMANTIC_MODEL_REVISION,
+      dtype: SEMANTIC_DTYPE,
+      dimension: SEMANTIC_DIMENSION,
+      source: DEFAULT_SEMANTIC_SOURCE,
+      cachePath: path.join(cwd, 'missing-cache'),
+    });
+    assert.strictEqual(status.available, false);
+    assert.strictEqual(status.indexCompatible, false);
+    assert.strictEqual(status.buildStatus, 'partial');
+    assert.strictEqual(status.failedCardCount, 1);
+    assert.deepStrictEqual(status.failedCardIds, ['module.bad']);
   });
 
   it('status verifies the registry source recorded by setup', async () => {
@@ -375,7 +491,14 @@ describe('pmem semantic command', () => {
       operations: fakeOperations({
         status: async (_pmemPath, spec) => {
           received = spec;
-          return { modelCached: true, cacheIntegrity: 'ok', indexedCards: 0, indexedChunks: 0, indexRevision: null };
+          return {
+            modelCached: true,
+            cacheIntegrity: 'ok',
+            available: false,
+            indexedCards: 0,
+            indexedChunks: 0,
+            indexRevision: null,
+          };
         },
       }),
       log: () => {},
@@ -521,6 +644,33 @@ describe('pmem semantic command', () => {
     assert.strictEqual(calls[0].local, true);
     assert.strictEqual(env.allowRemoteModels, true);
     await provider.dispose();
+  });
+
+  it('keeps the companion package metadata, dependency, and remediation version aligned', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../packages/semantic-runtime/package.json'), 'utf8')) as any;
+    assert.strictEqual(packageJson.version, SEMANTIC_COMPANION_VERSION);
+    assert.strictEqual(packageJson.dependencies['@huggingface/transformers'], '4.2.0');
+    assert.strictEqual(packageJson.exports, './index.js');
+  });
+
+  it('probes the companion Transformers runtime before a cached setup is accepted', async () => {
+    let probed = false;
+    await assertSemanticRuntimeAvailable(async specifier => {
+      assert.strictEqual(specifier, SEMANTIC_COMPANION_PACKAGE);
+      return {
+        apiVersion: 1,
+        assertTransformersRuntimeAvailable: async () => { probed = true; },
+        createOfflineTransformersProvider: async () => ({
+          modelId: SEMANTIC_MODEL,
+          revision: SEMANTIC_MODEL_REVISION,
+          dimension: SEMANTIC_DIMENSION,
+          embedPassages: async () => [],
+          embedQuery: async () => [],
+          dispose: async () => {},
+        }),
+      };
+    });
+    assert.strictEqual(probed, true);
   });
 
   it('loads a compatible injected companion without resolving a root dependency', async () => {

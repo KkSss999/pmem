@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { computeHash, computeCardHashes, tokenCount, sectionCount } from './hash';
+import { computeHash, computeCardHashes, stripManagedFrontmatter, tokenCount, sectionCount } from './hash';
 
 describe('computeHash', () => {
   it('returns a deterministic output for the same input', () => {
@@ -114,6 +114,30 @@ describe('tokenCount', () => {
   it('returns 0 for empty string', () => {
     const count = tokenCount('');
     assert.strictEqual(count, 0);
+  });
+
+  it('excludes pmem-managed frontmatter but still counts user body growth', () => {
+    const metadataOnly = `---
+id: decision.example
+type: decision
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
+last_verified: "2026-08-02T00:00:00.000Z"
+token_policy: relaxed
+---
+# Example
+`;
+    const withBody = `${metadataOnly}\n${'user memory '.repeat(30)}`;
+    assert.equal(tokenCount(metadataOnly), tokenCount('# Example\n'));
+    assert.ok(tokenCount(withBody) > tokenCount(metadataOnly));
+    assert.equal(stripManagedFrontmatter(metadataOnly), '# Example\n');
+  });
+
+  it('preserves user-authored frontmatter in the estimate', () => {
+    const withoutTags = `---\nid: module.one\ntype: module\n---\n# Module\n`;
+    const withTags = `---\nid: module.one\ntype: module\ntags: [architecture, persistence, verification]\n---\n# Module\n`;
+    assert.ok(tokenCount(withTags) > tokenCount(withoutTags));
   });
 });
 

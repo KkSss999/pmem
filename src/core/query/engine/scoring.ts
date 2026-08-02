@@ -49,6 +49,15 @@ export interface ScoredCandidate {
   from_card?: string;
   /** Internal contextual evidence used by reranking; never emitted directly. */
   rerank_text?: string;
+  /** A real edge discovered while expanding a lexical or semantic seed. */
+  graph_evidence?: GraphEvidence;
+}
+
+export interface GraphEvidence {
+  seed_card_id: string;
+  edge_type: string;
+  distance: number;
+  seed_evidence: 'lexical' | 'semantic';
 }
 
 export interface ScoredResult extends ScoredCandidate {
@@ -191,9 +200,11 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
         existing.graph_distance = cand.graph_distance;
         existing.edge_type = cand.edge_type;
         existing.from_card = cand.from_card;
+        existing.graph_evidence = preferGraphEvidence(existing.graph_evidence, cand.graph_evidence);
       } else if (cand.graph_distance < existing.graph_distance) {
         existing.graph_distance = cand.graph_distance;
       }
+      existing.graph_evidence = preferGraphEvidence(existing.graph_evidence, cand.graph_evidence);
     }
   }
 
@@ -235,6 +246,15 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
     return (bAuthority - aAuthority) || (b.score - a.score) || a.card.id.localeCompare(b.card.id);
   });
   return results;
+}
+
+function preferGraphEvidence(current: GraphEvidence | undefined, next: GraphEvidence | undefined): GraphEvidence | undefined {
+  if (!current) return next;
+  if (!next) return current;
+  if (current.seed_evidence !== next.seed_evidence) {
+    return current.seed_evidence === 'lexical' ? current : next;
+  }
+  return next.distance < current.distance ? next : current;
 }
 
 function round4(n: number): number {

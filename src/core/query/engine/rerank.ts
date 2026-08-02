@@ -25,12 +25,48 @@ export interface RerankOptions {
   candidateLimit?: number;
 }
 
+export interface RerankProfile {
+  mode: 'balanced' | 'compact_deterministic' | 'factual_graph';
+  candidate_count: number;
+  semantic_candidate_count: number;
+  semantic_spread: number;
+  semantic_head_gap: number;
+  semantic_flat: boolean;
+  weights: {
+    stage1: number;
+    semantic: number;
+    lexical: number;
+    intent: number;
+    evidence: number;
+    graph: number;
+  };
+}
+
 const WEIGHTS = {
   stage1: 0.53,
   semantic: 0.25,
   lexical: 0.12,
   intent: 0.05,
   evidence: 0.05,
+  graph: 0,
+} as const;
+
+const COMPACT_DETERMINISTIC_WEIGHTS = {
+  stage1: 0.48,
+  semantic: 0.05,
+  lexical: 0.22,
+  intent: 0.05,
+  evidence: 0.05,
+  graph: 0.15,
+} as const;
+
+const FACTUAL_GRAPH_WEIGHTS = {
+  stage1: 0.4,
+  semantic: 0.08,
+  lexical: 0.17,
+  intent: 0.1,
+  evidence: 0.05,
+  graph: 0.2,
 } as const;
 
 /** Exact identities are immutable anchors, not probabilistic rerank inputs. */
@@ -54,13 +90,14 @@ export function rerankCandidates(
 
   const originalRank = new Map(results.map((result, index) => [result.card.id, index + 1]));
   const sourceScores = new Map(results.map(result => [result.card.id, normalizeStage1(result.score)]));
+  const profile = getRerankProfile(results, plan);
   const head = results.slice(0, candidateLimit);
   const protectedByIndex = new Map<number, ScoredResult>();
   const rerankable: ScoredResult[] = [];
 
   head.forEach((result, index) => {
     if (isAuthorityResult(result)) protectedByIndex.set(index, result);
-    else rerankable.push(withRerankScore(result, plan, originalRank.get(result.card.id)!, sourceScores));
+    else rerankable.push(withRerankScore(result, plan, originalRank.get(result.card.id)!, sourceScores, profile));
   });
   rerankable.sort((left, right) =>
     (right.rerank!.score - left.rerank!.score)
@@ -77,27 +114,63 @@ export function rerankCandidates(
   });
 }
 
+/**
+ * Explainable query adaptation. A flat semantic head in a compact candidate
+ * set is treated as a weak tie-breaker; factual queries only get graph weight
+ * when graph expansion recorded an actual edge from a lexical seed.
+ */
+export function getRerankProfile(results: readonly ScoredResult[], plan: QueryPlan): RerankProfile {
+  const similarities = results
+    .flatMap(result => result.reasons
+      .filter(reason => reason.channel === 'semantic' && reason.similarity != null)
+      .map(reason => reason.similarity!))
+    .sort((left, right) => right - left);
+  const top = similarities[0] ?? 0;
+  const runnerUp = similarities[1] ?? top;
+  const median = similarities.length === 0 ? 0 : similarities[Math.floor((similarities.length - 1) / 2)];
+  const semanticSpread = round6(top - median);
+  const semanticHeadGap = round6(top - runnerUp);
+  const semanticFlat = similarities.length >= 3 && semanticSpread <= 0.09 && semanticHeadGap <= 0.04;
+  const compactCandidateSet = results.length <= 24 && similarities.length >= 3;
+  const factual = plan.shape === 'factual_relation';
+  const mode = factual ? 'factual_graph' : compactCandidateSet && semanticFlat ? 'compact_deterministic' : 'balanced';
+  const weights = factual
+    ? FACTUAL_GRAPH_WEIGHTS
+    : compactCandidateSet && semanticFlat ? COMPACT_DETERMINISTIC_WEIGHTS : WEIGHTS;
+  return {
+    mode,
+    candidate_count: results.length,
+    semantic_candidate_count: similarities.length,
+    semantic_spread: semanticSpread,
+    semantic_head_gap: semanticHeadGap,
+    semantic_flat: semanticFlat,
+    weights,
+  };
+}
+
 function withRerankScore(
   result: ScoredResult,
   plan: QueryPlan,
   originalRank: number,
   sourceScores: ReadonlyMap<string, number>,
+  profile: RerankProfile,
 ): ScoredResult {
   const semanticSimilarity = Math.max(0, ...result.reasons.map(reason => reason.similarity ?? 0));
   const factors: RerankFactors = {
     stage1: normalizeStage1(result.score),
     semantic: clamp((semanticSimilarity - 0.5) / 0.5),
-    lexical: lexicalCoverage(plan.terms, searchableText(result)),
-    intent: plan.preferredTypes.length === 0 ? 0.5 : (plan.preferredTypes.includes(result.card.type) ? 1 : 0),
+    lexical: lexicalCoverage(plan.lexicalTerms, searchableText(result)),
+    intent: intentStrength(result, plan),
     evidence: evidenceStrength(result),
-    graph: result.graph_distance === 0 ? 1 : 1 / (1 + result.graph_distance),
+    graph: graphStrength(result, plan),
   };
   let score = round6(
-    factors.stage1 * WEIGHTS.stage1
-      + factors.semantic * WEIGHTS.semantic
-      + factors.lexical * WEIGHTS.lexical
-      + factors.intent * WEIGHTS.intent
-      + factors.evidence * WEIGHTS.evidence
+    factors.stage1 * profile.weights.stage1
+      + factors.semantic * profile.weights.semantic
+      + factors.lexical * profile.weights.lexical
+      + factors.intent * profile.weights.intent
+      + factors.evidence * profile.weights.evidence
+      + factors.graph * profile.weights.graph
   );
   if (result.graph_distance > 0 && result.from_card) {
     const sourceScore = sourceScores.get(result.from_card);
@@ -132,6 +205,21 @@ function lexicalCoverage(terms: readonly string[], text: string): number {
   if (terms.length === 0) return 0;
   const matched = terms.filter(term => text.includes(term.toLowerCase())).length;
   return clamp(matched / terms.length);
+}
+
+function intentStrength(result: ScoredResult, plan: QueryPlan): number {
+  const typeIntent = plan.preferredTypes.length === 0 ? 0.5 : (plan.preferredTypes.includes(result.card.type) ? 1 : 0);
+  if (plan.shape !== 'factual_relation') return typeIntent;
+  return Math.max(typeIntent, hasLexicalGraphEvidence(result) ? 1 : 0);
+}
+
+function graphStrength(result: ScoredResult, plan: QueryPlan): number {
+  if (plan.shape === 'factual_relation' && hasLexicalGraphEvidence(result)) return 1;
+  return result.graph_distance === 0 && !result.graph_evidence ? 1 : 1 / (1 + (result.graph_evidence?.distance ?? result.graph_distance));
+}
+
+function hasLexicalGraphEvidence(result: ScoredResult): boolean {
+  return result.graph_evidence?.seed_evidence === 'lexical';
 }
 
 function evidenceStrength(result: ScoredResult): number {

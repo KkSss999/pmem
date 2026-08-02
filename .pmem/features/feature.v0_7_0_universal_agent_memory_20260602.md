@@ -18,7 +18,10 @@ related_to:
   - module.manifest_runtime_20260602
   - task.v0_7_0_phase_2_domain_presets_20260602
   - decision.v0_7_0_zero_migration_compatibility_20260602
-last_verified: "2026-07-02T21:07:09.089Z"
+last_verified: "2026-08-02T08:44:58.629Z"
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # v0.7.0 Universal Agent Memory
 

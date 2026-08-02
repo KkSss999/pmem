@@ -1,11 +1,12 @@
 import type { EmbeddingProvider } from './types';
+import packageJson from '../../../package.json';
 
 export const DEFAULT_SEMANTIC_MODEL = 'Xenova/multilingual-e5-small';
 export const DEFAULT_SEMANTIC_MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac3899aa1fa78';
 export const DEFAULT_SEMANTIC_DTYPE = 'uint8' as const;
 export const DEFAULT_SEMANTIC_DIMENSION = 384;
 export const SEMANTIC_COMPANION_PACKAGE = 'pmem-ai-semantic';
-export const SEMANTIC_COMPANION_VERSION = '1.2.3';
+export const SEMANTIC_COMPANION_VERSION = packageJson.version;
 
 export interface TransformersModelSpec {
   model: string;
@@ -22,6 +23,7 @@ export interface DisposableEmbeddingProvider extends EmbeddingProvider {
 
 export interface SemanticCompanion {
   apiVersion: 1;
+  assertTransformersRuntimeAvailable?: () => Promise<void>;
   createOfflineTransformersProvider(spec: TransformersModelSpec): Promise<DisposableEmbeddingProvider>;
 }
 
@@ -56,11 +58,25 @@ export async function loadSemanticCompanion(
   const companion = loaded?.default ?? loaded;
   if (companion?.apiVersion !== 1 || typeof companion?.createOfflineTransformersProvider !== 'function') {
     throw new Error(
-      `Installed ${SEMANTIC_COMPANION_PACKAGE} is incompatible with pmem v1.2.1. `
+      `Installed ${SEMANTIC_COMPANION_PACKAGE} is incompatible with pmem-ai@${SEMANTIC_COMPANION_VERSION}. `
       + `Install ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}.`,
     );
   }
   return companion as SemanticCompanion;
+}
+
+/** Verify the companion's private Transformers dependency without loading a model. */
+export async function assertSemanticRuntimeAvailable(
+  load: SemanticCompanionLoader = nativeDynamicImport,
+): Promise<void> {
+  const companion = await loadSemanticCompanion(load);
+  if (typeof companion.assertTransformersRuntimeAvailable !== 'function') {
+    throw new Error(
+      `Installed ${SEMANTIC_COMPANION_PACKAGE} is missing its Transformers runtime probe. `
+      + `Install ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}.`,
+    );
+  }
+  await companion.assertTransformersRuntimeAvailable();
 }
 
 /** Create an offline-only E5 provider through the explicitly installed companion. */

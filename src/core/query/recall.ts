@@ -8,6 +8,7 @@ import { loadManifest, resolveConfig } from '../manifest';
 import { parseTraceCard } from '../traceParse';
 import { isScopeVisible } from '../../runtime/scope';
 import type { CardRow } from '../../types';
+import { estimateTokens } from './engine/pack';
 
 const PMEM_DIR = '.pmem';
 
@@ -22,6 +23,16 @@ interface TrustCardRow {
   classification: string | null;
   trust_label: string | null;
   sensitivity: string | null;
+}
+
+export interface RecallContentSummary {
+  id: string;
+  type: string;
+  title: string;
+  file_path: string;
+  summary?: string;
+  snippet?: string;
+  updated_at?: string | null;
 }
 
 export interface RecallQueryResult {
@@ -74,6 +85,14 @@ export interface RecallQueryResult {
     sensitivity?: string | null;
   }>;
   context_summary?: string[];
+  /** Budget-packed content for continuity; old path fields remain unchanged. */
+  foundation_summaries?: RecallContentSummary[];
+  recent_summaries?: RecallContentSummary[];
+  content_budget?: {
+    requested: number;
+    used: number;
+    dropped: number;
+  };
 }
 
 export function recallQuery(pmemPath: string, options?: {
@@ -164,7 +183,9 @@ export function recallQuery(pmemPath: string, options?: {
     recent_traces: [],
     architecture: [],
     decisions: [],
-    context_summary: []
+    context_summary: [],
+    foundation_summaries: [],
+    recent_summaries: [],
   };
 
   // 1. Read traces from filesystem (independent of SQLite)
@@ -239,6 +260,16 @@ export function recallQuery(pmemPath: string, options?: {
     const foundationalCards = activeCards.filter(c => foundationalTypes.includes(c.type));
     result.active_foundation = foundationalCards.map(c => c.file_path);
     result.active_modules = result.active_foundation;
+
+    const foundationIds = new Set(foundationalCards.map(card => card.id));
+    const recentCards = [...activeCards]
+      .filter(card => !foundationIds.has(card.id))
+      .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '') || a.id.localeCompare(b.id))
+      .slice(0, 10);
+    const content = packContentSummaries(pmemPath, foundationalCards, recentCards, options?.budget ?? 2000);
+    result.foundation_summaries = content.foundation;
+    result.recent_summaries = content.recent;
+    result.content_budget = content.budget;
 
     result.mustRead.push('.pmem/state.md');
     result.mustRead.push('.pmem/next.md');
@@ -358,4 +389,83 @@ function parseSince(since: string): string | null {
            : 0;
   if (ms === 0) return null;
   return new Date(Date.now() - ms).toISOString();
+}
+
+function packContentSummaries(
+  pmemPath: string,
+  foundationCards: CardRow[],
+  recentCards: CardRow[],
+  requestedBudget: number,
+): {
+  foundation: RecallContentSummary[];
+  recent: RecallContentSummary[];
+  budget: { requested: number; used: number; dropped: number };
+} {
+  const budget = Math.max(0, Number.isFinite(requestedBudget) ? Math.floor(requestedBudget) : 2000);
+  const foundation: RecallContentSummary[] = [];
+  const recent: RecallContentSummary[] = [];
+  let used = 0;
+  let dropped = 0;
+
+  const add = (card: CardRow, target: RecallContentSummary[]): void => {
+    const candidate = summarizeCard(pmemPath, card);
+    const content = candidate.summary || candidate.snippet || '';
+    if (!content) {
+      dropped++;
+      return;
+    }
+    const line = `${candidate.title} — ${content}`;
+    const cost = estimateTokens(line);
+    if (used + cost > budget) {
+      dropped++;
+      return;
+    }
+    target.push(candidate);
+    used += cost;
+  };
+
+  for (const card of foundationCards) add(card, foundation);
+  for (const card of recentCards) add(card, recent);
+  return { foundation, recent, budget: { requested: budget, used, dropped } };
+}
+
+function summarizeCard(pmemPath: string, card: CardRow): RecallContentSummary {
+  const result: RecallContentSummary = {
+    id: card.id,
+    type: card.type,
+    title: card.title,
+    file_path: card.file_path,
+    updated_at: card.updated_at,
+  };
+  const summary = sanitizeContent(card.summary ?? '');
+  if (summary) result.summary = summary;
+
+  const projectRoot = path.resolve(pmemPath, '..');
+  const filePath = path.resolve(projectRoot, card.file_path);
+  const pmemRoot = path.resolve(pmemPath);
+  if (filePath.startsWith(pmemRoot + path.sep)) {
+    const source = readFile(filePath);
+    if (source) {
+      const body = source.replace(/^---\n[\s\S]*?\n---\n?/, '');
+      const paragraphs = body
+        .split(/\n\s*\n/)
+        .map(part => sanitizeContent(part.replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '')))
+        .filter(Boolean);
+      const paragraph = paragraphs.find(part => part !== card.title) ?? paragraphs[0];
+      if (paragraph) result.snippet = paragraph.length > 420 ? `${paragraph.slice(0, 417).trimEnd()}...` : paragraph;
+    }
+  }
+  return result;
+}
+
+const SENSITIVE_VALUE_RE = /(\b(?:api[-_ ]?key|secret(?:[-_ ]?key)?|password|passwd|token|authorization|bearer)\s*[:=]\s*["'`]?)([^\s,;"'`]+)/gi;
+const KNOWN_TOKEN_RE = /\b(?:sk|rk)-[A-Za-z0-9]{16,}\b|\bgh[pousr]_[A-Za-z0-9_]{20,}\b|\bAKIA[0-9A-Z]{16}\b/g;
+
+function sanitizeContent(value: string): string {
+  return value
+    .replace(SENSITIVE_VALUE_RE, '$1[REDACTED]')
+    .replace(KNOWN_TOKEN_RE, '[REDACTED]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }

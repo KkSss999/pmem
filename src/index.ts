@@ -30,6 +30,7 @@ import { decisionInferCommand } from './commands/decision';
 import { relationsCommand } from './commands/relations';
 import { semanticCommand } from './commands/semantic';
 import { healthBaselineCommand, healthMigrateCommand } from './commands/health';
+import { maintainCommand } from './commands/maintain';
 
 
 const program = new Command();
@@ -304,6 +305,31 @@ health
     classificationByType: options.classificationByType,
     format: options.format,
   }));
+
+program
+  .command('maintain')
+  .description('Preview or apply project memory maintenance and repair')
+  .option('--repair', 'Apply metadata repair and rebuild derived indexes')
+  .option('--dry-run', 'Preview maintenance without writing changes')
+  .option('--semantic', 'Rebuild and verify the semantic index when enabled')
+  .option('--yes', 'Confirm a non-interactive repair')
+  .option('--trust-label <label>', 'Trust label to fill when metadata is missing')
+  .option('--sensitivity <level>', 'Sensitivity to fill when metadata is missing')
+  .option('--classification-by-type <mapping>', 'Comma-separated type=classification mappings')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (options) => {
+    const result = await maintainCommand({
+      repair: options.repair,
+      dryRun: options.dryRun,
+      semantic: options.semantic,
+      yes: options.yes,
+      trustLabel: options.trustLabel,
+      sensitivity: options.sensitivity,
+      classificationByType: options.classificationByType,
+      format: options.format,
+    });
+    if (result.status === 'failed') process.exitCode = 1;
+  });
 
 program
   .command('doctor')

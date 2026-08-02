@@ -4,12 +4,13 @@ import { writeHealthBaseline } from '../core/health';
 import { applyHealthMigration, parseClassificationByType, type HealthMigrationOptions } from '../core/health/migration';
 import { rebuildCommand } from './rebuild';
 import { verifyCommand } from './verify';
+import { findProjectPaths } from '../core/projectRoot';
 
 export interface HealthBaselineCommandOptions { write?: boolean; format?: 'compact' | 'json'; cwd?: string }
 
 export function healthBaselineCommand(options: HealthBaselineCommandOptions = {}): void {
   const cwd = options.cwd ?? process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const pmemPath = findProjectPaths(cwd)?.pmemPath ?? path.join(cwd, '.pmem');
   if (!fileExists(pmemPath)) throw new Error('No .pmem directory found. Run `pmem init` first.');
   if (!options.write) {
     const result = verifyCommand({ cwd, noExit: true, silent: true });
@@ -36,7 +37,7 @@ export interface HealthMigrateCommandOptions extends Omit<HealthMigrationOptions
 
 export function healthMigrateCommand(options: HealthMigrateCommandOptions = {}): void {
   const cwd = options.cwd ?? process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const pmemPath = findProjectPaths(cwd)?.pmemPath ?? path.join(cwd, '.pmem');
   if (!fileExists(pmemPath)) throw new Error('No .pmem directory found. Run `pmem init` first.');
   const result = applyHealthMigration(pmemPath, {
     ...options,

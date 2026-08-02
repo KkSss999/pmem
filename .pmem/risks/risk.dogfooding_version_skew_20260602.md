@@ -14,7 +14,10 @@ depends_on: []
 related_to:
   - decision.dogfood_pmem_for_pmem_development_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
-last_verified: "2026-07-03T23:59:59.000Z"
+last_verified: "2026-08-02T08:44:58.630Z"
+classification: risk
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Dogfooding Version Skew
 

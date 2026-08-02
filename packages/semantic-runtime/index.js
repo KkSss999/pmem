@@ -1,10 +1,50 @@
 'use strict';
 
 const path = require('node:path');
+const { createRequire } = require('node:module');
+const { pathToFileURL } = require('node:url');
+
+const TRANSFORMERS_PACKAGE = '@huggingface/transformers';
+const companionRequire = createRequire(__filename);
+const companionVersion = require('./package.json').version;
 
 function nativeDynamicImport(specifier) {
   const importer = new Function('specifier', 'return import(specifier)');
   return importer(specifier);
+}
+
+function transformersRuntimeError(cause) {
+  const error = new Error(
+    `Semantic Transformers runtime is unavailable for pmem-ai-semantic@${companionVersion}. `
+    + `Reinstall the compatible companion with `
+    + `\`npm install -g pmem-ai-semantic@${companionVersion}\` `
+    + `(global pmem CLI) or `
+    + `\`npm install pmem-ai-semantic@${companionVersion}\` (project SDK), then retry.`,
+  );
+  error.code = 'PMEM_SEMANTIC_TRANSFORMERS_MISSING';
+  error.cause = cause;
+  return error;
+}
+
+function resolveTransformersRuntime() {
+  try {
+    // Resolve from this package so a globally installed companion can use its
+    // own nested dependency instead of depending on npm's hoisting layout.
+    return companionRequire.resolve(TRANSFORMERS_PACKAGE);
+  } catch (error) {
+    throw transformersRuntimeError(error);
+  }
+}
+
+async function loadTransformers(importTransformers = nativeDynamicImport) {
+  const specifier = importTransformers === nativeDynamicImport
+    ? pathToFileURL(resolveTransformersRuntime()).href
+    : TRANSFORMERS_PACKAGE;
+  try {
+    return await importTransformers(specifier);
+  } catch (error) {
+    throw transformersRuntimeError(error);
+  }
 }
 
 async function withTransformersEnvironment(transformers, spec, allowRemoteModels, fn) {
@@ -29,7 +69,8 @@ async function createOfflineTransformersProvider(spec, importTransformers = nati
   if (!spec.cachePath || !path.isAbsolute(spec.cachePath)) {
     throw new Error(`Semantic model path must be absolute: ${spec.cachePath}`);
   }
-  const transformers = await importTransformers('@huggingface/transformers');
+  const loaded = await loadTransformers(importTransformers);
+  const transformers = loaded?.default ?? loaded;
   const extractor = await withTransformersEnvironment(transformers, spec, false, () =>
     transformers.pipeline('feature-extraction', spec.cachePath, {
       dtype: spec.dtype,
@@ -61,5 +102,8 @@ async function createOfflineTransformersProvider(spec, importTransformers = nati
 
 module.exports = {
   apiVersion: 1,
+  assertTransformersRuntimeAvailable: async () => {
+    await loadTransformers();
+  },
   createOfflineTransformersProvider,
 };

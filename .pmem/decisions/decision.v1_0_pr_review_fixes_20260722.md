@@ -11,6 +11,9 @@ depends_on:
   - decision.pmem_two_layer_architecture_20260722
 related_to:
   - feature.v1_0_agentic_memory_runtime_20260722
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 
 # v1.0 PR Review Security & Robustness Fixes

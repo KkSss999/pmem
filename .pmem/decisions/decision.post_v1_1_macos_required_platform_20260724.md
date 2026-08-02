@@ -11,6 +11,9 @@ depends_on:
 related_to:
   - decision.v1_1_1_macos_semantic_retrieval_20260724
   - feature.v1_1_1_lightweight_semantic_layer_20260626
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Post-v1.1.0 Platform Policy
 

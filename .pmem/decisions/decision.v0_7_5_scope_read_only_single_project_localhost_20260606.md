@@ -14,6 +14,9 @@ related_to:
   - feature.v0_7_5_graph_visualization_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
 last_verified: "2026-06-26T12:19:26.213Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Deferred Web UI Scope: Read-Only, Single Project, Localhost
 

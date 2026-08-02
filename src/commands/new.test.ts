@@ -206,6 +206,8 @@ describe('pmem new (CLI) — old project (no schema)', () => {
     assert.match(cardFile!, /^module\.core_module_\d{8}\.md$/, 'default ID remains date-stamped');
     const content = fs.readFileSync(path.join(modulesDir, cardFile!), 'utf8');
     assert.ok(content.includes('type: module'), 'frontmatter should contain type: module');
+    assert.match(content, /^trust_label: user_confirmed$/m);
+    assert.match(content, /^sensitivity: internal$/m);
   });
 });
 
@@ -260,6 +262,19 @@ schema:
     const r = pmem('new character "Mentor" --id character.mentor', cwd);
     assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stdout}`);
     assert.ok(fs.existsSync(path.join(cwd, '.pmem', 'characters', 'character.mentor.md')));
+  });
+
+  it('uses explicit trust metadata for structured cards and never promotes traces', () => {
+    const decision = fs.readFileSync(path.join(cwd, '.pmem', 'characters', 'character.protagonist.md'), 'utf8');
+    assert.match(decision, /^trust_label: user_confirmed$/m);
+    const r = pmem('new trace "Agent trace" --id trace.agent_trace', cwd);
+    assert.strictEqual(r.code, 0, `expected trace creation to succeed: ${r.stdout}`);
+    const tracePath = path.join(cwd, '.pmem', 'traces', 'trace.agent_trace.md');
+    assert.ok(fs.existsSync(tracePath));
+    const trace = fs.readFileSync(tracePath, 'utf8');
+    assert.match(trace, /^trust_label: agent_generated$/m);
+    assert.doesNotMatch(trace, /^trust_label: user_confirmed$/m);
+    assert.match(trace, /^sensitivity: internal$/m);
   });
 
   it('rejects mismatched, unsafe, and uppercase custom IDs without writing cards', () => {

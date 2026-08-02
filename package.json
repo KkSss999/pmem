@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/sdk/index.js",
   "exports": {
@@ -44,6 +44,7 @@
     "test:e2e:v074-agent-ux": "bash scripts/e2e-v074-agent-ux.sh",
     "test:e2e:v075-context-restoration": "bash scripts/e2e-v075-context-restoration.sh",
     "test:e2e:v075-next-dedup": "bash scripts/e2e-v075-next-dedup.sh",
+    "test:e2e:semantic-runtime": "bash scripts/e2e-semantic-runtime-smoke.sh",
     "test:release-registry": "node --test scripts/npm-release-state.test.js"
   },
   "keywords": [

@@ -217,17 +217,38 @@ function expandGraph(db: Database.Database, out: ScoredCandidate[], opts: Candid
     .sort((a, b) => (b.base - a.base) || a.card.id.localeCompare(b.card.id))
     .slice(0, expandTopN);
 
-  let frontier = seeds.map(s => ({ id: s.card.id, score: s.base }));
+  let frontier = seeds.map(s => ({
+    id: s.card.id,
+    score: s.base,
+    seedEvidence: s.reasons.some(reason => reason.channel !== 'semantic' && reason.channel !== 'graph') ? 'lexical' as const : 'semantic' as const,
+  }));
 
   for (let hop = 1; hop <= maxHops; hop++) {
-    const nextFrontier: Array<{ id: string; score: number }> = [];
+    const nextFrontier: Array<{ id: string; score: number; seedEvidence: 'lexical' | 'semantic' }> = [];
     for (const node of frontier) {
       const edges = db.prepare(
         'SELECT * FROM edges WHERE from_id = ? OR to_id = ?'
       ).all(node.id, node.id) as EdgeRow[];
       for (const edge of edges) {
         const neighborId = edge.from_id === node.id ? edge.to_id : edge.from_id;
-        if (seen.has(neighborId)) continue;
+        const graphEvidence = {
+          seed_card_id: node.id,
+          edge_type: edge.type,
+          distance: hop,
+          seed_evidence: node.seedEvidence,
+        } as const;
+        if (seen.has(neighborId)) {
+          // Semantic search may have found the same card first. Preserve the
+          // actual edge as internal evidence without changing public graph
+          // provenance or inventing a relation type.
+          const existing = out.find(candidate => candidate.card.id === neighborId);
+          if (existing && (!existing.graph_evidence
+            || (existing.graph_evidence.seed_evidence === 'semantic' && node.seedEvidence === 'lexical')
+            || graphEvidence.distance < existing.graph_evidence.distance)) {
+            existing.graph_evidence = graphEvidence;
+          }
+          continue;
+        }
         const neighbor = db.prepare(
           'SELECT * FROM cards WHERE id = ? AND is_deleted = 0'
         ).get(neighborId) as CardRow | undefined;
@@ -241,8 +262,9 @@ function expandGraph(db: Database.Database, out: ScoredCandidate[], opts: Candid
           graph_distance: hop,
           edge_type: edge.type,
           from_card: node.id,
+          graph_evidence: graphEvidence,
         });
-        nextFrontier.push({ id: neighborId, score: base });
+        nextFrontier.push({ id: neighborId, score: base, seedEvidence: node.seedEvidence });
       }
     }
     frontier = nextFrontier;

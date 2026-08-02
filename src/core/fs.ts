@@ -160,14 +160,41 @@ export function withLock<T>(
     if (opts.onTimeout === 'skip') {
       return undefined;
     }
-    throw new Error(
-      `Could not acquire pmem lock at ${lockPath}. Another pmem process may be running.`,
-    );
+    throw new Error(lockTimeoutMessage(pmemPath, lockPath));
   }
   try {
     return fn();
   } finally {
     releaseLock(lockPath);
+  }
+}
+
+function lockTimeoutMessage(pmemPath: string, lockPath: string): string {
+  if (path.basename(pmemPath) !== '.pmem' || !fs.existsSync(pmemPath)) {
+    return `Could not acquire pmem lock at ${lockPath}: pmem project path does not resolve to a .pmem directory. Run pmem from the project root or use the resolved pmemPath.`;
+  }
+
+  const info = getLockInfo(lockPath);
+  if (info.is_stale) {
+    const age = info.age_seconds === null ? 'unknown age' : `${info.age_seconds}s old`;
+    return `Could not acquire pmem lock at ${lockPath}: stale lock (${age}). Run pmem verify --fix-locks after confirming no pmem process is active.`;
+  }
+
+  if (info.owner_pid !== null) {
+    const ownerState = isProcessAlive(info.owner_pid) ? 'active' : 'not running';
+    return `Could not acquire pmem lock at ${lockPath}: lock held by PID ${info.owner_pid} (${ownerState}).`;
+  }
+
+  return `Could not acquire pmem lock at ${lockPath}: an active pmem lock is present, but its owner PID is unavailable.`;
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: any) {
+    return error?.code === 'EPERM';
   }
 }
 

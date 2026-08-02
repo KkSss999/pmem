@@ -16,6 +16,9 @@ related_to:
   - risk.dogfooding_version_skew_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
 last_verified: "2026-06-26T12:19:26.213Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Dogfood pmem for pmem Development
 

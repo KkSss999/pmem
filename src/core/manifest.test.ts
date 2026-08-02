@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { getDefaultManifest, getDefaultManifestV03, resolveConfig, renderIdPattern, V064_DEFAULT_TYPES, V064_DEFAULT_MERGE_TYPES, V064_DEFAULT_CREATABLE_TYPES } from './manifest';
+import { DOMAIN_PRESETS } from './domainPresets';
 
 describe('getDefaultManifest', () => {
   it('returns a ManifestV03 with schema_version 0.3', () => {
@@ -158,6 +159,15 @@ describe('getDefaultManifestV03', () => {
 // v0.7.0 Phase 1 — resolved config and id_pattern rendering
 
 describe('resolveConfig', () => {
+  it('keeps domain relation thresholds in the initialized manifest config', () => {
+    const novel = getDefaultManifest('novel');
+    novel.project.domain = 'novel';
+    const research = getDefaultManifest('research');
+    research.project.domain = 'research';
+
+    assert.deepStrictEqual(DOMAIN_PRESETS.novel.warn_when_related_count_gt_by_type, { character: 30, chapter: 25, world: 25 });
+    assert.deepStrictEqual(DOMAIN_PRESETS.research.warn_when_related_count_gt_by_type, { source: 20, claim: 20 });
+  });
   it('falls back to v0.6.4 defaults when manifest has no schema', () => {
     const manifest = getDefaultManifest('test-project');
     const cfg = resolveConfig(manifest);

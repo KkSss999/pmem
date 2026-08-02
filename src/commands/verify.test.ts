@@ -44,6 +44,86 @@ describe('compact verify metadata grouping', () => {
   });
 });
 
+describe('verify metadata migration guidance', () => {
+  const testDir = path.join(TEMP_ROOT, 'metadata-migration-guidance');
+
+  before(() => {
+    const pmemDir = path.join(testDir, '.pmem');
+    fs.mkdirSync(path.join(pmemDir, 'modules'), { recursive: true });
+    writeFile(path.join(pmemDir, 'manifest.yml'), makeManifest(10));
+    writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
+    writeFile(path.join(pmemDir, 'state.md'), '# State\n');
+    writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
+    writeFile(path.join(testDir, '.pmem/modules/module.missing-trust.md'), moduleCard('module.missing-trust'));
+    const rebuilt = pmem('rebuild --full', testDir);
+    assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
+  });
+
+  after(() => {
+    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('points missing trust_label at health migrate and the explicit command changes the label', () => {
+    const verification = pmem('verify', testDir);
+    assert.match(verification.stdout, /untrusted_memory/);
+    assert.match(verification.stdout, /pmem health migrate --apply --trust-label <label> --sensitivity <level>/);
+    const untrustedBlock = verification.stdout.split('\n\n').find(block => block.includes('[untrusted_memory]')) ?? '';
+    assert.doesNotMatch(untrustedBlock, /pmem update --confirm/);
+
+    const migration = pmem(
+      'health migrate --apply --trust-label application_trusted --sensitivity internal --classification-by-type module=fact',
+      testDir,
+    );
+    assert.strictEqual(migration.code, 0, `metadata migration failed: ${migration.stdout}`);
+    const card = fs.readFileSync(path.join(testDir, '.pmem/modules/module.missing-trust.md'), 'utf8');
+    assert.match(card, /^trust_label: application_trusted$/m);
+    assert.match(card, /^sensitivity: internal$/m);
+    assert.match(card, /^classification: fact$/m);
+  });
+});
+
+describe('verify card size accounting', () => {
+  const testDir = path.join(TEMP_ROOT, 'card-size-accounting');
+
+  before(() => {
+    const pmemDir = path.join(testDir, '.pmem');
+    fs.mkdirSync(path.join(pmemDir, 'modules'), { recursive: true });
+    writeFile(path.join(pmemDir, 'manifest.yml'), makeManifest(10));
+    writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
+    writeFile(path.join(pmemDir, 'state.md'), '# State\n');
+    writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
+    const body = 'word '.repeat(780);
+    writeFile(path.join(testDir, '.pmem/modules/module.metadata-only.md'), `---
+id: module.metadata-only
+type: module
+classification: fact
+trust_label: user_confirmed
+sensitivity: internal
+last_verified: "2026-08-02T00:00:00.000Z"
+token_policy: normal
+---
+# Large but within user-content budget
+${body}
+`);
+    const rebuilt = pmem('rebuild --full', testDir);
+    assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
+  });
+
+  after(() => {
+    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('does not bill managed metadata but still warns when the body grows past the limit', () => {
+    const withinLimit = pmem('verify', testDir);
+    assert.doesNotMatch(withinLimit.stdout, /card_too_large/);
+
+    const cardPath = path.join(testDir, '.pmem/modules/module.metadata-only.md');
+    fs.appendFileSync(cardPath, `\n${'user-content '.repeat(40)}\n`, 'utf8');
+    const oversized = pmem('verify', testDir);
+    assert.match(oversized.stdout, /card_too_large/);
+  });
+});
+
 function pmem(args: string, cwd: string): { stdout: string; stderr: string; code: number } {
   try {
     const stdout = execSync(`node "${PMEM_BIN}" ${args}`, {

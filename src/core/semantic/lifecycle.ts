@@ -11,10 +11,18 @@ import type {
   SemanticChunk,
   SemanticChunkMatch,
   SemanticDatabase,
+  SemanticBuildStatus,
+  SemanticIndexFailure,
   SemanticIndexOptions,
   SemanticIndexResult,
   SemanticStatus,
 } from './types';
+
+interface StoredSemanticMetaRow extends SemanticMetaRow {
+  build_status?: SemanticBuildStatus;
+  failed_card_count?: number;
+  failed_card_ids?: string;
+}
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -30,7 +38,10 @@ export function createSemanticSchema(db: SemanticDatabase): void {
       dimension INTEGER NOT NULL CHECK (dimension > 0),
       index_content_hash TEXT NOT NULL,
       chunk_count INTEGER NOT NULL DEFAULT 0,
-      built_at TEXT NOT NULL
+      built_at TEXT NOT NULL,
+      build_status TEXT NOT NULL DEFAULT 'complete',
+      failed_card_count INTEGER NOT NULL DEFAULT 0,
+      failed_card_ids TEXT NOT NULL DEFAULT '[]'
     );
     CREATE TABLE IF NOT EXISTS semantic_chunks (
       chunk_id TEXT PRIMARY KEY,
@@ -54,18 +65,24 @@ export function createSemanticSchema(db: SemanticDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_semantic_chunks_content_hash ON semantic_chunks(content_hash);
   `);
   try { db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1'); } catch {}
+  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN build_status TEXT NOT NULL DEFAULT 'complete'"); } catch {}
+  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN failed_card_count INTEGER NOT NULL DEFAULT 0'); } catch {}
+  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN failed_card_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
   try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''"); } catch {}
 }
 
 export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
   createSemanticSchema(db);
-  const meta = db.prepare('SELECT * FROM semantic_meta WHERE id = 1').get() as SemanticMetaRow | undefined;
+  const meta = db.prepare('SELECT * FROM semantic_meta WHERE id = 1').get() as StoredSemanticMetaRow | undefined;
   const actual = db.prepare('SELECT COUNT(*) AS count FROM semantic_chunks').get() as { count: number };
   const cards = db.prepare('SELECT COUNT(DISTINCT card_id) AS count FROM semantic_chunks').get() as { count: number };
   if (!meta) {
     return {
       available: false,
+      buildStatus: 'none',
+      failedCardCount: 0,
+      failedCardIds: [],
       pipelineVersion: null,
       compatible: true,
       modelId: null,
@@ -77,8 +94,21 @@ export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
       builtAt: null,
     };
   }
+  const buildStatus: SemanticBuildStatus = meta.build_status === 'partial' ? 'partial' : 'complete';
+  let failedCardIds: string[] = [];
+  try {
+    const parsed = JSON.parse(meta.failed_card_ids ?? '[]') as unknown;
+    if (Array.isArray(parsed)) failedCardIds = parsed.filter((id): id is string => typeof id === 'string');
+  } catch {
+    failedCardIds = [];
+  }
   return {
-    available: meta.pipeline_version === SEMANTIC_PIPELINE_VERSION && meta.chunk_count === actual.count,
+    available: buildStatus === 'complete'
+      && meta.pipeline_version === SEMANTIC_PIPELINE_VERSION
+      && meta.chunk_count === actual.count,
+    buildStatus,
+    failedCardCount: meta.failed_card_count ?? failedCardIds.length,
+    failedCardIds,
     pipelineVersion: meta.pipeline_version,
     compatible: meta.pipeline_version === SEMANTIC_PIPELINE_VERSION,
     modelId: meta.model_id,
@@ -167,17 +197,28 @@ function refreshMetaFromStoredChunks(
   db: SemanticDatabase,
   builtAt: string,
   emptyIdentity?: { modelId: string; revision: string; dimension: number },
+  build?: { status: Exclude<SemanticBuildStatus, 'none'>; failedCardIds: readonly string[] },
 ): void {
   const rows = db.prepare(
     'SELECT chunk_id, content_hash, context_hash, model_id, model_revision, dimension FROM semantic_chunks ORDER BY chunk_id'
   ).all() as Array<{ chunk_id: string; content_hash: string; context_hash: string; model_id: string; model_revision: string; dimension: number }>;
+  const existingMeta = db.prepare('SELECT model_id, model_revision, dimension, build_status, failed_card_ids FROM semantic_meta WHERE id = 1').get() as
+    { model_id: string; model_revision: string; dimension: number; build_status?: SemanticBuildStatus; failed_card_ids?: string } | undefined;
+  const buildStatus = build?.status ?? (existingMeta?.build_status === 'partial' ? 'partial' : 'complete');
+  const failedCardIds = [...new Set(build?.failedCardIds ?? (() => {
+    try {
+      const parsed = JSON.parse(existingMeta?.failed_card_ids ?? '[]') as unknown;
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  })())].sort();
+  const failedCardIdsJson = JSON.stringify(failedCardIds);
   if (rows.length === 0) {
-    const existing = db.prepare('SELECT model_id, model_revision, dimension FROM semantic_meta WHERE id = 1').get() as
-      { model_id: string; model_revision: string; dimension: number } | undefined;
-    const identity = emptyIdentity ?? (existing ? {
-      modelId: existing.model_id,
-      revision: existing.model_revision,
-      dimension: existing.dimension,
+    const identity = emptyIdentity ?? (existingMeta ? {
+      modelId: existingMeta.model_id,
+      revision: existingMeta.model_revision,
+      dimension: existingMeta.dimension,
     } : undefined);
     if (!identity) {
       db.prepare('DELETE FROM semantic_meta').run();
@@ -185,23 +226,29 @@ function refreshMetaFromStoredChunks(
     }
     db.prepare(`
       INSERT OR REPLACE INTO semantic_meta
-        (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at)
-      VALUES (1, ?, ?, ?, ?, ?, 0, ?)
-    `).run(SEMANTIC_PIPELINE_VERSION, identity.modelId, identity.revision, identity.dimension, indexHash([]), builtAt);
+        (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
+         build_status, failed_card_count, failed_card_ids)
+      VALUES (1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+    `).run(SEMANTIC_PIPELINE_VERSION, identity.modelId, identity.revision, identity.dimension, indexHash([]), builtAt,
+      buildStatus, failedCardIds.length, failedCardIdsJson);
     return;
   }
   const first = rows[0];
   db.prepare(`
     INSERT OR REPLACE INTO semantic_meta
-      (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-  `).run(SEMANTIC_PIPELINE_VERSION, first.model_id, first.model_revision, first.dimension, indexHash(rows), rows.length, builtAt);
+      (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
+       build_status, failed_card_count, failed_card_ids)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(SEMANTIC_PIPELINE_VERSION, first.model_id, first.model_revision, first.dimension, indexHash(rows), rows.length, builtAt,
+    buildStatus, failedCardIds.length, failedCardIdsJson);
 }
 
 /**
  * Build the derived semantic index from a complete current card snapshot.
  * Unsafe cards are removed before chunk creation and before provider invocation.
- * Provider work completes before the transaction, so failures preserve the old index.
+ * Provider work completes before the transaction. A source snapshot failure still
+ * preserves the old index, while isolated card failures commit a clearly partial
+ * index containing only cards that completed successfully.
  */
 export async function rebuildSemanticIndex(
   db: SemanticDatabase,
@@ -221,8 +268,17 @@ export async function rebuildSemanticIndex(
     ...document,
     relatedCardIds: document.relatedCardIds?.filter(id => safeIds.has(id)),
   }));
-  const desiredChunks = safeDocuments.flatMap(card => chunkCard(card, options));
-  const desiredById = new Map(desiredChunks.map(chunk => [chunk.chunkId, chunk]));
+  const failures: SemanticIndexFailure[] = [];
+  const chunkedCards: Array<{ card: SemanticCardDocument; chunks: SemanticChunk[] }> = [];
+  for (const card of safeDocuments) {
+    try {
+      chunkedCards.push({ card, chunks: chunkCard(card, options) });
+    } catch (error: any) {
+      failures.push({ cardId: card.id, stage: 'chunk', error: error?.message ?? String(error) });
+    }
+  }
+  const candidateChunks = chunkedCards.flatMap(entry => entry.chunks);
+  const candidateById = new Map(candidateChunks.map(chunk => [chunk.chunkId, chunk]));
   const existing = db.prepare('SELECT * FROM semantic_chunks').all() as SemanticChunkRow[];
   const priorStatus = getSemanticStatus(db);
   const compatible = priorStatus.compatible && existing.every(row =>
@@ -231,17 +287,33 @@ export async function rebuildSemanticIndex(
     row.dimension === provider.dimension
   );
   const forceFull = options.mode === 'full' || !compatible;
+  const now = (options.now ?? (() => new Date()))().toISOString();
   const reusable = new Map<string, SemanticChunkRow>();
   if (!forceFull) {
     for (const row of existing) {
-      const desired = desiredById.get(row.chunk_id);
+      const desired = candidateById.get(row.chunk_id);
       if (desired && desired.contentHash === row.content_hash) reusable.set(row.chunk_id, row);
     }
   }
-  const needsEmbedding = desiredChunks.filter(chunk => !reusable.has(chunk.chunkId));
-  const now = (options.now ?? (() => new Date()))().toISOString();
-  const embedded = await embedChunks(needsEmbedding, provider, batchSize, now);
-  const embeddedById = new Map(embedded.map(item => [item.chunk.chunkId, item]));
+  const failedCardIds = new Set(failures.map(failure => failure.cardId));
+  const embedded: PreparedChunk[] = [];
+  for (const entry of chunkedCards) {
+    const needsEmbedding = entry.chunks.filter(chunk => !reusable.has(chunk.chunkId));
+    if (needsEmbedding.length === 0) continue;
+    try {
+      embedded.push(...await embedChunks(needsEmbedding, provider, batchSize, now));
+    } catch (error: any) {
+      failedCardIds.add(entry.card.id);
+      failures.push({ cardId: entry.card.id, stage: 'embed', error: error?.message ?? String(error) });
+    }
+  }
+  const desiredChunks = candidateChunks.filter(chunk => !failedCardIds.has(chunk.cardId));
+  const desiredById = new Map(desiredChunks.map(chunk => [chunk.chunkId, chunk]));
+  const embeddedById = new Map(embedded
+    .filter(item => !failedCardIds.has(item.chunk.cardId))
+    .map(item => [item.chunk.chunkId, item]));
+  const reusableCommitted = new Map([...reusable].filter(([chunkId]) => desiredById.has(chunkId)));
+  const failedIds = [...failedCardIds].sort();
   let chunksDeleted = 0;
 
   options.beforeCommit?.();
@@ -287,6 +359,9 @@ export async function rebuildSemanticIndex(
       modelId: provider.modelId,
       revision: provider.revision,
       dimension: provider.dimension,
+    }, {
+      status: failedIds.length > 0 ? 'partial' : 'complete',
+      failedCardIds: failedIds,
     });
   })();
 
@@ -295,9 +370,14 @@ export async function rebuildSemanticIndex(
     mode: options.mode,
     cardsSeen: documents.length,
     cardsExcluded: documents.length - safeDocuments.length,
+    cardsIndexed: safeDocuments.length - failedIds.length,
+    cardsFailed: failedIds.length,
+    failedCardIds: failedIds,
+    failures: failures.sort((a, b) => a.cardId.localeCompare(b.cardId) || a.stage.localeCompare(b.stage)),
+    buildStatus: failedIds.length > 0 ? 'partial' : 'complete',
     chunksTotal: desiredChunks.length,
-    chunksEmbedded: needsEmbedding.length,
-    chunksReused: reusable.size,
+    chunksEmbedded: embeddedById.size,
+    chunksReused: reusableCommitted.size,
     chunksDeleted,
     indexContentHash: indexHash(rows),
   };

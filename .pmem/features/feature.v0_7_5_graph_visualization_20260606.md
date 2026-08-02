@@ -17,6 +17,9 @@ related_to:
   - decision.v0_7_5_wikilink_switch_temporary_context_highlight_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
 last_verified: "2026-06-26T12:20:00.000Z"
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Deferred Graph Visualization (Web UI)
 

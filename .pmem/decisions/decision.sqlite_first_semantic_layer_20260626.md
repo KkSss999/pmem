@@ -14,6 +14,9 @@ related_to:
   - feature.v1_1_1_lightweight_semantic_layer_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
 last_verified: "2026-06-26T12:15:00.000Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # SQLite-First Semantic Layer
 

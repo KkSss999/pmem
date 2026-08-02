@@ -26,6 +26,7 @@ depends_on:
 related_to:
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
+last_verified: "2026-08-02T08:44:58.628Z"
 ---
 # v1.1.1 Semantic Retrieval
 

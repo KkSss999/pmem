@@ -50,6 +50,9 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
     evidence_types: ['decision', 'trace'],
     default_type: 'trace',
     creatable_types: ['character', 'chapter', 'world', 'arc', 'decision', 'trace'],
+    // Creative graphs are intentionally dense: characters commonly connect
+    // to most of the cast, chapters, locations, and story decisions.
+    warn_when_related_count_gt_by_type: { character: 30, chapter: 25, world: 25 },
     max_tokens: { decision: 1000, trace: 1000, character: 1200, chapter: 1500, world: 1500, arc: 1000 },
     max_sections: { decision: 6, character: 8, chapter: 8, world: 10 },
   },
@@ -70,6 +73,9 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
     evidence_types: ['decision', 'trace'],
     default_type: 'trace',
     creatable_types: ['source', 'claim', 'note', 'experiment', 'decision', 'trace'],
+    // A source/claim graph is expected to accumulate many legitimate links
+    // as evidence is cross-checked and claims are refined.
+    warn_when_related_count_gt_by_type: { source: 20, claim: 20 },
     max_tokens: { decision: 1000, trace: 1000, source: 1200, claim: 1000, note: 1000, experiment: 1200 },
     max_sections: { decision: 6, source: 8, claim: 6, experiment: 8 },
   },
