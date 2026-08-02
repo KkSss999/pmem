@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
+import { SEMANTIC_CHUNK_STRATEGY, SEMANTIC_METADATA_VERSION } from './defaults';
 
 export const SEMANTIC_RECEIPT_FILE = 'pmem-semantic-model.json';
 export const MODELSCOPE_SOURCE_REVISION = '252d0dcb679dda2c7b6fd5bbfed15df3c7feaebf';
@@ -21,6 +22,7 @@ export interface SemanticCacheSpec {
 
 export interface ReceiptFile { path: string; size: number; sha256: string }
 export interface SemanticModelReceipt {
+  metadata_version?: number;
   model: string;
   revision: string;
   source?: 'modelscope' | 'huggingface';
@@ -29,6 +31,7 @@ export interface SemanticModelReceipt {
   dimension: number;
   files: ReceiptFile[];
   cached_at: string;
+  chunk_strategy?: string;
 }
 
 export function semanticReceiptPath(spec: SemanticCacheSpec): string {
@@ -67,7 +70,9 @@ export function semanticCacheIdentityMatches(value: SemanticModelReceipt, spec: 
     && value.dtype === spec.dtype
     && value.dimension === spec.dimension
     && Array.isArray(value.files)
-    && value.files.length === REQUIRED_MODEL_FILES.length;
+    && value.files.length === REQUIRED_MODEL_FILES.length
+    && (value.metadata_version ?? SEMANTIC_METADATA_VERSION) === SEMANTIC_METADATA_VERSION
+    && (value.chunk_strategy ?? SEMANTIC_CHUNK_STRATEGY) === SEMANTIC_CHUNK_STRATEGY;
 }
 
 /**

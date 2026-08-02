@@ -10,9 +10,10 @@ import { contextQuery } from '../core/query/context';
 import { relatedQuery } from '../core/query/related';
 import { statusQuery } from '../core/query/status';
 import { captureCore } from '../core/capture';
-import { loadManifest } from '../core/manifest';
+import { loadManifest, saveManifest } from '../core/manifest';
 import { getCurrentBranch } from '../core/git';
 import { createOfflineTransformersProvider, inspectModelCache } from '../core/semantic';
+import { defaultSemanticModelSpec } from '../core/semantic/defaults';
 export {
   askQuery,
   askQueryWithSemantic,
@@ -60,6 +61,7 @@ export async function openV12Pmem(
   options: Omit<PmemOpenOptions, 'backend' | 'legacy'> & { backend?: import('../runtime/model').MemoryBackend },
 ): Promise<Pmem> {
   const pmemPath = require('node:path').join(options.root, '.pmem');
+  ensureDefaultSemanticManifest(pmemPath);
   const backend = options.backend ?? new SqliteMemoryBackend(pmemPath);
   if (!(backend instanceof SqliteMemoryBackend)) {
     throw new Error('legacyV12 compatibility requires an explicit legacy adapter for a non-SQLite backend. Pmem.open will not create a hidden SQLite backend.');
@@ -125,7 +127,57 @@ export function createV12RuntimeAdapter(
     findEvent(id) { return events.find(id); },
     expireEvents() { events.expire(); },
     mergeBranchMemory(sourceBranch, targetBranch) { return events.mergeBranch(sourceBranch, targetBranch); },
+    async refreshSemanticIndex(mode) {
+      const manifest = loadManifest(pmemPath) as any;
+      const embedding = manifest?.embedding;
+      if (!embedding?.enabled || embedding.auto_enabled === false) {
+        return { status: 'unavailable' as const, reason: 'semantic disabled' };
+      }
+      const spec = defaultSemanticModelSpec(
+        embedding.cache_path ?? undefined,
+        embedding.source ?? 'modelscope',
+      );
+      const cache = await inspectModelCache(spec);
+      if (!cache.cached) return { status: 'unavailable' as const, reason: `model cache ${cache.integrity}` };
+      try {
+        const provider = await createOfflineTransformersProvider(spec);
+        try {
+          const core = await import('../core/semantic');
+          const result = await core.rebuildSemanticProject(pmemPath, provider, { mode });
+          return { status: result.buildStatus === 'complete' ? 'ready' as const : 'degraded' as const, indexedCards: result.cardsIndexed, indexedChunks: result.chunksTotal, ...(result.buildStatus === 'partial' ? { reason: 'semantic index is partial' } : {}) };
+        } finally {
+          await provider.dispose();
+        }
+      } catch (error: any) {
+        return { status: 'degraded' as const, reason: error?.message ?? String(error) };
+      }
+    },
   };
+}
+
+/**
+ * v1.3.1 makes semantic a default Runtime capability without downloading or
+ * importing a model on open. An explicit `auto_enabled: false` survives clear
+ * and is the only opt-out marker.
+ */
+function ensureDefaultSemanticManifest(pmemPath: string): void {
+  const manifest = loadManifest(pmemPath) as any;
+  if (!manifest?.embedding || manifest.embedding.auto_enabled === false || manifest.embedding.enabled) return;
+  const spec = defaultSemanticModelSpec();
+  manifest.embedding = {
+    enabled: true,
+    auto_enabled: true,
+    provider: 'local',
+    model: spec.model,
+    revision: spec.revision,
+    source: spec.source,
+    dtype: spec.dtype,
+    cache_path: spec.cachePath,
+    dimension: spec.dimension,
+    store: 'sqlite',
+    index: 'flat',
+  };
+  saveManifest(pmemPath, manifest);
 }
 
 export function loadV12RuntimeConfig(

@@ -98,6 +98,8 @@ export interface SemanticStatus {
   chunkCount: number;
   indexContentHash: string | null;
   builtAt: string | null;
+  metadataVersion?: number | null;
+  chunkStrategy?: string | null;
 }
 
 export interface SemanticProjectStatus extends SemanticStatus {

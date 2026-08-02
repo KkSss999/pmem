@@ -1,4 +1,3 @@
-import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'node:readline';
 import type { ManifestV03 } from '../types';
@@ -15,13 +14,18 @@ import {
   SEMANTIC_COMPANION_PACKAGE,
   SEMANTIC_COMPANION_VERSION,
 } from '../core/semantic/transformers';
+import {
+  defaultSemanticCachePath,
+  defaultSemanticModelSpec,
+  DEFAULT_SEMANTIC_SOURCE,
+} from '../core/semantic/defaults';
+export { DEFAULT_SEMANTIC_SOURCE } from '../core/semantic/defaults';
 
 export const SEMANTIC_MODEL = DEFAULT_SEMANTIC_MODEL;
 export const SEMANTIC_MODEL_REVISION = DEFAULT_SEMANTIC_MODEL_REVISION;
 export const SEMANTIC_DTYPE = DEFAULT_SEMANTIC_DTYPE;
 export const SEMANTIC_DIMENSION = DEFAULT_SEMANTIC_DIMENSION;
 export const SEMANTIC_APPROX_DOWNLOAD = '145 MB';
-export const DEFAULT_SEMANTIC_SOURCE = 'modelscope' as const;
 export type SemanticModelSource = 'modelscope' | 'huggingface';
 
 export interface SemanticModelSpec {
@@ -51,6 +55,8 @@ export interface SemanticRuntimeStatus {
   buildStatus?: 'none' | 'complete' | 'partial';
   failedCardCount?: number;
   failedCardIds?: string[];
+  metadataVersion?: number | null;
+  chunkStrategy?: string | null;
 }
 
 export interface SemanticRebuildResult {
@@ -90,18 +96,11 @@ interface SemanticCommandDependencies {
 }
 
 export function defaultCachePath(): string {
-  return path.join(os.homedir(), '.pmem-global', 'models', ...SEMANTIC_MODEL.split('/'), SEMANTIC_MODEL_REVISION);
+  return defaultSemanticCachePath();
 }
 
 function modelSpec(cachePath = defaultCachePath(), source: SemanticModelSource = DEFAULT_SEMANTIC_SOURCE): SemanticModelSpec {
-  return {
-    model: SEMANTIC_MODEL,
-    revision: SEMANTIC_MODEL_REVISION,
-    dtype: SEMANTIC_DTYPE,
-    dimension: SEMANTIC_DIMENSION,
-    source,
-    cachePath,
-  };
+  return defaultSemanticModelSpec(cachePath, source);
 }
 
 async function confirmInTerminal(question: string): Promise<boolean> {
@@ -364,7 +363,7 @@ export async function semanticCommand(
       `Revision: ${manifest.embedding.revision ?? SEMANTIC_MODEL_REVISION}`,
       `Cache: ${cachePath} (${status.cacheIntegrity})`,
       `Index: ${status.indexedCards} cards / ${status.indexedChunks} chunks (${status.available ? 'available' : 'unavailable'}${status.buildStatus ? `, ${status.buildStatus}` : ''})`,
-      `Readiness: ${status.eligibleCards ?? 0} eligible / ${status.excludedCards ?? 0} excluded; pipeline ${status.pipelineVersion ?? 'none'} (${status.indexCompatible ? 'compatible' : 'incompatible'}, ${status.indexFresh ? 'fresh' : 'stale'})`,
+      `Readiness: ${status.eligibleCards ?? 0} eligible / ${status.excludedCards ?? 0} excluded; pipeline ${status.pipelineVersion ?? 'none'} / metadata ${status.metadataVersion ?? 'none'} / chunks ${status.chunkStrategy ?? 'none'} (${status.indexCompatible ? 'compatible' : 'incompatible'}, ${status.indexFresh ? 'fresh' : 'stale'})`,
       `Excluded: ${Object.entries(status.excludedByReason ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
       `Trust exclusions: ${Object.entries(status.excludedByTrustDetail ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
       ...(status.failedCardCount > 0 || status.failedCardIds.length > 0
@@ -397,6 +396,7 @@ export async function semanticCommand(
 
   const result = await deps.operations.clear(pmemPath);
   manifest.embedding.enabled = false;
+  manifest.embedding.auto_enabled = false;
   saveManifest(pmemPath, manifest);
   writeOutput(deps.log, format, { ...result, enabled: false, model_cache_removed: false }, [
     `Semantic index cleared: ${result.removedChunks} chunks removed.`,

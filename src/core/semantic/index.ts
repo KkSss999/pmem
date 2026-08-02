@@ -6,3 +6,4 @@ export * from './lifecycle';
 export * from './transformers';
 export * from './project';
 export * from './cache';
+export * from './defaults';
