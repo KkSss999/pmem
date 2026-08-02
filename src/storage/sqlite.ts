@@ -6,7 +6,7 @@ import {
   ftsTableExists,
   openOwnedDatabase,
 } from '../core/db';
-import type {
+import {
   BackendCapabilities,
   BackendOpenContext,
   BackendQuery,
@@ -24,6 +24,7 @@ import type {
   MemorySearchDocument,
   MemorySearchRequest,
   MemorySearchResult,
+  memoryScopeId,
 } from '../runtime/model';
 
 /** Kept as an exported alias so Runtime never imports better-sqlite3 directly. */
@@ -59,6 +60,66 @@ interface CardRow {
   is_deleted: number;
 }
 
+interface CanonicalRecordRow {
+  id: string;
+  schema_id: string;
+  schema_version: string;
+  data_json: string;
+  scope_json: string;
+  provenance_json: string;
+  state: string | null;
+  record_version: number | null;
+  created_at: string;
+  updated_at: string;
+  is_deleted: number;
+}
+
+/** Storage codec boundary: SQLite rows never define the canonical model. */
+export interface MemoryCodec<StorageObject = CanonicalRecordRow> {
+  encode(record: MemoryRecord): StorageObject;
+  decode(row: StorageObject): MemoryRecord;
+}
+
+export class SqliteMemoryCodec implements MemoryCodec {
+  encode(record: MemoryRecord): CanonicalRecordRow {
+    return {
+      id: record.id,
+      schema_id: record.schema.id,
+      schema_version: record.schema.version,
+      data_json: JSON.stringify(record.data),
+      scope_json: JSON.stringify(record.scope),
+      provenance_json: JSON.stringify(record.provenance),
+      state: record.state ?? 'active',
+      record_version: record.version ?? null,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      is_deleted: record.state === 'forgotten' ? 1 : 0,
+    };
+  }
+
+  decode(row: CanonicalRecordRow): MemoryRecord {
+    return {
+      id: row.id,
+      schema: { id: row.schema_id, version: row.schema_version },
+      data: objectJson(row.data_json),
+      scope: jsonValue(row.scope_json, 'workspace') as MemoryRecord['scope'],
+      provenance: objectJson(row.provenance_json),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      state: row.state ?? 'active',
+      ...(row.record_version === null ? {} : { version: row.record_version }),
+    };
+  }
+}
+
+/** Explicit importer for the legacy cards projection; not used for new writes. */
+export class LegacyCardCodec implements MemoryCodec<CardRow> {
+  encode(_record: MemoryRecord): CardRow {
+    throw new Error('LegacyCardCodec is import-only. Use SqliteMemoryCodec for canonical writes.');
+  }
+  decode(row: CardRow): MemoryRecord { return toRecord(row); }
+}
+
 /**
  * SQLite implementation of the v1.3 backend port.
  *
@@ -70,6 +131,8 @@ export class SqliteMemoryBackend implements MemoryBackend {
   readonly id = 'sqlite';
   readonly capabilities = SQLITE_BACKEND_CAPABILITIES;
   private db: SqliteDatabase | null = null;
+  private readonly codec: MemoryCodec = new SqliteMemoryCodec();
+  private readonly legacyCardCodec = new LegacyCardCodec();
 
   constructor(private readonly pmemPath: string) {}
 
@@ -83,6 +146,20 @@ export class SqliteMemoryBackend implements MemoryBackend {
     createSchema(this.db);
     createFTS5(this.db);
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS memory_records (
+        id TEXT PRIMARY KEY,
+        schema_id TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        scope_json TEXT NOT NULL,
+        provenance_json TEXT NOT NULL,
+        state TEXT,
+        record_version INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_memory_records_schema ON memory_records(schema_id, schema_version, updated_at);
       CREATE TABLE IF NOT EXISTS memory_search (
         record_id TEXT PRIMARY KEY,
         text TEXT NOT NULL DEFAULT '',
@@ -99,16 +176,26 @@ export class SqliteMemoryBackend implements MemoryBackend {
 
   getRecord(id: string): MemoryRecord | null {
     const db = this.requireDb();
+    const canonical = db.prepare(
+      `SELECT id, schema_id, schema_version, data_json, scope_json, provenance_json,
+              state, record_version, created_at, updated_at, is_deleted
+         FROM memory_records WHERE id = ? LIMIT 1`
+    ).get(id) as CanonicalRecordRow | undefined;
+    if (canonical) return canonical.is_deleted === 0 ? this.codec.decode(canonical) : null;
     const row = db.prepare(
       `SELECT id, type, title, status, file_path, summary, schema_version,
               created_at, updated_at, confidence, trust_label, sensitivity, is_deleted
          FROM cards WHERE id = ? LIMIT 1`
     ).get(id) as CardRow | undefined;
-    return row && row.is_deleted === 0 ? toRecord(row) : null;
+    return row && row.is_deleted === 0 ? this.legacyCardCodec.decode(row) : null;
   }
 
   query(query: BackendQuery): MemoryQueryResult {
     const db = this.requireDb();
+    const canonical = queryCanonicalRecords(db, query, this.codec);
+    // Canonical writes own their ID. Legacy cards fill only records not yet
+    // migrated, which keeps v1.2 data readable without making it the schema.
+    const seen = new Set(canonical.records.map(record => record.id));
     const params: unknown[] = [];
     const where: string[] = ['is_deleted = 0'];
     if (query.schema) {
@@ -119,7 +206,7 @@ export class SqliteMemoryBackend implements MemoryBackend {
       // Legacy cards have no scope column; project scope is their canonical
       // compatibility scope. Explicit scope filters therefore remain safe and
       // deterministic without altering the v1.2 table schema.
-      const scopes = Array.isArray(query.scope) ? query.scope : [query.scope];
+      const scopes = (Array.isArray(query.scope) ? query.scope : [query.scope]).map(memoryScopeId);
       if (!scopes.includes('project')) return { records: [], total: 0 };
     }
     if (query.relation?.from_id) {
@@ -158,14 +245,15 @@ export class SqliteMemoryBackend implements MemoryBackend {
                    FROM cards WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT ?`;
     params.push(limit);
     const rows = db.prepare(sql).all(...params) as CardRow[];
-    return { records: rows.map(toRecord), total: rows.length };
+    const legacy = rows.map(row => this.legacyCardCodec.decode(row)).filter(record => !seen.has(record.id));
+    return { records: [...canonical.records, ...legacy].slice(0, normalizeLimit(query.limit)), total: canonical.records.length + legacy.length };
   }
 
   search(request: MemorySearchRequest): MemorySearchResult {
     const db = this.requireDb();
     const text = request.text?.trim() ?? '';
     const limit = normalizeLimit(request.limit);
-    const scopeClause = request.scope && !scopeIncludesProject(request.scope)
+    const scopeClause = request.scope && !scopeIncludesProject((Array.isArray(request.scope) ? request.scope : [request.scope]).map(memoryScopeId))
       ? ' AND 1 = 0'
       : '';
     if (!text) {
@@ -254,6 +342,12 @@ class SqliteBackendTransaction implements BackendTransaction {
 
   getRecord(id: string): MemoryRecord | null {
     this.assertActive();
+    const canonical = this.db.prepare(
+      `SELECT id, schema_id, schema_version, data_json, scope_json, provenance_json,
+              state, record_version, created_at, updated_at, is_deleted
+         FROM memory_records WHERE id = ? LIMIT 1`
+    ).get(id) as CanonicalRecordRow | undefined;
+    if (canonical) return canonical.is_deleted === 0 ? new SqliteMemoryCodec().decode(canonical) : null;
     const row = this.db.prepare(
       `SELECT id, type, title, status, file_path, summary, schema_version,
               created_at, updated_at, confidence, trust_label, sensitivity, is_deleted
@@ -264,29 +358,26 @@ class SqliteBackendTransaction implements BackendTransaction {
 
   putRecord(record: MemoryRecord): void {
     this.assertActive();
-    const data = record.data;
-    const title = stringValue(data.title) ?? record.id;
-    const type = stringValue(data.type) ?? record.schema.id;
-    const filePath = stringValue(data.file_path) ?? `.runtime/${record.id}.json`;
-    const summary = stringValue(data.summary) ?? null;
-    const bodyHash = hash(JSON.stringify(data));
+    const row = new SqliteMemoryCodec().encode(record);
     this.db.prepare(`
-      INSERT OR REPLACE INTO cards
-        (id, type, title, status, file_path, summary, schema_version,
-         created_at, updated_at, file_hash, frontmatter_hash, body_hash,
-         token_count, section_count, is_deleted, is_candidate, confidence,
-         trust_label, sensitivity)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?, ?)
+      INSERT OR REPLACE INTO memory_records
+        (id, schema_id, schema_version, data_json, scope_json, provenance_json,
+         state, record_version, created_at, updated_at, is_deleted)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      record.id, type, title, stringValue(data.status) ?? record.state ?? 'active',
-      filePath, summary, record.schema.version, record.created_at, record.updated_at,
-      bodyHash, bodyHash, bodyHash, record.provenance.confidence ?? null,
-      stringValue(record.provenance.metadata?.trust_label), stringValue(record.provenance.metadata?.sensitivity),
+      row.id, row.schema_id, row.schema_version, row.data_json, row.scope_json,
+      row.provenance_json, row.state, row.record_version, row.created_at,
+      row.updated_at, row.is_deleted,
     );
+    this.db.prepare(
+      `INSERT OR REPLACE INTO memory_search (record_id, text, fields_json, embedding_json)
+       VALUES (?, ?, ?, NULL)`
+    ).run(record.id, searchableRecordText(record), JSON.stringify(record.data));
   }
 
   deleteRecord(id: string, event?: MemoryEvent): void {
     this.assertActive();
+    this.db.prepare('UPDATE memory_records SET is_deleted = 1, state = ?, updated_at = ? WHERE id = ?').run('forgotten', new Date().toISOString(), id);
     this.db.prepare('UPDATE cards SET is_deleted = 1, status = ?, updated_at = ? WHERE id = ?').run('forgotten', new Date().toISOString(), id);
     this.db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(id, id);
     this.db.prepare('DELETE FROM aliases WHERE card_id = ?').run(id);
@@ -302,22 +393,23 @@ class SqliteBackendTransaction implements BackendTransaction {
     this.assertActive();
     const payload = JSON.stringify(event.payload ?? {});
     const numericId = Number(event.id);
-    const branch = event.scope.startsWith('branch:')
-      ? event.scope.slice('branch:'.length)
+    const scope = memoryScopeId(event.scope);
+    const branch = scope.startsWith('branch:')
+      ? scope.slice('branch:'.length)
       : stringValue(event.payload.branch) ?? null;
     if (Number.isInteger(numericId) && numericId > 0) {
       this.db.prepare(
         `INSERT OR REPLACE INTO events
           (id, event_type, memory_id, branch, payload, created_at, success, type, scope, payload_json)
          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
-      ).run(numericId, backendEventType(event.type), event.record_id ?? null, branch, payload, event.created_at, event.type, event.scope, payload);
+      ).run(numericId, backendEventType(event.type), event.record_id ?? null, branch, payload, event.recorded_at, event.type, scope, payload);
       return { ...event, id: String(numericId) };
     }
     const result = this.db.prepare(
       `INSERT INTO events
         (event_type, memory_id, branch, payload, created_at, success, type, scope, payload_json)
        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`
-    ).run(backendEventType(event.type), event.record_id ?? null, branch, payload, event.created_at, event.type, event.scope, payload);
+    ).run(backendEventType(event.type), event.record_id ?? null, branch, payload, event.recorded_at, event.type, scope, payload);
     return { ...event, id: String(result.lastInsertRowid) };
   }
 
@@ -344,29 +436,7 @@ class SqliteBackendTransaction implements BackendTransaction {
 
   query(query: BackendQuery): MemoryQueryResult {
     this.assertActive();
-    // Keep transaction reads on the same connection so uncommitted writes are visible.
-    const params: unknown[] = [];
-    const where: string[] = ['is_deleted = 0'];
-    if (query.schema) { where.push('schema_version = ?'); params.push(query.schema.version); }
-    if (query.scope && !scopeIncludesProject(query.scope)) return { records: [], total: 0 };
-    if (query.relation?.from_id) {
-      where.push('id IN (SELECT to_id FROM edges WHERE from_id = ?' + (query.relation.type ? ' AND type = ?' : '') + ')');
-      params.push(query.relation.from_id);
-      if (query.relation.type) params.push(query.relation.type);
-    }
-    if (query.relation?.to_id) {
-      where.push('id IN (SELECT from_id FROM edges WHERE to_id = ?' + (query.relation.type ? ' AND type = ?' : '') + ')');
-      params.push(query.relation.to_id);
-      if (query.relation.type) params.push(query.relation.type);
-    }
-    const limit = normalizeLimit(query.limit);
-    params.push(limit);
-    const rows = this.db.prepare(
-      `SELECT id, type, title, status, file_path, summary, schema_version,
-              created_at, updated_at, confidence, trust_label, sensitivity, is_deleted
-         FROM cards WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, id ASC LIMIT ?`
-    ).all(...params) as CardRow[];
-    return { records: rows.map(toRecord), total: rows.length };
+    return queryCanonicalRecords(this.db, query, new SqliteMemoryCodec());
   }
 
   commit(): void {
@@ -406,6 +476,79 @@ function toRecord(row: CardRow): MemoryRecord {
     updated_at: row.updated_at ?? row.created_at ?? new Date(0).toISOString(),
     state: row.status === 'forgotten' ? 'forgotten' : 'active',
   };
+}
+
+function queryCanonicalRecords(db: SqliteDatabase, query: BackendQuery, codec: MemoryCodec): MemoryQueryResult {
+  const params: unknown[] = [];
+  const where = ['is_deleted = 0'];
+  if (query.schema) {
+    where.push('schema_id = ? AND schema_version = ?');
+    params.push(query.schema.id, query.schema.version);
+  }
+  if (query.scope) {
+    const scopes = (Array.isArray(query.scope) ? query.scope : [query.scope]).map(memoryScopeId);
+    if (scopes.length === 0) return { records: [], total: 0 };
+    where.push(`json_extract(scope_json, '$.id') IN (${scopes.map(() => '?').join(', ')}) OR scope_json IN (${scopes.map(() => '?').join(', ')})`);
+    params.push(...scopes, ...scopes.map(scope => JSON.stringify(scope)));
+  }
+  const rows = db.prepare(
+    `SELECT id, schema_id, schema_version, data_json, scope_json, provenance_json,
+            state, record_version, created_at, updated_at, is_deleted
+       FROM memory_records WHERE ${where.join(' AND ')} ORDER BY updated_at DESC, id ASC LIMIT ?`
+  ).all(...params, 500) as CanonicalRecordRow[];
+  const filtered = rows.map(row => codec.decode(row))
+    .filter(record => matchesFilters(record, query.filters))
+    .filter(record => matchesRelation(db, record.id, query.relation));
+  return { records: filtered.slice(0, normalizeLimit(query.limit)), total: filtered.length };
+}
+
+function matchesRelation(db: SqliteDatabase, id: string, relation?: BackendQuery['relation']): boolean {
+  if (!relation?.from_id && !relation?.to_id) return true;
+  if (relation.from_id) {
+    const row = db.prepare(`SELECT 1 FROM edges WHERE from_id = ? AND to_id = ?${relation.type ? ' AND type = ?' : ''} LIMIT 1`)
+      .get(relation.from_id, id, ...(relation.type ? [relation.type] : []));
+    if (!row) return false;
+  }
+  if (relation.to_id) {
+    const row = db.prepare(`SELECT 1 FROM edges WHERE from_id = ? AND to_id = ?${relation.type ? ' AND type = ?' : ''} LIMIT 1`)
+      .get(id, relation.to_id, ...(relation.type ? [relation.type] : []));
+    if (!row) return false;
+  }
+  return true;
+}
+
+function searchableRecordText(record: MemoryRecord): string {
+  return [record.id, record.schema.id, ...Object.values(record.data).filter(value => typeof value === 'string') as string[]].join(' ');
+}
+
+function matchesFilters(record: MemoryRecord, filters?: readonly import('../runtime/model').MemoryFilter[]): boolean {
+  return (filters ?? []).every(filter => {
+    const value = filter.field === 'id' ? record.id
+      : filter.field === 'state' ? record.state
+      : filter.field === 'schema.id' ? record.schema.id
+      : filter.field === 'schema.version' ? record.schema.version
+      : record.data[filter.field];
+    const expected: any = filter.value;
+    switch (filter.operator ?? 'eq') {
+      case 'neq': return value !== expected;
+      case 'in': return Array.isArray(expected) && expected.includes(value);
+      case 'contains': return String(value ?? '').includes(String(expected));
+      case 'gt': return (value as any) > expected;
+      case 'gte': return (value as any) >= expected;
+      case 'lt': return (value as any) < expected;
+      case 'lte': return (value as any) <= expected;
+      default: return value === expected;
+    }
+  });
+}
+
+function objectJson(value: string): Record<string, any> {
+  const parsed = jsonValue(value, {});
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, any> : {};
+}
+
+function jsonValue(value: string, fallback: unknown): unknown {
+  try { return JSON.parse(value); } catch { return fallback; }
 }
 
 function normalizeLimit(limit?: number): number {

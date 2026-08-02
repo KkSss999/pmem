@@ -87,7 +87,7 @@ export async function statusCommand(options: { since?: string; format?: string; 
     console.log(`Changed files (${result.changes.length}) [${result.source}]:`);
     for (const c of result.changes) {
       const related = c.related_cards.length > 0
-        ? c.related_cards.map(rc => `${rc.card_id} (${rc.match_type})`).join(', ')
+        ? c.related_cards.map((rc: any) => `${rc.card_id} (${rc.match_type})`).join(', ')
         : '(no related cards)';
       console.log(`  ${c.status} ${c.path} → related: ${related}`);
     }

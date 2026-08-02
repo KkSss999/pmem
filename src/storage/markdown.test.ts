@@ -13,6 +13,7 @@ import {
   recoverMarkdownProjection,
   serializeMarkdownRecord,
 } from './markdown';
+import { importLegacyCardMarkdown } from '../compatibility/v1_2_markdown';
 
 const roots: string[] = [];
 function tempRoot(): string {
@@ -25,7 +26,7 @@ afterEach(() => {
   while (roots.length > 0) fs.rmSync(roots.pop()!, { recursive: true, force: true });
 });
 
-function record(filePath: string, body = '# Decision\n\nLegacy body.'): Record<string, unknown> {
+function record(filePath: string, body = '# Decision\n\nCanonical body.'): any {
   return {
     id: 'decision.projection',
     schema: { id: 'decision', version: '1' },
@@ -38,17 +39,34 @@ function record(filePath: string, body = '# Decision\n\nLegacy body.'): Record<s
 }
 
 describe('Markdown Projection', () => {
-  it('imports and serializes v1.2 Markdown cards bidirectionally', () => {
+  it('serializes and imports schema-driven canonical Markdown without Card fields', () => {
     const root = tempRoot();
     const file = path.join(root, 'decisions', 'decision.projection.md');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, '---\nid: decision.projection\ntype: decision\ncustom: kept\n---\n# Decision\n\nLegacy body.\n');
+    fs.writeFileSync(file, serializeMarkdownRecord({
+      id: 'character.alice',
+      schema: { id: 'character', version: '1' },
+      data: { name: 'Alice', age: 20, body: '# Alice' },
+      scope: { id: 'world-1', kind: 'world' },
+      provenance: { source: 'test' },
+      created_at: '1970-01-01T00:00:00.000Z',
+      updated_at: '1970-01-01T00:00:00.000Z',
+    }));
     const imported = importMarkdownRecord(file);
+    assert.equal(imported.id, 'character.alice');
+    assert.equal(imported.data.name, 'Alice');
+    const rendered = serializeMarkdownRecord(imported, file);
+    assert.match(rendered, /schema:/);
+    assert.match(rendered, /Alice/);
+  });
+
+  it('keeps v1.2 Card parsing in the explicit LegacyCardImporter', () => {
+    const root = tempRoot();
+    const file = path.join(root, 'legacy.md');
+    fs.writeFileSync(file, '---\nid: decision.projection\ntype: decision\ncustom: kept\n---\n# Decision\n');
+    const imported = importLegacyCardMarkdown(file);
     assert.equal(imported.id, 'decision.projection');
     assert.equal(imported.data.custom, 'kept');
-    const rendered = serializeMarkdownRecord(imported, file);
-    assert.match(rendered, /id: decision\.projection/);
-    assert.match(rendered, /Legacy body\./);
   });
 
   it('publishes by temp-file + rename and removes journal/temporary artifacts', () => {
@@ -57,7 +75,7 @@ describe('Markdown Projection', () => {
     const result = exportMarkdownRecord(record(file), file);
     assert.equal(result.state, 'published');
     assert.equal(result.recovered, false);
-    assert.equal(importMarkdownRecord(file).data.body, '# Decision\n\nLegacy body.');
+    assert.equal(importMarkdownRecord(file).data.body, '# Decision\n\nCanonical body.');
     assert.equal(fs.existsSync(result.journalPath), false);
     assert.deepEqual(fs.readdirSync(path.dirname(file)), ['decision.projection.md']);
   });
@@ -66,7 +84,7 @@ describe('Markdown Projection', () => {
     const root = tempRoot();
     const file = path.join(root, 'decision.md');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, '---\nid: decision.projection\ntype: decision\n---\nold\n');
+    fs.writeFileSync(file, serializeMarkdownRecord(record(file, 'old')));
     assert.throws(
       () => exportMarkdownRecord(record(file, 'new'), file, { hooks: { beforePublish: () => { throw new Error('injected publish failure'); } } }),
       (error: unknown) => error instanceof MarkdownProjectionError && error.code === 'IO_ERROR' && /recovered/.test(error.message),
@@ -112,7 +130,7 @@ describe('Markdown Projection', () => {
   it('rebuilds a projection tree and rolls back an injected backend transaction on malformed cards', async () => {
     const root = tempRoot();
     fs.mkdirSync(path.join(root, 'decisions'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'decisions', 'valid.md'), '---\nid: decision.valid\ntype: decision\n---\nvalid\n');
+    fs.writeFileSync(path.join(root, 'decisions', 'valid.md'), serializeMarkdownRecord({ ...record(path.join(root, 'decisions', 'valid.md'), 'valid'), id: 'decision.valid' }));
     fs.writeFileSync(path.join(root, 'decisions', 'broken.md'), '# missing frontmatter\n');
     let rollbackCalled = false;
     let commitCalled = false;

@@ -12,15 +12,23 @@ export interface MemoryJsonObject {
   [key: string]: MemoryJsonValue;
 }
 
-/** A stable namespace/scope identifier owned by the Runtime. */
-export type MemoryScope = string;
-
-/** Structured scope metadata for callers that need to inspect a scope. */
+/**
+ * A scope has a stable identity and optional hierarchy. String scopes remain
+ * accepted at the boundary for v1.2 callers, but new Runtime integrations
+ * should use this structured form rather than encoding hierarchy in strings.
+ */
 export interface MemoryScopeRef {
-  id: MemoryScope;
-  kind?: string;
-  parent?: MemoryScope;
+  id: string;
+  kind: string;
+  parent?: string;
   namespace?: string;
+}
+
+/** A stable scope identifier, with an explicit v1.2 string compatibility path. */
+export type MemoryScope = MemoryScopeRef | string;
+
+export function memoryScopeId(scope: MemoryScope): string {
+  return typeof scope === 'string' ? scope : scope.id;
 }
 
 /** Where a record/event came from and which actor caused it. */
@@ -106,7 +114,12 @@ export interface MemoryEvent {
   id: string;
   type: MemoryEventType;
   scope: MemoryScope;
-  created_at: string;
+  /** When the domain event happened. */
+  occurred_at: string;
+  /** When the backend durably recorded it. */
+  recorded_at: string;
+  /** @deprecated v1.2 compatibility alias for `recorded_at`. */
+  created_at?: string;
   payload: Record<string, unknown>;
   record_id?: string;
   schema?: MemorySchemaRef;

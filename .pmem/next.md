@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-进入用户二次验收；若继续开发，从 Perview/v1.3.0-runtime-first 分支开始
+Review the pushed follow-up commit on PR #47, then approve/merge if the boundary changes meet the second-review requirements.
 
 ## Why
 PR #46 is merged and v1.2.4 issue cleanup is complete. v1.3.0 must now establish the canonical Runtime/model/backend boundary before any broad command migration.

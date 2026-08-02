@@ -11,12 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import * as yaml from 'js-yaml';
-import {
-  recordToV12Card,
-  v12CardToRecord,
-  type CanonicalMemoryRecordCandidate,
-} from '../compatibility/v1_2';
-import type { BackendTransaction, MemoryBackend } from '../runtime/model';
+import type { BackendTransaction, MemoryBackend, MemoryRecord } from '../runtime/model';
 
 export const MARKDOWN_PROJECTION_PROTOCOL = 'v1';
 /** Explicit contract marker: filesystem projection is not cross-backend ACID. */
@@ -79,7 +74,7 @@ export interface MarkdownRebuildOptions {
 export interface MarkdownRebuildResult {
   scanned: number;
   imported: number;
-  records: readonly CanonicalMemoryRecordCandidate[];
+  records: readonly MemoryRecord[];
   errors: readonly MarkdownRebuildError[];
   committed: boolean;
   rolledBack: boolean;
@@ -181,7 +176,29 @@ function updateJournal(journalPath: string, journal: ProjectionJournal, state: P
   return updated;
 }
 
-function parseMarkdown(content: string, filePath: string): CanonicalMemoryRecordCandidate {
+export class MarkdownSerializer {
+  serialize(record: MemoryRecord): string {
+    const data = { ...record.data };
+    const body = typeof data.body === 'string' ? data.body : '';
+    delete data.body;
+    const frontmatter = {
+      pmem: {
+        protocol: MARKDOWN_PROJECTION_PROTOCOL,
+        id: record.id,
+        schema: record.schema,
+        scope: record.scope,
+        provenance: record.provenance,
+        state: record.state,
+        version: record.version,
+        created_at: record.created_at,
+        updated_at: record.updated_at,
+      },
+      data,
+    };
+    return `---\n${yaml.dump(frontmatter, { noRefs: true, lineWidth: 120, sortKeys: false }).trimEnd()}\n---\n${body}`;
+  }
+
+  parse(content: string, filePath: string): MemoryRecord {
   const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
   if (!match) {
     throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown projection is missing YAML frontmatter delimiters.', filePath);
@@ -195,15 +212,31 @@ function parseMarkdown(content: string, filePath: string): CanonicalMemoryRecord
   if (!isRecord(frontmatter)) {
     throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown frontmatter must be a YAML object.', filePath);
   }
-  try {
-    return v12CardToRecord({ frontmatter, body: match[2], filePath });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new MarkdownProjectionError('INVALID_MARKDOWN', detail, filePath);
+    const envelope = frontmatter.pmem;
+    const data = frontmatter.data;
+    if (!isRecord(envelope) || envelope.protocol !== MARKDOWN_PROJECTION_PROTOCOL ||
+        typeof envelope.id !== 'string' || !isRecord(envelope.schema) ||
+        typeof envelope.schema.id !== 'string' || typeof envelope.schema.version !== 'string' ||
+        !isRecord(data) || typeof envelope.created_at !== 'string' || typeof envelope.updated_at !== 'string') {
+      throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown projection is not a canonical v1.3 record. Use LegacyCardImporter for v1.2 cards.', filePath);
+    }
+    return {
+      id: envelope.id,
+      schema: { id: envelope.schema.id, version: envelope.schema.version },
+      data: { ...data, ...(match[2] ? { body: match[2] } : {}) },
+      scope: typeof envelope.scope === 'string' || isRecord(envelope.scope) ? envelope.scope as MemoryRecord['scope'] : 'workspace',
+      provenance: isRecord(envelope.provenance) ? envelope.provenance : { source: 'markdown', source_id: filePath },
+      created_at: envelope.created_at,
+      updated_at: envelope.updated_at,
+      ...(typeof envelope.state === 'string' ? { state: envelope.state } : {}),
+      ...(typeof envelope.version === 'number' ? { version: envelope.version } : {}),
+    };
   }
 }
 
-export function importMarkdownRecord(filePath: string): CanonicalMemoryRecordCandidate {
+const DEFAULT_MARKDOWN_SERIALIZER = new MarkdownSerializer();
+
+export function importMarkdownRecord(filePath: string): MemoryRecord {
   requirePath(filePath, 'filePath');
   let content: string;
   try {
@@ -211,7 +244,7 @@ export function importMarkdownRecord(filePath: string): CanonicalMemoryRecordCan
   } catch (error: any) {
     throw new MarkdownProjectionError('IO_ERROR', `Cannot read Markdown projection: ${error?.message ?? String(error)}`, filePath);
   }
-  return parseMarkdown(content, filePath);
+  return DEFAULT_MARKDOWN_SERIALIZER.parse(content, filePath);
 }
 
 function markdownFiles(directory: string): string[] {
@@ -238,7 +271,7 @@ export async function rebuildMarkdownProjection(
 ): Promise<MarkdownRebuildResult> {
   requirePath(directory, 'directory');
   const files = markdownFiles(path.resolve(directory));
-  const records: CanonicalMemoryRecordCandidate[] = [];
+  const records: MemoryRecord[] = [];
   const errors: MarkdownRebuildError[] = [];
   for (const filePath of files) {
     try {
@@ -281,16 +314,8 @@ export async function rebuildMarkdownProjection(
   }
 }
 
-export function serializeMarkdownRecord(record: unknown, filePathOverride?: string): string {
-  let card;
-  try {
-    card = recordToV12Card(record, filePathOverride);
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new MarkdownProjectionError('INVALID_MARKDOWN', detail, filePathOverride);
-  }
-  const frontmatter = yaml.dump(card.frontmatter, { noRefs: true, lineWidth: 120, sortKeys: false });
-  return `---\n${frontmatter.trimEnd()}\n---\n${card.body}`;
+export function serializeMarkdownRecord(record: MemoryRecord, _filePathOverride?: string): string {
+  return DEFAULT_MARKDOWN_SERIALIZER.serialize(record);
 }
 
 /**
@@ -300,7 +325,7 @@ export function serializeMarkdownRecord(record: unknown, filePathOverride?: stri
  * fails, making the unresolved state visible to health checks.
  */
 export function exportMarkdownRecord(
-  record: unknown,
+  record: MemoryRecord,
   targetPath: string,
   options: MarkdownProjectionOptions = {},
 ): ProjectionWriteResult {

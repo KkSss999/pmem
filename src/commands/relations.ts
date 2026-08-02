@@ -73,8 +73,8 @@ export async function relationsQuery(
     const incomingRows: RelationsEdgeIn[] = [];
     let syntheticEdgeId = 1;
 
-    for (const [type, items] of Object.entries(related.edges_by_type)) {
-      for (const item of items) {
+    for (const [type, items] of Object.entries(related.edges_by_type) as Array<[string, any[]]>) {
+      for (const item of items as any[]) {
         const edgeId = syntheticEdgeId++;
         if (item.direction === 'out') {
           outgoingRows.push({

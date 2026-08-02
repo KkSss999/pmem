@@ -42,6 +42,29 @@ test('SQLite backend opens, writes, reads, structured-queries, and searches', ()
   }
 });
 
+test('SQLite codec persists arbitrary schema data without creating a Card row', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    tx.putRecord({
+      id: 'character.alice',
+      schema: { id: 'character', version: '1' },
+      data: { name: 'Alice', age: 20 },
+      scope: { id: 'world-1', kind: 'world' },
+      provenance: { source: 'test' },
+      created_at: '2026-08-02T00:00:00.000Z',
+      updated_at: '2026-08-02T00:00:00.000Z',
+    });
+    tx.commit();
+    assert.deepEqual(backend.getRecord('character.alice')?.data, { name: 'Alice', age: 20 });
+    assert.deepEqual(backend.query({ schema: { id: 'character', version: '1' }, filters: [{ field: 'age', operator: 'gte', value: 18 }] }).records.map(record => record.id), ['character.alice']);
+    assert.equal((backend.database!.prepare('SELECT COUNT(*) AS count FROM cards WHERE id = ?').get('character.alice') as { count: number }).count, 0);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('SQLite transaction rollback removes records and all atomic side effects', () => {
   const { root, backend } = makeBackend();
   try {
@@ -53,7 +76,8 @@ test('SQLite transaction rollback removes records and all atomic side effects', 
       id: 'rollback-event',
       type: 'commit',
       scope: 'project',
-      created_at: new Date().toISOString(),
+      occurred_at: new Date().toISOString(),
+      recorded_at: new Date().toISOString(),
       payload: { record_id: 'memory.rollback' },
       record_id: 'memory.rollback',
     };
@@ -82,7 +106,8 @@ test('SQLite transaction commit persists record, event, relation, and search doc
       id: 'commit-event',
       type: 'commit',
       scope: 'project',
-      created_at: new Date().toISOString(),
+      occurred_at: new Date().toISOString(),
+      recorded_at: new Date().toISOString(),
       payload: { ok: true },
       record_id: 'memory.commit',
     });

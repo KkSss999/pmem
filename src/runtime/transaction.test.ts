@@ -90,6 +90,20 @@ test('Pmem routes observe through an injected backend transaction and lifecycle'
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('Pmem does not create a hidden SQLite backend for a non-SQLite backend', async () => {
+  const root = makeProject();
+  const backend = new RecordingBackend();
+  const memory = await Pmem.open({ root, backend });
+  try {
+    await memory.observe({ summary: 'portable event' });
+    await assert.rejects(() => memory.recall(), /LegacyCompatibilityRequired/);
+    assert.equal(backend.beginCount, 1);
+  } finally {
+    await memory.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('Pmem rolls back an injected backend transaction when append fails', async () => {
   const root = makeProject();
   const backend = new RecordingBackend();

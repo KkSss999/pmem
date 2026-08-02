@@ -25,6 +25,7 @@ export {
   rebuildMarkdownProjection,
   recoverMarkdownProjection,
   inspectMarkdownProjectionJournal,
+  MarkdownSerializer,
 } from '../storage';
 export {
   CompatibilityError,
@@ -33,7 +34,10 @@ export {
   recordToV12Card,
   v12ManifestToSchema,
   v12ManifestToLegacySchema,
+  LegacyCardImporter,
+  importLegacyCardMarkdown,
 } from '../compatibility';
+export { openV12Pmem } from '../compatibility/v1_2_runtime';
 export type {
   MemoryBackend,
   MemoryRecord,

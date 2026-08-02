@@ -1,32 +1,9 @@
-import * as path from 'path';
-import { loadManifest } from '../compatibility/v1_2_runtime';
 import type { PartialRuntimeConfig, RuntimeConfig, RuntimePreset } from './types';
 
-interface LegacyManifestShape {
-  project?: { domain?: unknown };
-  memory?: Record<string, any>;
-}
-
 export const PRESET_DEFAULTS: Record<string, RuntimeConfig> = {
-  software: {
-    preset: 'software',
-    defaultScope: 'project',
-    branchAware: true,
-    working: { ttl: '12h' },
-    episodic: { capture: 'automatic' },
-    durable: { format: 'markdown', confirmation: 'required' },
-  },
-  research: {
-    preset: 'research',
-    defaultScope: 'project',
-    branchAware: false,
-    working: { ttl: '24h' },
-    episodic: { capture: 'manual' },
-    durable: { format: 'markdown', confirmation: 'required' },
-  },
-  novel: {
-    preset: 'novel',
-    defaultScope: 'project',
+  default: {
+    preset: 'default',
+    defaultScope: 'workspace',
     branchAware: false,
     working: { ttl: '24h' },
     episodic: { capture: 'manual' },
@@ -34,36 +11,20 @@ export const PRESET_DEFAULTS: Record<string, RuntimeConfig> = {
   },
 };
 
-export function loadRuntimeConfig(root: string, preset?: RuntimePreset, overrides?: PartialRuntimeConfig): RuntimeConfig {
-  const pmemPath = path.join(root, '.pmem');
-  const manifest = loadManifest(pmemPath);
-  const manifestPreset = inferPreset(manifest);
-  const selectedPreset = preset ?? manifestPreset ?? 'software';
-  const defaults = PRESET_DEFAULTS[selectedPreset] ?? { ...PRESET_DEFAULTS.software, preset: selectedPreset };
-  const manifestMemory = extractManifestMemory(manifest);
-  return deepMerge(deepMerge(defaults, manifestMemory), overrides ?? {}) as RuntimeConfig;
-}
-
-function inferPreset(manifest: LegacyManifestShape | null): RuntimePreset | undefined {
-  const domain = manifest?.project?.domain;
-  if (typeof domain === 'string' && domain.trim()) return domain.trim() as RuntimePreset;
-  return undefined;
-}
-
-function extractManifestMemory(manifest: LegacyManifestShape | null): PartialRuntimeConfig {
-  const memory = manifest?.memory;
-  const result: PartialRuntimeConfig = {};
-  if (memory?.default_scope) result.defaultScope = memory.default_scope;
-  if (typeof memory?.branch_aware === 'boolean') result.branchAware = memory.branch_aware;
-  if (memory?.working?.ttl) result.working = { ttl: memory.working.ttl };
-  if (memory?.episodic?.capture) result.episodic = { capture: memory.episodic.capture };
-  if (memory?.durable) {
-    result.durable = {
-      ...(memory.durable.format ? { format: memory.durable.format } : {}),
-      ...(memory.durable.confirmation ? { confirmation: memory.durable.confirmation } : {}),
-    } as Partial<RuntimeConfig['durable']>;
-  }
-  return result;
+export function loadRuntimeConfig(preset?: RuntimePreset, overrides?: PartialRuntimeConfig): RuntimeConfig;
+/** @deprecated Root is ignored; retained only as a source-compatible call shape. */
+export function loadRuntimeConfig(_root: string, preset?: RuntimePreset, overrides?: PartialRuntimeConfig): RuntimeConfig;
+export function loadRuntimeConfig(
+  presetOrRoot?: RuntimePreset,
+  overridesOrPreset?: PartialRuntimeConfig | RuntimePreset,
+  legacyOverrides?: PartialRuntimeConfig,
+): RuntimeConfig {
+  const calledWithRoot = typeof overridesOrPreset === 'string';
+  const preset = calledWithRoot ? overridesOrPreset : presetOrRoot;
+  const overrides = calledWithRoot ? legacyOverrides : overridesOrPreset as PartialRuntimeConfig | undefined;
+  const selectedPreset = preset ?? 'default';
+  const defaults = PRESET_DEFAULTS[selectedPreset] ?? { ...PRESET_DEFAULTS.default, preset: selectedPreset };
+  return deepMerge(defaults, overrides ?? {}) as RuntimeConfig;
 }
 
 function deepMerge<T>(base: T, override: PartialRuntimeConfig): T {

@@ -13,5 +13,5 @@ test('v1.3 Runtime implementation keeps legacy imports behind compatibility boun
     assert.doesNotMatch(source, /from ['"]\.\.\/commands\//, `${file} imports commands directly`);
     assert.doesNotMatch(source, /from ['"]\.\.\/types['"]/, `${file} imports legacy domain types directly`);
   }
-  assert.match(fs.readFileSync(path.join(__dirname, 'index.ts'), 'utf8'), /compatibility\/v1_2_runtime/);
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, 'index.ts'), 'utf8'), /compatibility\/|\.\.\/core\//);
 });

@@ -116,7 +116,7 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
         const stale = m.stale ? ' ⚠stale' : '';
         let annotation = '';
         if (options.explain && m.reasons && m.reasons.length > 0) {
-          const parts = m.reasons.map(r => `${r.channel}:${r.detail}`);
+          const parts = m.reasons.map((r: any) => `${r.channel}:${r.detail}`);
           annotation = ` [${parts.join('; ')}]`;
         } else {
           const via = m.match_type === 'graph_expansion' && m.from_card
