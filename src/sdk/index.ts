@@ -1,5 +1,57 @@
 export { Pmem } from '../runtime';
 export {
+  CONTEXT_PACK_SCHEMA_VERSION,
+  DEFAULT_CONTEXT_PACK_BUDGET,
+  estimateContextTokens,
+  estimateTokens,
+  packContext,
+} from '../context-pack';
+export type {
+  ContextPack,
+  ContextPackBudget,
+  ContextPackDiagnostics,
+  ContextPackEvidence,
+  ContextPackEvidenceInput,
+  ContextPackInput,
+  ContextPackOmission,
+  ContextPackRecord,
+  ContextPackRecordInput,
+  ContextPackSource,
+  PackContextOptions,
+} from '../context-pack';
+export {
+  SEMANTIC_EVIDENCE_VERSION,
+  assertSemanticEvidence,
+  createSemanticEvidence,
+  isSemanticEvidence,
+  semanticEvidenceIssues,
+  sortSemanticEvidence,
+  validateSemanticEvidence,
+  SEMANTIC_QUALITY_VERSION,
+  aggregateQuality,
+  evaluateQuality,
+  evaluateQuery,
+  ndcgAtK,
+  precisionAtK,
+  recallAtK,
+  reciprocalRank,
+} from '../core/semantic';
+export type {
+  SemanticEvidence,
+  SemanticEvidenceAuthority,
+  SemanticEvidenceFallback,
+  SemanticEvidenceInput,
+  SemanticEvidenceParentRecord,
+  SemanticEvidenceProvenance,
+  SemanticEvidenceValidation,
+  QualityAggregate,
+  QualityEvaluationOptions,
+  QualityQueryCase,
+  QueryQualityMetrics,
+  QueryQualityResult,
+  SemanticQualityReport,
+} from '../core/semantic';
+export {
   createDefaultRetrieverRegistry,
   createQueryPlan,
   RetrieverRegistry,

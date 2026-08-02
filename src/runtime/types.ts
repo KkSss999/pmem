@@ -1,4 +1,5 @@
 import * as path from 'path';
+import type { ContextPack, PackContextOptions } from '../context-pack';
 import type { MemoryBackend, MemoryEvent, MemoryEventType, MemorySchemaRegistry } from './model';
 import type { QueryExecutionResult, QueryPlan } from '../query';
 
@@ -192,6 +193,7 @@ export interface PmemInstance {
   ask(query: string, opts?: AskOptions): Promise<AskResultV03>;
   query(query: string, limit?: number): Promise<QueryExecutionResult>;
   executeQueryPlan(plan: QueryPlan): Promise<QueryExecutionResult>;
+  packContext(query: string, options?: PackContextOptions): Promise<ContextPack>;
   recall(opts?: RecallOptions): Promise<RecallQueryResult>;
   context(task: string, budget?: number): Promise<ContextQueryResult>;
   related(id: string, opts?: RelatedOptions): Promise<RelatedResult>;

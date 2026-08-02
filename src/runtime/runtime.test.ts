@@ -160,6 +160,35 @@ test('Pmem.query executes a backend-neutral plan through the RetrieverRegistry',
   }
 });
 
+test('Pmem.packContext converts ranked Runtime records into a deterministic ContextPack', async () => {
+  const root = makeProject();
+  const memory = await openV12Pmem({ root });
+  try {
+    const now = new Date().toISOString();
+    const tx = await memory.backend.beginTransaction();
+    await tx.putRecord({
+      id: 'memory.context-pack',
+      schema: { id: 'memory', version: '1.0.0' },
+      data: { title: 'Payment timeout', content: 'Retry after timeout with bounded backoff.', type: 'decision' },
+      scope: 'project',
+      provenance: { source: 'runtime-test', source_id: 'decisions/payment-timeout.md' },
+      created_at: now,
+      updated_at: now,
+    });
+    await tx.commit();
+
+    const pack = await memory.packContext('memory.context-pack', { budget: 200 });
+    assert.equal(pack.schemaVersion, '1');
+    assert.equal(pack.query, 'memory.context-pack');
+    assert.equal(pack.records[0]?.id, 'memory.context-pack');
+    assert.equal(pack.records[0]?.source?.path, 'decisions/payment-timeout.md');
+    assert.match(pack.text, /Retry after timeout/);
+    assert.ok(pack.provenance.executed);
+  } finally {
+    await memory.close();
+  }
+});
+
 test('Pmem.forget rejects an unknown card or event without writing a tombstone', async () => {
   const root = makeProject();
   const memory = await openV12Pmem({ root });

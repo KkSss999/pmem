@@ -7,3 +7,5 @@ export * from './transformers';
 export * from './project';
 export * from './cache';
 export * from './defaults';
+export * from './quality';
+export * from './evidence';
