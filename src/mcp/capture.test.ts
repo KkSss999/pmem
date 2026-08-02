@@ -10,6 +10,7 @@ import { getCurrentBranch } from '../core/git';
 import { validateCaptureInputs } from './security';
 import { handleMcpTool, listMcpTools } from './server';
 import { Pmem } from '../runtime';
+import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import { MCP_SCHEMA_VERSION } from '../version';
 
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-capture-test-${Date.now()}`);
@@ -240,7 +241,7 @@ source_files: [src/index.ts]
     let runtime: Pmem;
 
     before(async () => {
-      runtime = await Pmem.open({ root: testDir });
+      runtime = await openV12Pmem({ root: testDir });
     });
 
     after(async () => {

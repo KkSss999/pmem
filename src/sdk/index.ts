@@ -1,4 +1,56 @@
 export { Pmem } from '../runtime';
+export {
+  createDefaultRetrieverRegistry,
+  createQueryPlan,
+  RetrieverRegistry,
+} from '../query';
+export type {
+  QueryExecutionResult,
+  QueryPlan,
+  QueryStage,
+  Retriever,
+  RetrieverContext,
+  RetrieverHit,
+  RetrieverId,
+  RetrieverResult,
+} from '../query';
+export { SchemaRegistry, BUILTIN_SCHEMAS, MEMORY_SCHEMA, EVENT_SCHEMA } from '../schema';
+export {
+  EMPTY_SCHEMA_REGISTRY,
+  SQLITE_BACKEND_CAPABILITIES,
+  SqliteMemoryBackend,
+  importMarkdownRecord,
+  serializeMarkdownRecord,
+  exportMarkdownRecord,
+  rebuildMarkdownProjection,
+  recoverMarkdownProjection,
+  inspectMarkdownProjectionJournal,
+  MarkdownSerializer,
+} from '../storage';
+export {
+  CompatibilityError,
+  v12OpenOptionsToCanonical,
+  v12CardToRecord,
+  recordToV12Card,
+  v12ManifestToSchema,
+  v12ManifestToLegacySchema,
+  LegacyCardImporter,
+  importLegacyCardMarkdown,
+} from '../compatibility';
+export { openV12Pmem } from '../compatibility/v1_2_runtime';
+export type {
+  MemoryBackend,
+  MemoryRecord,
+  MemoryRelation,
+  MemorySchema,
+  MemorySchemaRef,
+  MemoryEvent as CanonicalMemoryEvent,
+  BackendCapabilities,
+  BackendQuery,
+  MemoryQueryResult,
+  MemorySearchRequest,
+  MemorySearchResult,
+} from '../runtime/model';
 export type {
   // Query option types
   AskOptions,

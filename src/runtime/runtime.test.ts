@@ -12,6 +12,7 @@ import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
 import { Pmem } from './index';
+import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import { createSchema, upsertCard } from '../core/db';
 import { rebuildSemanticIndex } from '../core/semantic';
 import type { CardRow } from '../types';
@@ -27,11 +28,11 @@ function makeProject(): string {
   return root;
 }
 
-test('loadRuntimeConfig merges software defaults and overrides', () => {
+test('loadRuntimeConfig keeps Runtime defaults domain-neutral and applies overrides', () => {
   const root = makeProject();
   const config = loadRuntimeConfig(root, 'software', { working: { ttl: '1h' }, durable: { confirmation: 'optional' } });
   assert.equal(config.preset, 'software');
-  assert.equal(config.branchAware, true);
+  assert.equal(config.branchAware, false);
   assert.equal(config.working.ttl, '1h');
   assert.equal(config.durable.format, 'markdown');
   assert.equal(config.durable.confirmation, 'optional');
@@ -43,7 +44,7 @@ test('ScopeManager resolves explicit, session, and project scopes', () => {
   const scope = new ScopeManager(root, config);
   assert.equal(scope.resolve('', { metadata: { scope: 'private:agent-a' } }), 'private:agent-a');
   assert.equal(scope.resolve('', { metadata: { session_id: 's1' } }), 'session:s1');
-  assert.equal(scope.resolve('src/index.ts', {}), 'project');
+  assert.equal(scope.resolve('src/index.ts', {}), 'workspace');
   assert.equal(scope.isVisible('private:agent-a', 'agent-b'), false);
 });
 
@@ -76,7 +77,7 @@ test('EventStore appends, replays, and returns working memory', () => {
 
 test('Pmem.open exposes runtime query and event APIs', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   try {
     const recall = await memory.recall({ noTraces: true });
     assert.equal(recall.project, 'runtime-test');
@@ -98,9 +99,35 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
   }
 });
 
+test('Pmem.query executes a backend-neutral plan through the RetrieverRegistry', async () => {
+  const root = makeProject();
+  const memory = await openV12Pmem({ root });
+  try {
+    const now = new Date().toISOString();
+    const tx = await memory.backend.beginTransaction();
+    await tx.putRecord({
+      id: 'memory.runtime-query',
+      schema: { id: 'memory', version: '1.0.0' },
+      data: { title: 'Runtime query record' },
+      scope: 'project',
+      provenance: { source: 'runtime-test' },
+      created_at: now,
+      updated_at: now,
+    });
+    await tx.commit();
+
+    const result = await memory.query('memory.runtime-query', 1);
+    assert.equal(result.hits[0]?.id, 'memory.runtime-query');
+    assert.ok(result.executed.includes('exact'));
+    assert.ok(result.executed.includes('packing'));
+  } finally {
+    await memory.close();
+  }
+});
+
 test('Pmem.forget rejects an unknown card or event without writing a tombstone', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   const dbPath = path.join(root, '.pmem', 'pmem.db');
   try {
     const countEvents = (): number => {
@@ -131,13 +158,13 @@ test('Pmem keeps status, capture, recall, and context rooted after process.chdir
   execSync('git checkout -q -b runtime-root-x', { cwd: root });
   writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 1;\n');
 
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   const previous = process.cwd();
   process.chdir(elsewhere);
   try {
     const status = await memory.status();
     assert.equal(status.source, 'git');
-    assert.ok(status.changes.some(change => change.path === 'src/index.ts'));
+    assert.ok(status.changes.some((change: any) => change.path === 'src/index.ts'));
 
     const capture = await memory.capture('cross cwd runtime capture', { force: true });
     assert.equal(capture.success, true, capture.message);
@@ -146,10 +173,10 @@ test('Pmem keeps status, capture, recall, and context rooted after process.chdir
 
     const recall = await memory.recall({ recent: 1 });
     assert.match(recall.recent_traces?.[0]?.file_path ?? '', /^\.pmem\/traces\//);
-    assert.ok(recall.recent_events?.some(event => event.branch === 'runtime-root-x'));
+    assert.ok(recall.recent_events?.some((event: any) => event.branch === 'runtime-root-x'));
 
     const context = await memory.context('cross cwd branch event');
-    assert.ok(context.changed_files.some(change => change.path === 'src/index.ts'));
+    assert.ok(context.changed_files.some((change: any) => change.path === 'src/index.ts'));
     assert.match((context.recent_session_memory ?? []).join('\n'), /runtime-root-x/);
   } finally {
     process.chdir(previous);
@@ -191,14 +218,14 @@ type: trace
 `);
   fs.utimesSync(tracePath, (boundary + 500) / 1000, (boundary + 500) / 1000);
 
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   try {
     const first = await memory.context('changed files');
     const second = await memory.context('changed files again');
     for (const result of [first, second]) {
-      const paths = result.changed_files.map(change => change.path);
+      const paths = result.changed_files.map((change: any) => change.path);
       assert.equal(new Set(paths).size, paths.length, JSON.stringify(paths));
-      assert.equal(paths.filter(filePath => filePath === '.pmem/traces/trace.context-change.md').length, 1);
+      assert.equal(paths.filter((filePath: any) => filePath === '.pmem/traces/trace.context-change.md').length, 1);
     }
   } finally {
     await memory.close();
@@ -208,8 +235,8 @@ type: trace
 
 test('two same-root Pmem instances keep independent DB handles after one closes', async () => {
   const root = makeProject();
-  const first = await Pmem.open({ root });
-  const second = await Pmem.open({ root });
+  const first = await openV12Pmem({ root });
+  const second = await openV12Pmem({ root });
   try {
     await first.close();
     const receipt = await second.observe({ summary: 'still usable after first close' });
@@ -259,14 +286,14 @@ test('Pmem ask and context reject an unverified semantic cache and degrade deter
   }, { mode: 'full' });
   db.close();
 
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   try {
     const ask = await memory.ask('Cache Guard');
     assert.equal(ask.matched[0]?.id, row.id);
     assert.match(ask.warnings?.[0] ?? '', /cache is missing/i);
     const context = await memory.context('Cache Guard');
-    assert.ok(context.relevant_memory.some(card => card.id === row.id));
-    assert.ok(context.warnings.some(warning => /cache is missing/i.test(warning)));
+    assert.ok(context.relevant_memory.some((card: any) => card.id === row.id));
+    assert.ok(context.warnings.some((warning: any) => /cache is missing/i.test(warning)));
   } finally {
     await memory.close();
   }

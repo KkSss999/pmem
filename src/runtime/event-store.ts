@@ -1,7 +1,8 @@
-import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
-import type { MemoryEvent, MemoryEventType, WorkingMemory } from './types';
+import { memoryScopeId, type MemoryEvent, type MemoryEventType } from './model';
+import type { WorkingMemory } from './types';
 import { parseDurationMs } from './policy';
+import type { SqliteDatabase } from '../storage/sqlite';
 
 interface EventRow {
   id: string;
@@ -18,18 +19,20 @@ interface EventRow {
 
 export class EventStore {
   constructor(
-    private readonly db: Database.Database,
+    private readonly db: SqliteDatabase,
     private readonly workingTtl = '12h',
   ) {
     this.createSchema();
   }
 
-  append(event: Omit<MemoryEvent, 'id' | 'created_at'> & Partial<Pick<MemoryEvent, 'id' | 'created_at'>>): MemoryEvent {
-    const createdAt = event.created_at ?? new Date().toISOString();
+  append(event: Omit<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'> & Partial<Pick<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'>>): MemoryEvent {
+    const createdAt = event.recorded_at ?? event.created_at ?? new Date().toISOString();
     const complete: MemoryEvent = {
       id: event.id ?? randomUUID(),
       type: event.type,
       scope: event.scope,
+      occurred_at: event.occurred_at ?? createdAt,
+      recorded_at: createdAt,
       created_at: createdAt,
       payload: event.payload,
     };
@@ -39,10 +42,10 @@ export class EventStore {
     const result = canUseProvidedId
       ? this.db.prepare(
           'INSERT OR REPLACE INTO events (id, event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(numericId, runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, complete.created_at, null, 1, complete.type, complete.scope, payloadJson, this.expiryFor(complete))
+        ).run(numericId, runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, createdAt, null, 1, complete.type, memoryScopeId(complete.scope), payloadJson, this.expiryFor(complete))
       : this.db.prepare(
           'INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, complete.created_at, null, 1, complete.type, complete.scope, payloadJson, this.expiryFor(complete));
+        ).run(runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, createdAt, null, 1, complete.type, memoryScopeId(complete.scope), payloadJson, this.expiryFor(complete));
     return { ...complete, id: String(canUseProvidedId ? numericId : result.lastInsertRowid) };
   }
 
@@ -124,7 +127,7 @@ export class EventStore {
     if (event.type !== 'observe') return null;
     const ttlMs = parseDurationMs(this.workingTtl);
     if (!ttlMs) return null;
-    return new Date(Date.parse(event.created_at) + ttlMs).toISOString();
+    return new Date(Date.parse(event.recorded_at) + ttlMs).toISOString();
   }
 }
 
@@ -135,6 +138,8 @@ function toEvent(row: EventRow): MemoryEvent {
     id: String(row.id),
     type,
     scope: row.scope ?? scopeFromBranch(row.branch),
+    occurred_at: row.created_at,
+    recorded_at: row.created_at,
     created_at: row.created_at,
     payload,
   };
@@ -170,8 +175,9 @@ function payloadMemoryId(payload: Record<string, unknown>): string | null {
   return typeof target === 'string' ? target : null;
 }
 
-function branchFromScope(scope: string): string | null {
-  return scope.startsWith('branch:') ? scope.slice('branch:'.length) : null;
+function branchFromScope(scope: MemoryEvent['scope']): string | null {
+  const id = memoryScopeId(scope);
+  return id.startsWith('branch:') ? id.slice('branch:'.length) : null;
 }
 
 function scopeFromBranch(branch?: string | null): string {

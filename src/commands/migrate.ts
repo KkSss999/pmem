@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { loadManifest, saveManifest, getDefaultManifest, getDefaultManifestV03 } from '../core/manifest';
 import { ensureDir, copyFile, readFile, writeFile, atomicWrite, listFiles } from '../core/fs';
-import { openDatabase, createSchema, createFTS5, setSchemaVersion, closeDatabase, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath } from '../core/db';
+import { openMaintenanceDatabase, createSchema, createFTS5, setSchemaVersion, closeDatabase, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath } from '../runtime/maintenance';
 import { computeCardHashes, tokenCount, sectionCount } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import { Manifest, ManifestV03, MigrationRecord, CardRow, CardFrontmatter } from '../types';
@@ -132,7 +132,7 @@ function executeMigration(pmemPath: string, manifest: Manifest, from: string, to
 // === v0.2 → v0.3 migration ===
 
 function migrate02to03(pmemPath: string, manifest: Manifest): void {
-  const db = openDatabase(pmemPath);
+  const db = openMaintenanceDatabase(pmemPath);
   createSchema(db);
   createFTS5(db);
   setSchemaVersion(db, '0.3');
@@ -183,7 +183,7 @@ function migrate02to03(pmemPath: string, manifest: Manifest): void {
   console.log('  Legacy JSON indexes retained at .pmem/indexes/');
 }
 
-function populateSqliteFromCards(pmemPath: string, db: ReturnType<typeof openDatabase>): void {
+function populateSqliteFromCards(pmemPath: string, db: import('../runtime/maintenance').MaintenanceDatabase): void {
   const cardFiles = listFiles(pmemPath, /\.md$/);
   const now = new Date().toISOString();
   let cardCount = 0;

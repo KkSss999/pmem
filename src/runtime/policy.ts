@@ -1,5 +1,15 @@
-import type { MemoryCard } from '../types';
 import type { CapabilitySet, MemoryCapability, MemoryProposal, RuntimeConfig } from './types';
+
+interface LegacyPolicyCard {
+  filePath?: string;
+  body: string;
+  frontmatter: {
+    id: string;
+    type: string;
+    updated?: string;
+    freshness?: { ttl?: string };
+  };
+}
 
 export interface AgentQuota {
   maxObservations: number;
@@ -92,12 +102,12 @@ export class PolicyEngine {
     }
   }
 
-  shouldDistill(card: MemoryCard, traceCount: number): boolean {
+  shouldDistill(card: LegacyPolicyCard, traceCount: number): boolean {
     if (card.frontmatter.type !== 'trace') return false;
     return traceCount >= 20;
   }
 
-  isExpired(card: MemoryCard): boolean {
+  isExpired(card: LegacyPolicyCard): boolean {
     const ttl = card.frontmatter.freshness?.ttl ?? this.config.working.ttl;
     const updated = card.frontmatter.updated;
     if (!updated) return false;
@@ -108,7 +118,7 @@ export class PolicyEngine {
     return Date.now() - updatedMs > ttlMs;
   }
 
-  isDuplicate(proposal: MemoryProposal, existing: MemoryCard[]): boolean {
+  isDuplicate(proposal: MemoryProposal, existing: LegacyPolicyCard[]): boolean {
     const normalized = normalize(proposal.summary ?? proposal.content ?? '');
     if (!normalized) return false;
     return existing.some(card => normalize(card.frontmatter.id) === normalized || normalize(card.body) === normalized);

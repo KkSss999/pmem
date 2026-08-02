@@ -9,6 +9,7 @@ import { PolicyEngine } from './policy';
 import { isScopeVisible, ScopeManager } from './scope';
 import { loadRuntimeConfig } from './config';
 import { Pmem } from './index';
+import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import type { CapabilitySet } from './types';
 
 function makeProject(): string {
@@ -31,7 +32,7 @@ const CAPS: CapabilitySet[] = [
 
 test('observe is denied for a principal lacking memory.observe (no cross-principal grant)', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root, capabilities: CAPS });
+  const memory = await openV12Pmem({ root, capabilities: CAPS });
   try {
     await assert.rejects(
       () => memory.observe({ summary: 'should be denied', metadata: { principal: 'agent-x', scope: 'agent:x' } }),
@@ -49,7 +50,7 @@ test('observe is allowed for a principal that holds memory.observe', async () =>
     ...CAPS,
     { principal: 'agent-y', capabilities: ['memory.read', 'memory.observe'], scope: 'agent:y' },
   ];
-  const memory = await Pmem.open({ root, capabilities: caps });
+  const memory = await openV12Pmem({ root, capabilities: caps });
   try {
     const receipt = await memory.observe({ summary: 'ok', metadata: { principal: 'agent-y', scope: 'agent:y' } });
     assert.equal(receipt.type, 'observe');
@@ -61,7 +62,7 @@ test('observe is allowed for a principal that holds memory.observe', async () =>
 
 test('no registered capabilities preserves v1.0 open behavior', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root });
+  const memory = await openV12Pmem({ root });
   try {
     const receipt = await memory.observe({ summary: 'v1.0 compat', metadata: { principal: 'anyone' } });
     assert.equal(receipt.type, 'observe');
@@ -73,7 +74,7 @@ test('no registered capabilities preserves v1.0 open behavior', async () => {
 
 test('admin principal is authorized for any capability via memory.admin', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root, capabilities: CAPS });
+  const memory = await openV12Pmem({ root, capabilities: CAPS });
   try {
     const receipt = await memory.observe({ summary: 'admin ok', metadata: { principal: 'admin', scope: 'agent:x' } });
     assert.equal(receipt.type, 'observe');
@@ -87,7 +88,7 @@ test('admin principal is authorized for any capability via memory.admin', async 
 
 test('mergeBranchMemory requires memory.admin', async () => {
   const root = makeProject();
-  const memory = await Pmem.open({ root, capabilities: CAPS });
+  const memory = await openV12Pmem({ root, capabilities: CAPS });
   try {
     await assert.rejects(
       () => memory.mergeBranchMemory('feature', 'main', 'agent-x'),

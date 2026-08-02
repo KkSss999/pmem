@@ -2,7 +2,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { fileExists, getLockInfo, listFiles } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, closeDatabase } from '../core/db';
+import { openMaintenanceDatabase, createSchema, closeDatabase } from '../runtime/maintenance';
 import type { CliFormat } from '../types';
 
 const PMEM_DIR = '.pmem';
@@ -48,7 +48,7 @@ export function doctorCommand(format: CliFormat = 'compact'): void {
     checks.push({ name: 'database', status: 'warn', message: 'pmem.db not found.', fix: 'Run: pmem rebuild' });
   } else {
     try {
-      const db = openDatabase(pmemPath);
+  const db = openMaintenanceDatabase(pmemPath);
       createSchema(db);
 
       // Card count

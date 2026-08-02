@@ -2,7 +2,8 @@ import * as path from 'path';
 import { readFile, fileExists } from '../core/fs';
 import type { CardRow, EdgeRow, CliFormat } from '../types';
 import { loadManifest, resolveConfig } from '../core/manifest';
-import { Pmem } from '../runtime';
+import { openCommandRuntime } from './runtime';
+import type { Pmem } from '../runtime';
 
 const PMEM_DIR = '.pmem';
 
@@ -23,7 +24,7 @@ export async function relatedCommand(id: string, options?: {
   let result: RelatedCommandResult;
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root: cwd });
+    pmem = await openCommandRuntime(cwd);
     result = await pmem.related(id, {
       depth,
       type: edgeTypeFilter,
@@ -44,8 +45,8 @@ export async function relatedCommand(id: string, options?: {
     if (pmem) await pmem.close();
   }
 
-  const directEdges = Object.entries(result.edges_by_type).flatMap(([type, items]) =>
-    items.map(item => ({ type, ...item }))
+  const directEdges = Object.entries(result.edges_by_type).flatMap(([type, items]: [string, any]) =>
+    items.map((item: any) => ({ type, ...item }))
   );
 
   if (fmt === 'json') {
@@ -73,7 +74,7 @@ export async function relatedCommand(id: string, options?: {
   }
 
   console.log('\nDirect Relations:');
-  for (const [edgeType, targets] of Object.entries(result.edges_by_type)) {
+  for (const [edgeType, targets] of Object.entries(result.edges_by_type) as Array<[string, any[]]>) {
     for (const t of targets) {
       const prefix = t.direction === 'in' ? '←' : '';
       const srcTag = t.source === 'inferred' ? ` [${t.source}, ${t.confidence.toFixed(1)}]` : '';
@@ -102,7 +103,7 @@ export async function relatedCommand(id: string, options?: {
 
       let hopPmem: Pmem | null = null;
       try {
-        hopPmem = await Pmem.open({ root: cwd });
+        hopPmem = await openCommandRuntime(cwd);
         for (const frontierId of frontierArr) {
           let hopResult: RelatedCommandResult;
           try {
@@ -116,7 +117,7 @@ export async function relatedCommand(id: string, options?: {
 
           const hopEdges = Object.values(hopResult.edges_by_type).flat();
           totalExtendedEdges += hopEdges.length;
-          for (const edge of hopEdges) {
+          for (const edge of hopEdges as any[]) {
             const neighborId = edge.target_id;
             if (!visited.has(neighborId)) {
               visited.add(neighborId);

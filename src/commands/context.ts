@@ -2,10 +2,11 @@ import * as path from 'path';
 import { fileExists, readFile, writeFile } from '../core/fs';
 import { parseStructuredNext } from '../core/next';
 import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import type { PmemSessionData } from '../types';
 import { findProjectPaths } from '../core/projectRoot';
 
-export async function contextCommand(task: string, options: { budget?: number; format?: string }): Promise<void> {
+export async function contextCommand(task: string, options: { budget?: number; format?: string; runtime?: CommandRuntimeOptions }): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
@@ -24,7 +25,7 @@ export async function contextCommand(task: string, options: { budget?: number; f
   try {
     result = await (async () => {
       try {
-        pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
+        pmem = await openCommandRuntime(project?.projectRoot ?? cwd, options.runtime);
         return await pmem.context(task, budget);
       } finally {
         if (pmem) await pmem.close();
@@ -45,7 +46,7 @@ export async function contextCommand(task: string, options: { budget?: number; f
   const sessionData: PmemSessionData = {
     latest_task: task,
     latest_context_query: task,
-    latest_context_cards: result.relevant_memory.map(c => c.id),
+    latest_context_cards: result.relevant_memory.map((c: any) => c.id),
     updated_at: new Date().toISOString()
   };
   try {
