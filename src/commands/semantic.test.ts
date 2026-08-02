@@ -5,6 +5,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { getDefaultManifest, saveManifest } from '../core/manifest';
+import { createSchema, openOwnedDatabase } from '../core/db';
+import { createSemanticSchema } from '../core/semantic';
 import {
   DEFAULT_SEMANTIC_SOURCE,
   SEMANTIC_DIMENSION,
@@ -13,6 +15,7 @@ import {
   SEMANTIC_MODEL_REVISION,
   semanticCommand,
   type SemanticModelSpec,
+  type SemanticRuntimeStatus,
   type SemanticOperations,
 } from './semantic';
 import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
@@ -36,22 +39,30 @@ function project(): { cwd: string; manifestPath: string } {
   return { cwd, manifestPath: path.join(pmemPath, 'manifest.yml') };
 }
 
+function fakeStatus(overrides: Partial<SemanticRuntimeStatus> = {}): SemanticRuntimeStatus {
+  return {
+    modelCached: true,
+    cacheIntegrity: 'ok',
+    available: true,
+    indexedCards: 2,
+    indexedChunks: 7,
+    indexRevision: SEMANTIC_MODEL_REVISION,
+    pipelineVersion: 2,
+    indexCompatible: true,
+    indexFresh: true,
+    eligibleCards: 2,
+    excludedCards: 3,
+    excludedByReason: { untrusted: 2, secret: 1 },
+    failedCardCount: 0,
+    failedCardIds: [],
+    ...overrides,
+  };
+}
+
 function fakeOperations(overrides: Partial<SemanticOperations> = {}): SemanticOperations {
   return {
     prepareModel: async () => {},
-    status: async () => ({
-      modelCached: true,
-      cacheIntegrity: 'ok',
-      indexedCards: 2,
-      indexedChunks: 7,
-      indexRevision: SEMANTIC_MODEL_REVISION,
-      pipelineVersion: 2,
-      indexCompatible: true,
-      indexFresh: true,
-      eligibleCards: 2,
-      excludedCards: 3,
-      excludedByReason: { untrusted: 2, secret: 1 },
-    }),
+    status: async () => fakeStatus(),
     rebuild: async () => ({ indexedCards: 2, indexedChunks: 7 }),
     clear: async () => ({ removedChunks: 7 }),
     ...overrides,
@@ -387,6 +398,87 @@ describe('pmem semantic command', () => {
     assert.strictEqual(status.indexFresh, true);
     assert.strictEqual(status.eligibleCards, 2);
     assert.deepStrictEqual(status.excludedByReason, { untrusted: 2, secret: 1 });
+    assert.strictEqual(status.recovery_command, undefined);
+  });
+
+  it('status marks partial indexes unavailable and exposes failed cards and recovery in JSON', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await semanticCommand('setup', { cwd, yes: true }, {
+      platform: 'darwin', operations: fakeOperations(), log: () => {},
+    });
+    await semanticCommand('status', { cwd, format: 'json' }, {
+      operations: fakeOperations({
+        status: async () => fakeStatus({
+          available: false,
+          indexCompatible: true,
+          buildStatus: 'partial',
+          failedCardCount: 2,
+          failedCardIds: ['module.bad', 'module.worse'],
+        }),
+      }),
+      log: line => output.push(line),
+    });
+    const status = JSON.parse(output.join('\n'));
+    assert.strictEqual(status.available, false);
+    assert.strictEqual(status.indexCompatible, false);
+    assert.strictEqual(status.buildStatus, 'partial');
+    assert.strictEqual(status.failedCardCount, 2);
+    assert.deepStrictEqual(status.failedCardIds, ['module.bad', 'module.worse']);
+    assert.strictEqual(status.recovery_command, 'pmem semantic rebuild --full');
+  });
+
+  it('status compact output names partial failures and the full rebuild recovery command', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await semanticCommand('setup', { cwd, yes: true }, {
+      platform: 'darwin', operations: fakeOperations(), log: () => {},
+    });
+    await semanticCommand('status', { cwd }, {
+      operations: fakeOperations({
+        status: async () => fakeStatus({
+          available: false,
+          indexCompatible: true,
+          buildStatus: 'partial',
+          failedCardCount: 1,
+          failedCardIds: ['module.bad'],
+        }),
+      }),
+      log: line => output.push(line),
+    });
+    assert.ok(output.some(line => line.includes('Index:') && line.includes('unavailable') && line.includes('partial')));
+    assert.ok(output.some(line => line.includes('Failed cards: 1 (module.bad)')));
+    assert.ok(output.some(line => line.includes('pmem semantic rebuild --full')));
+  });
+
+  it('runtime status does not report a partial compatible pipeline as queryable', async () => {
+    const { cwd } = project();
+    const pmemPath = path.join(cwd, '.pmem');
+    const db = openOwnedDatabase(pmemPath);
+    createSchema(db);
+    createSemanticSchema(db);
+    db.prepare(`
+      INSERT INTO semantic_meta (
+        id, pipeline_version, model_id, model_revision, dimension,
+        index_content_hash, chunk_count, built_at, build_status,
+        failed_card_count, failed_card_ids
+      ) VALUES (1, 2, ?, ?, ?, ?, ?, ?, 'partial', 1, ?)
+    `).run(SEMANTIC_MODEL, SEMANTIC_MODEL_REVISION, SEMANTIC_DIMENSION, 'hash', 1, new Date(0).toISOString(), JSON.stringify(['module.bad']));
+    db.close();
+
+    const status = await createDefaultSemanticOperations().status(pmemPath, {
+      model: SEMANTIC_MODEL,
+      revision: SEMANTIC_MODEL_REVISION,
+      dtype: SEMANTIC_DTYPE,
+      dimension: SEMANTIC_DIMENSION,
+      source: DEFAULT_SEMANTIC_SOURCE,
+      cachePath: path.join(cwd, 'missing-cache'),
+    });
+    assert.strictEqual(status.available, false);
+    assert.strictEqual(status.indexCompatible, false);
+    assert.strictEqual(status.buildStatus, 'partial');
+    assert.strictEqual(status.failedCardCount, 1);
+    assert.deepStrictEqual(status.failedCardIds, ['module.bad']);
   });
 
   it('status verifies the registry source recorded by setup', async () => {
@@ -399,7 +491,14 @@ describe('pmem semantic command', () => {
       operations: fakeOperations({
         status: async (_pmemPath, spec) => {
           received = spec;
-          return { modelCached: true, cacheIntegrity: 'ok', indexedCards: 0, indexedChunks: 0, indexRevision: null };
+          return {
+            modelCached: true,
+            cacheIntegrity: 'ok',
+            available: false,
+            indexedCards: 0,
+            indexedChunks: 0,
+            indexRevision: null,
+          };
         },
       }),
       log: () => {},

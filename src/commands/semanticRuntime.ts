@@ -162,11 +162,14 @@ export function createDefaultSemanticOperations(
         return {
           modelCached: receipt.cached,
           cacheIntegrity: receipt.integrity,
+          available: value.available === true,
           indexedCards: value.cardCount ?? 0,
           indexedChunks: value.chunkCount ?? 0,
           indexRevision: value.revision ?? null,
           pipelineVersion: value.pipelineVersion ?? null,
-          indexCompatible: value.pipelineVersion != null && value.compatible === true,
+          indexCompatible: value.available === true
+            && value.pipelineVersion != null
+            && value.compatible === true,
           indexFresh: readiness?.index_fresh ?? false,
           buildStatus: value.buildStatus,
           failedCardCount: value.failedCardCount,
@@ -180,6 +183,7 @@ export function createDefaultSemanticOperations(
         return {
           modelCached: receipt.cached,
           cacheIntegrity: receipt.integrity,
+          available: false,
           indexedCards: 0,
           indexedChunks: 0,
           indexRevision: null,

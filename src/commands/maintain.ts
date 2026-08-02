@@ -249,7 +249,9 @@ export async function maintainCommand(
     return result;
   }
 
-  if (options.yes === true && options.repair !== true && options.dryRun !== true) {
+  if (options.yes === true && options.repair !== true) {
+    result.status = 'failed';
+    result.phase = 'preflight';
     result.errors.push('--yes requires --repair; no changes were made.');
     emit(result, options.format ?? 'compact', log);
     return result;

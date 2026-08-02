@@ -1,5 +1,6 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -75,6 +76,32 @@ describe('maintain command orchestration', () => {
     assert.equal(result.phase, 'preflight');
     assert.match(result.errors[0], /No \.pmem directory found/);
     assert.equal(JSON.parse(output[0]).status, 'failed');
+  });
+
+  it('rejects --yes without --repair as a failed invalid invocation', async () => {
+    const { cwd, cardPath } = project();
+    const before = fs.readFileSync(cardPath, 'utf8');
+    const output: string[] = [];
+    const result = await maintainCommand({ cwd, yes: true, format: 'json' }, { log: line => output.push(line) });
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.phase, 'preflight');
+    assert.match(result.errors[0], /--yes requires --repair/);
+    assert.equal(JSON.parse(output[0]).status, 'failed');
+    assert.equal(fs.readFileSync(cardPath, 'utf8'), before);
+  });
+
+  it('exits non-zero when the CLI receives --yes without --repair', () => {
+    const { cwd } = project();
+    const cli = path.resolve(process.cwd(), 'dist/index.js');
+    const result = spawnSync(process.execPath, [cli, 'maintain', '--yes', '--format', 'json'], {
+      cwd,
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(JSON.parse(result.stdout).status, 'failed');
+    assert.match(result.stdout, /--yes requires --repair/);
   });
 
   it('requires --yes for repair and does not invoke any mutating stage', async () => {

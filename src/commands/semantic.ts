@@ -36,6 +36,8 @@ export interface SemanticModelSpec {
 export interface SemanticRuntimeStatus {
   modelCached: boolean;
   cacheIntegrity: 'ok' | 'missing' | 'corrupt' | 'unknown';
+  /** True only when the derived index is complete, queryable, and compatible. */
+  available: boolean;
   indexedCards: number;
   indexedChunks: number;
   indexRevision: string | null;
@@ -330,7 +332,21 @@ export async function semanticCommand(
   if (action === 'status') {
     const cachePath = manifest.embedding.cache_path ?? defaultCachePath();
     const spec = modelSpec(cachePath, manifest.embedding.source ?? DEFAULT_SEMANTIC_SOURCE);
-    const status = await deps.operations.status(pmemPath, spec);
+    const rawStatus = await deps.operations.status(pmemPath, spec);
+    const failedCardIds = rawStatus.failedCardIds ?? [];
+    const failedCardCount = rawStatus.failedCardCount ?? failedCardIds.length;
+    const partial = rawStatus.buildStatus === 'partial' || failedCardCount > 0 || failedCardIds.length > 0;
+    // A compatible pipeline is not enough to serve queries: partial indexes
+    // intentionally report available=false and must remain visibly unusable.
+    const status = {
+      ...rawStatus,
+      available: rawStatus.available === true && !partial,
+      indexCompatible: rawStatus.available === true && !partial && rawStatus.indexCompatible === true,
+      failedCardCount,
+      failedCardIds,
+    };
+    const recoveryRequired = manifest.embedding.enabled && !status.available;
+    const recoveryCommand = 'pmem semantic rebuild --full';
     const result = {
       enabled: manifest.embedding.enabled,
       provider: manifest.embedding.provider,
@@ -340,16 +356,21 @@ export async function semanticCommand(
       dtype: manifest.embedding.dtype ?? null,
       cache_path: cachePath,
       ...status,
+      ...(recoveryRequired ? { recovery_command: recoveryCommand } : {}),
     };
     writeOutput(deps.log, format, result, [
       `Semantic: ${manifest.embedding.enabled ? 'enabled' : 'disabled'}`,
       `Model: ${manifest.embedding.model ?? SEMANTIC_MODEL}`,
       `Revision: ${manifest.embedding.revision ?? SEMANTIC_MODEL_REVISION}`,
       `Cache: ${cachePath} (${status.cacheIntegrity})`,
-      `Index: ${status.indexedCards} cards / ${status.indexedChunks} chunks`,
+      `Index: ${status.indexedCards} cards / ${status.indexedChunks} chunks (${status.available ? 'available' : 'unavailable'}${status.buildStatus ? `, ${status.buildStatus}` : ''})`,
       `Readiness: ${status.eligibleCards ?? 0} eligible / ${status.excludedCards ?? 0} excluded; pipeline ${status.pipelineVersion ?? 'none'} (${status.indexCompatible ? 'compatible' : 'incompatible'}, ${status.indexFresh ? 'fresh' : 'stale'})`,
       `Excluded: ${Object.entries(status.excludedByReason ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
       `Trust exclusions: ${Object.entries(status.excludedByTrustDetail ?? {}).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`,
+      ...(status.failedCardCount > 0 || status.failedCardIds.length > 0
+        ? [`Failed cards: ${status.failedCardCount} (${status.failedCardIds.join(', ') || 'IDs unavailable'})`]
+        : []),
+      ...(recoveryRequired ? [`Recovery: run \`${recoveryCommand}\``] : []),
     ]);
     return;
   }
