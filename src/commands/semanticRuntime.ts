@@ -23,6 +23,7 @@ import {
   sha256File,
   type SemanticModelReceipt as ModelReceipt,
 } from '../core/semantic/cache';
+import { SEMANTIC_CHUNK_STRATEGY, SEMANTIC_METADATA_VERSION } from '../core/semantic/defaults';
 export { inspectModelCache, MODELSCOPE_SOURCE_REVISION, MODEL_UINT8_SHA256, REQUIRED_MODEL_FILES } from '../core/semantic/cache';
 
 export { nativeDynamicImport } from '../core/semantic/transformers';
@@ -97,6 +98,7 @@ async function downloadModelSnapshot(spec: SemanticModelSpec): Promise<ModelRece
     throw new Error(`Semantic model integrity check failed for onnx/model_uint8.onnx (expected ${MODEL_UINT8_SHA256}, got ${onnx?.sha256 ?? 'missing'}).`);
   }
   return {
+    metadata_version: SEMANTIC_METADATA_VERSION,
     model: spec.model,
     revision: spec.revision,
     source: spec.source,
@@ -105,6 +107,7 @@ async function downloadModelSnapshot(spec: SemanticModelSpec): Promise<ModelRece
     dimension: spec.dimension,
     files,
     cached_at: new Date().toISOString(),
+    chunk_strategy: SEMANTIC_CHUNK_STRATEGY,
   };
 }
 
@@ -167,6 +170,8 @@ export function createDefaultSemanticOperations(
           indexedChunks: value.chunkCount ?? 0,
           indexRevision: value.revision ?? null,
           pipelineVersion: value.pipelineVersion ?? null,
+          metadataVersion: value.metadataVersion ?? null,
+          chunkStrategy: value.chunkStrategy ?? null,
           indexCompatible: value.available === true
             && value.pipelineVersion != null
             && value.compatible === true,
@@ -188,6 +193,8 @@ export function createDefaultSemanticOperations(
           indexedChunks: 0,
           indexRevision: null,
           pipelineVersion: null,
+          metadataVersion: null,
+          chunkStrategy: null,
           indexCompatible: false,
           indexFresh: false,
           buildStatus: 'none',

@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import Database from 'better-sqlite3';
 import { execSync } from 'child_process';
-import { getDefaultManifest, saveManifest } from '../core/manifest';
+import { getDefaultManifest, loadManifest, saveManifest } from '../core/manifest';
 import { ensureDir, writeFile } from '../core/fs';
 import { loadRuntimeConfig } from './config';
 import { EventStore } from './event-store';
@@ -15,6 +15,7 @@ import { Pmem } from './index';
 import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import { createSchema, upsertCard } from '../core/db';
 import { rebuildSemanticIndex } from '../core/semantic';
+import { DEFAULT_SEMANTIC_MODEL, DEFAULT_SEMANTIC_MODEL_REVISION } from '../core/semantic/transformers';
 import type { CardRow } from '../types';
 
 function makeProject(): string {
@@ -94,6 +95,40 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
     } finally {
       db.close();
     }
+  } finally {
+    await memory.close();
+  }
+});
+
+test('v1.3.1 opens the default semantic contract without requiring a model download', async () => {
+  const root = makeProject();
+  const memory = await openV12Pmem({ root });
+  try {
+    const manifest = loadManifest(path.join(root, '.pmem')) as any;
+    assert.equal(manifest.embedding.enabled, true);
+    assert.equal(manifest.embedding.auto_enabled, true);
+    assert.equal(manifest.embedding.provider, 'local');
+    assert.equal(manifest.embedding.model, DEFAULT_SEMANTIC_MODEL);
+    assert.equal(manifest.embedding.revision, DEFAULT_SEMANTIC_MODEL_REVISION);
+    assert.equal(manifest.embedding.dimension, 384);
+    assert.ok(path.isAbsolute(manifest.embedding.cache_path));
+  } finally {
+    await memory.close();
+  }
+});
+
+test('v1.3.1 preserves an explicit semantic opt-out across Runtime open', async () => {
+  const root = makeProject();
+  const pmemPath = path.join(root, '.pmem');
+  const manifest = getDefaultManifest('runtime-test');
+  manifest.embedding.auto_enabled = false;
+  saveManifest(pmemPath, manifest);
+  const memory = await openV12Pmem({ root });
+  try {
+    const persisted = loadManifest(pmemPath) as any;
+    assert.equal(persisted.embedding.enabled, false);
+    assert.equal(persisted.embedding.auto_enabled, false);
+    assert.equal(persisted.embedding.provider, 'none');
   } finally {
     await memory.close();
   }
@@ -182,6 +217,49 @@ test('Pmem keeps status, capture, recall, and context rooted after process.chdir
     process.chdir(previous);
     await memory.close();
     fs.rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('capture commits canonically when automatic semantic indexing is unavailable', async () => {
+  const root = makeProject();
+  const pmemPath = path.join(root, '.pmem');
+  const manifest = getDefaultManifest('runtime-semantic-degraded');
+  manifest.embedding = {
+    enabled: true,
+    auto_enabled: true,
+    provider: 'local',
+    model: DEFAULT_SEMANTIC_MODEL,
+    revision: DEFAULT_SEMANTIC_MODEL_REVISION,
+    source: 'modelscope',
+    dtype: 'uint8',
+    cache_path: path.join(root, 'missing-semantic-cache'),
+    dimension: 384,
+    store: 'sqlite',
+    index: 'flat',
+  };
+  saveManifest(pmemPath, manifest);
+  execSync('git init -q', { cwd: root });
+  execSync('git config user.email "test@example.com"', { cwd: root });
+  execSync('git config user.name "test"', { cwd: root });
+  execSync('git checkout -q -b semantic-degraded', { cwd: root });
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  writeFile(path.join(root, 'src', 'semantic.ts'), 'export const semantic = false;\n');
+
+  const memory = await openV12Pmem({ root });
+  try {
+    const capture = await memory.capture('capture without local semantic asset', { force: true });
+    assert.equal(capture.success, true, capture.message);
+    assert.equal(capture.semantic?.status, 'unavailable');
+    assert.ok(capture.tracePath);
+    const db = new Database(path.join(pmemPath, 'pmem.db'));
+    try {
+      const events = new EventStore(db, '1h').replay();
+      assert.ok(events.some(event => event.type === 'commit'));
+    } finally {
+      db.close();
+    }
+  } finally {
+    await memory.close();
   }
 });
 

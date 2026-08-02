@@ -202,7 +202,7 @@ export class Pmem implements PmemInstance {
     // first, then commit its canonical lifecycle event through the backend.
     const result = await this.requireLegacy('capture').capture(captureSummary, opts);
     if (!result.success) return result;
-    return this.withBackendTransaction(async tx => {
+    const committed = await this.withBackendTransaction(async tx => {
       await tx.appendEvent({
         id: randomUUID(),
         type: 'commit',
@@ -217,6 +217,18 @@ export class Pmem implements PmemInstance {
       });
       return result;
     });
+    if (this.legacy?.refreshSemanticIndex) {
+      try {
+        const semantic = await this.legacy.refreshSemanticIndex('incremental');
+        return { ...committed, semantic };
+      } catch (error: any) {
+        // Semantic indexing is a derived perception channel. A missing model,
+        // companion, or transient inference failure must never roll back the
+        // canonical capture that already committed.
+        return { ...committed, semantic: { status: 'degraded', reason: error?.message ?? String(error) } };
+      }
+    }
+    return committed;
   }
 
   async endSession(result: SessionResult): Promise<void> {

@@ -161,6 +161,7 @@ export function getDefaultManifest(projectName: string, initMode: InitMode = 'mi
     },
     embedding: {
       enabled: false,
+      auto_enabled: true,
       provider: 'none',
       model: null,
       revision: null,

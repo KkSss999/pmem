@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai-semantic",
-  "version": "1.2.4",
+  "version": "1.3.1",
   "description": "Opt-in local semantic inference companion for pmem-ai",
   "keywords": [
     "pmem",

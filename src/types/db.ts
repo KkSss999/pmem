@@ -82,6 +82,10 @@ export interface SemanticMetaRow {
   index_content_hash: string;
   chunk_count: number;
   built_at: string;
+  /** Version of the persisted semantic metadata contract. */
+  metadata_version?: number;
+  /** Stable chunking strategy identifier used to build the index. */
+  chunk_strategy?: string;
 }
 
 /** A heading-aware card chunk and its normalized Float32 embedding. */

@@ -86,6 +86,8 @@ export interface RuntimeLegacyAdapter {
   findEvent(id: string): MemoryEvent | null;
   expireEvents(): void;
   mergeBranchMemory(sourceBranch: string, targetBranch: string): number;
+  /** Best-effort post-write incremental semantic maintenance. */
+  refreshSemanticIndex?(mode: 'full' | 'incremental'): Promise<{ status: 'ready' | 'unavailable' | 'degraded'; indexedCards?: number; indexedChunks?: number; reason?: string }>;
 }
 
 // Legacy response DTOs remain intentionally opaque to the canonical Runtime.

@@ -18,6 +18,10 @@ git config user.name "pmem e2e sync"
 
 # 1. Initialize project
 "${PMEM[@]}" init e2e-v07-sync-flow >/dev/null
+# This scenario validates the v0.7 sync flow, not semantic retrieval. Explicitly
+# disable the v1.3.1 default semantic capability so the final health assertion
+# remains deterministic without requiring a model asset in the E2E fixture.
+"${PMEM[@]}" semantic clear >/dev/null
 
 mkdir -p src .pmem/modules
 cat > src/index.ts <<'SRC'

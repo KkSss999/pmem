@@ -233,6 +233,8 @@ describe('semantic safety and SQLite lifecycle', () => {
         chunkCount: 0,
         indexContentHash: result.indexContentHash,
         builtAt: getSemanticStatus(db).builtAt,
+        metadataVersion: 1,
+        chunkStrategy: 'heading-aware-v1',
       });
     } finally {
       db.close();

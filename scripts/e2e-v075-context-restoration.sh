@@ -18,6 +18,10 @@ git config user.name "pmem e2e ux"
 
 # 1. Initialize project
 "${PMEM[@]}" init my-test --guided --description "React Canvas Game" --stage "Prototype" --next "Build renderer loop" >/dev/null
+# This golden case validates context restoration, not semantic retrieval. Keep
+# the fixture deterministic by opting out of the v1.3.1 default until a model
+# asset is explicitly provisioned by a semantic-specific E2E.
+"${PMEM[@]}" semantic clear >/dev/null
 
 # Commit initialization files first so HEAD exists
 touch README.md

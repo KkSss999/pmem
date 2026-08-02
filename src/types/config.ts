@@ -23,6 +23,8 @@ export interface CliConfig {
 
 export interface EmbeddingConfig {
   enabled: boolean;
+  /** v1.3.1 default lifecycle opt-in; `false` is an explicit user disable. */
+  auto_enabled?: boolean;
   provider: 'none' | 'api' | 'local';
   model: string | null;
   /** Immutable model source revision. Required when local semantic retrieval is enabled. */

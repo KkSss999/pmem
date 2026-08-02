@@ -4,6 +4,7 @@ import { chunkCard } from './chunks';
 import { filterSafeSemanticCards } from './safety';
 import { decodeVector, encodeVector, normalizeVector } from './vectors';
 import { SEMANTIC_PIPELINE_VERSION } from './types';
+import { SEMANTIC_CHUNK_STRATEGY, SEMANTIC_METADATA_VERSION } from './defaults';
 import type {
   EmbeddingProvider,
   SemanticCardDocument,
@@ -41,7 +42,9 @@ export function createSemanticSchema(db: SemanticDatabase): void {
       built_at TEXT NOT NULL,
       build_status TEXT NOT NULL DEFAULT 'complete',
       failed_card_count INTEGER NOT NULL DEFAULT 0,
-      failed_card_ids TEXT NOT NULL DEFAULT '[]'
+      failed_card_ids TEXT NOT NULL DEFAULT '[]',
+      metadata_version INTEGER NOT NULL DEFAULT 1,
+      chunk_strategy TEXT NOT NULL DEFAULT 'heading-aware-v1'
     );
     CREATE TABLE IF NOT EXISTS semantic_chunks (
       chunk_id TEXT PRIMARY KEY,
@@ -68,6 +71,8 @@ export function createSemanticSchema(db: SemanticDatabase): void {
   try { db.exec("ALTER TABLE semantic_meta ADD COLUMN build_status TEXT NOT NULL DEFAULT 'complete'"); } catch {}
   try { db.exec('ALTER TABLE semantic_meta ADD COLUMN failed_card_count INTEGER NOT NULL DEFAULT 0'); } catch {}
   try { db.exec("ALTER TABLE semantic_meta ADD COLUMN failed_card_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
+  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 1'); } catch {}
+  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN chunk_strategy TEXT NOT NULL DEFAULT 'heading-aware-v1'"); } catch {}
   try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''"); } catch {}
 }
@@ -92,8 +97,15 @@ export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
       chunkCount: actual.count,
       indexContentHash: null,
       builtAt: null,
+      metadataVersion: null,
+      chunkStrategy: null,
     };
   }
+  const metadataVersion = meta.metadata_version ?? SEMANTIC_METADATA_VERSION;
+  const chunkStrategy = meta.chunk_strategy ?? SEMANTIC_CHUNK_STRATEGY;
+  const compatible = meta.pipeline_version === SEMANTIC_PIPELINE_VERSION
+    && metadataVersion === SEMANTIC_METADATA_VERSION
+    && chunkStrategy === SEMANTIC_CHUNK_STRATEGY;
   const buildStatus: SemanticBuildStatus = meta.build_status === 'partial' ? 'partial' : 'complete';
   let failedCardIds: string[] = [];
   try {
@@ -104,13 +116,13 @@ export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
   }
   return {
     available: buildStatus === 'complete'
-      && meta.pipeline_version === SEMANTIC_PIPELINE_VERSION
+      && compatible
       && meta.chunk_count === actual.count,
     buildStatus,
     failedCardCount: meta.failed_card_count ?? failedCardIds.length,
     failedCardIds,
     pipelineVersion: meta.pipeline_version,
-    compatible: meta.pipeline_version === SEMANTIC_PIPELINE_VERSION,
+    compatible,
     modelId: meta.model_id,
     revision: meta.model_revision,
     dimension: meta.dimension,
@@ -118,6 +130,8 @@ export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
     chunkCount: actual.count,
     indexContentHash: meta.index_content_hash,
     builtAt: meta.built_at,
+    metadataVersion,
+    chunkStrategy,
   };
 }
 
@@ -227,20 +241,20 @@ function refreshMetaFromStoredChunks(
     db.prepare(`
       INSERT OR REPLACE INTO semantic_meta
         (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
-         build_status, failed_card_count, failed_card_ids)
-      VALUES (1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+         build_status, failed_card_count, failed_card_ids, metadata_version, chunk_strategy)
+      VALUES (1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
     `).run(SEMANTIC_PIPELINE_VERSION, identity.modelId, identity.revision, identity.dimension, indexHash([]), builtAt,
-      buildStatus, failedCardIds.length, failedCardIdsJson);
+      buildStatus, failedCardIds.length, failedCardIdsJson, SEMANTIC_METADATA_VERSION, SEMANTIC_CHUNK_STRATEGY);
     return;
   }
   const first = rows[0];
   db.prepare(`
     INSERT OR REPLACE INTO semantic_meta
       (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
-       build_status, failed_card_count, failed_card_ids)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       build_status, failed_card_count, failed_card_ids, metadata_version, chunk_strategy)
+    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(SEMANTIC_PIPELINE_VERSION, first.model_id, first.model_revision, first.dimension, indexHash(rows), rows.length, builtAt,
-    buildStatus, failedCardIds.length, failedCardIdsJson);
+    buildStatus, failedCardIds.length, failedCardIdsJson, SEMANTIC_METADATA_VERSION, SEMANTIC_CHUNK_STRATEGY);
 }
 
 /**

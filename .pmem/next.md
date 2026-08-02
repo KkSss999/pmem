@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Review the pushed follow-up commit on PR #47, then approve/merge if the boundary changes meet the second-review requirements.
+Review and merge the v1.3.1 semantic runtime default branch; then validate model setup and semantic retrieval quality on a real project.
 
 ## Why
 PR #46 is merged and v1.2.4 issue cleanup is complete. v1.3.0 must now establish the canonical Runtime/model/backend boundary before any broad command migration.
