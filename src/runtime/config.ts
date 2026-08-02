@@ -1,7 +1,11 @@
 import * as path from 'path';
-import { loadManifest } from '../core/manifest';
-import type { Manifest } from '../types';
+import { loadManifest } from '../compatibility/v1_2_runtime';
 import type { PartialRuntimeConfig, RuntimeConfig, RuntimePreset } from './types';
+
+interface LegacyManifestShape {
+  project?: { domain?: unknown };
+  memory?: Record<string, any>;
+}
 
 export const PRESET_DEFAULTS: Record<string, RuntimeConfig> = {
   software: {
@@ -40,14 +44,14 @@ export function loadRuntimeConfig(root: string, preset?: RuntimePreset, override
   return deepMerge(deepMerge(defaults, manifestMemory), overrides ?? {}) as RuntimeConfig;
 }
 
-function inferPreset(manifest: Manifest | null): RuntimePreset | undefined {
+function inferPreset(manifest: LegacyManifestShape | null): RuntimePreset | undefined {
   const domain = manifest?.project?.domain;
   if (typeof domain === 'string' && domain.trim()) return domain.trim() as RuntimePreset;
   return undefined;
 }
 
-function extractManifestMemory(manifest: Manifest | null): PartialRuntimeConfig {
-  const memory = (manifest as any)?.memory;
+function extractManifestMemory(manifest: LegacyManifestShape | null): PartialRuntimeConfig {
+  const memory = manifest?.memory;
   const result: PartialRuntimeConfig = {};
   if (memory?.default_scope) result.defaultScope = memory.default_scope;
   if (typeof memory?.branch_aware === 'boolean') result.branchAware = memory.branch_aware;

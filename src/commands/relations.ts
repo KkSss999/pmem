@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 
 const PMEM_DIR = '.pmem';
 
@@ -44,6 +45,7 @@ export interface RelationsQueryOptions {
   type?: string;
   source?: 'explicit' | 'inferred' | 'mention' | 'manual' | 'all';
   limit?: number;
+  runtime?: CommandRuntimeOptions;
 }
 
 export async function relationsQuery(
@@ -52,14 +54,14 @@ export async function relationsQuery(
   options?: RelationsQueryOptions
 ): Promise<RelationsQueryResult> {
   const dbPath = path.join(pmemPath, 'pmem.db');
-  if (!fileExists(dbPath)) {
+  if (!options?.runtime?.backend && !fileExists(dbPath)) {
     throw new Error('No SQLite database found. Run `pmem rebuild` first.');
   }
 
   const root = path.dirname(pmemPath);
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root });
+    pmem = await openCommandRuntime(root, options?.runtime);
     const related = await pmem.related(cardId, {
       type: options?.type,
       source: options?.source === 'manual' ? undefined : options?.source,
@@ -168,6 +170,7 @@ export interface RelationsCommandOptions {
   source?: string;
   format?: string;
   limit?: number;
+  runtime?: CommandRuntimeOptions;
 }
 
 export async function relationsCommand(cardId: string, options: RelationsCommandOptions): Promise<void> {
@@ -177,6 +180,7 @@ export async function relationsCommand(cardId: string, options: RelationsCommand
     type: options.type,
     source,
     limit: options.limit,
+    runtime: options.runtime,
   });
 
   if (options.format === 'json') {

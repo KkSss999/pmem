@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
-import { openDatabase, createSchema, startSession, endSession, getActiveSession, closeDatabase } from '../core/db';
+import { openMaintenanceDatabase, createSchema, startSession, endSession, getActiveSession, closeDatabase } from '../runtime/maintenance';
 
 const PMEM_DIR = '.pmem';
 
@@ -20,7 +20,7 @@ export function sessionStartCommand(agentName?: string): void {
   }
 
   // 2. Open SQLite DB, createSchema
-  const db = openDatabase(pmemPath);
+  const db = openMaintenanceDatabase(pmemPath);
   createSchema(db);
 
   // 3. Check if there's already an active session
@@ -67,7 +67,7 @@ export function sessionEndCommand(taskSummary?: string): void {
   }
 
   // 2. Open DB, createSchema
-  const db = openDatabase(pmemPath);
+  const db = openMaintenanceDatabase(pmemPath);
   createSchema(db);
 
   // 3. Get active session

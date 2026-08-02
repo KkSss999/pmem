@@ -3,6 +3,7 @@ import { fileExists } from '../core/fs';
 import { findProjectPaths } from '../core/projectRoot';
 import { formatOutput } from '../core/format';
 import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import type { CliFormat } from '../types';
 import type { AskResultV03 } from '../core/query/ask';
 
@@ -11,6 +12,7 @@ const PMEM_DIR = '.pmem';
 export interface AskCommandOptions {
   explain?: boolean;
   limit?: number;
+  runtime?: CommandRuntimeOptions;
 }
 
 function noResultNextSteps(result: AskResultV03): string[] {
@@ -49,7 +51,7 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
     return;
   }
 
-  if (!fileExists(dbPath)) {
+  if (!options.runtime?.backend && !fileExists(dbPath)) {
     console.log('No SQLite database found. Run `pmem rebuild` first.');
     return;
   }
@@ -57,7 +59,7 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
   let result;
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
+    pmem = await openCommandRuntime(project?.projectRoot ?? cwd, options.runtime);
     result = await pmem.ask(query, {
       explain: options.explain,
       limit: options.limit,

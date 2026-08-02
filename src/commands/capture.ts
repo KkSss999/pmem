@@ -2,7 +2,7 @@ import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { openDatabase } from '../core/db';
 import { getDistillUrgency } from '../runtime/policy';
-import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 
 export async function captureCommand(options: {
   auto?: boolean;
@@ -10,6 +10,7 @@ export async function captureCommand(options: {
   next?: string;
   full?: boolean;
   force?: boolean;
+  runtime?: CommandRuntimeOptions;
 }): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
@@ -19,7 +20,7 @@ export async function captureCommand(options: {
     process.exit(2);
   }
 
-  const memory = await Pmem.open({ root: cwd });
+  const memory = await openCommandRuntime(cwd, options.runtime);
   try {
     const result = await memory.capture(options.summary ?? '', {
       auto: options.auto,

@@ -1,10 +1,21 @@
 import * as path from 'path';
-import type { AskOptions, AskResultV03 } from '../core/query/ask';
-import type { RecallQueryResult } from '../core/query/recall';
-import type { RelatedResult } from '../core/query/related';
-import type { StatusResult } from '../core/query/status';
-import type { CaptureOptions, CaptureResult } from '../core/capture';
-import type { ContextQueryResult, MemoryCard } from '../types';
+import type {
+  AskOptions,
+  AskResultV03,
+  CaptureOptions,
+  CaptureResult,
+  ContextQueryResult,
+  MemoryCard,
+  RecallQueryResult,
+  RelatedResult,
+  StatusResult,
+} from '../compatibility/v1_2_runtime';
+import type { MemoryBackend, MemoryEvent, MemoryEventType, MemorySchemaRegistry } from './model';
+import type { QueryExecutionResult, QueryPlan } from '../query';
+
+// Keep the historical runtime import path stable while the canonical model
+// lives in a backend-neutral module.
+export type { MemoryBackend, MemoryEvent, MemoryEventType, MemorySchemaRegistry } from './model';
 
 export type RuntimePreset = 'software' | 'research' | 'novel' | (string & {});
 export type MemoryScopeKind = 'system' | 'user' | 'application' | 'workspace' | 'agent' | 'task' | 'session' | 'private' | 'shared' | (string & {});
@@ -64,6 +75,10 @@ export interface PmemOpenOptions {
   config?: PartialRuntimeConfig;
   /** Optional capability-based access control sets for multi-agent security. */
   capabilities?: CapabilitySet[];
+  /** Optional backend implementation. Omitted values use the v1.2 SQLite adapter. */
+  backend?: MemoryBackend;
+  /** Optional schema registry used by the selected backend. */
+  schema?: MemorySchemaRegistry;
 }
 
 export type PartialRuntimeConfig = {
@@ -122,16 +137,6 @@ export interface SessionResult {
   metadata?: Record<string, unknown>;
 }
 
-export type MemoryEventType = 'observe' | 'commit' | 'supersede' | 'forget' | 'session_end';
-
-export interface MemoryEvent {
-  id: string;
-  type: MemoryEventType;
-  scope: string;
-  created_at: string;
-  payload: Record<string, unknown>;
-}
-
 export interface WorkingMemory {
   scope: string;
   events: MemoryEvent[];
@@ -151,8 +156,11 @@ export interface PmemInstance {
   readonly root: string;
   readonly pmemPath: string;
   readonly config: RuntimeConfig;
+  readonly backend: MemoryBackend;
 
   ask(query: string, opts?: AskOptions): Promise<AskResultV03>;
+  query(query: string, limit?: number): Promise<QueryExecutionResult>;
+  executeQueryPlan(plan: QueryPlan): Promise<QueryExecutionResult>;
   recall(opts?: RecallOptions): Promise<RecallQueryResult>;
   context(task: string, budget?: number): Promise<ContextQueryResult>;
   related(id: string, opts?: RelatedOptions): Promise<RelatedResult>;

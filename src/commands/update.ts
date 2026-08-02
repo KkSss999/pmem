@@ -2,8 +2,9 @@ import * as path from 'path';
 import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
-import { openDatabase, createSchema, insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../core/db';
-import type { DirtyFlagDetailed } from '../core/db';
+import { insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../runtime/maintenance';
+import { openMaintenanceDatabase, type MaintenanceDatabase } from '../runtime/maintenance';
+import type { DirtyFlagDetailed } from '../runtime/maintenance';
 import { checkStaleMemory } from '../core/consistency';
 import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
 
@@ -112,7 +113,7 @@ export function markDirtyCommand(
     }
 
     try {
-      const db = openDatabase(pmemPath);
+      const db = openMaintenanceDatabase(pmemPath);
       const activeSession = getActiveSession(db);
       const markedIds: string[] = [];
       const notFoundIds: string[] = [];
@@ -169,7 +170,7 @@ export function markDirtyCommand(
     const dbPath = path.join(pmemPath, 'pmem.db');
     if (fileExists(dbPath)) {
       try {
-        const db = openDatabase(pmemPath);
+        const db = openMaintenanceDatabase(pmemPath);
         const status = statusQuery(pmemPath, { cwd, db });
         const changedFiles = status.changes.map(change => change.path);
 
@@ -267,7 +268,7 @@ export function markDirtyCommand(
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (fileExists(dbPath)) {
     try {
-      const db = openDatabase(pmemPath);
+      const db = openMaintenanceDatabase(pmemPath);
       const activeSession = getActiveSession(db);
       insertDirtyFlag(db, 'project', '.pmem', reason, activeSession?.id);
       closeDatabase();
@@ -341,7 +342,7 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
   const updateDbPath = path.join(pmemPath, 'pmem.db');
   if (fileExists(updateDbPath)) {
     try {
-      const db = openDatabase(pmemPath);
+      const db = openMaintenanceDatabase(pmemPath);
       const unresolved = getUnresolvedDirtyFlags(db);
       if (unresolved.length > 0) {
         console.log(`\nUnresolved dirty flags in SQLite: ${unresolved.length}`);
@@ -422,7 +423,7 @@ ${next || 'Continue as planned.'}
       const confirmDbPath = path.join(pmemPath, 'pmem.db');
       if (fileExists(confirmDbPath)) {
         try {
-          const db = openDatabase(pmemPath);
+          const db = openMaintenanceDatabase(pmemPath);
           const activeSession = getActiveSession(db);
           resolveDirtyFlags(db, 'project', '.pmem');
           insertUpdateLog(db, 'confirm_update', summary, activeSession?.id, [`trace.${today}-${traceNum}`], true);
@@ -457,7 +458,7 @@ ${next || 'Continue as planned.'}
       const refreshDbPath = path.join(pmemPath, 'pmem.db');
       if (fileExists(refreshDbPath) && cardIds.length > 0) {
         try {
-          const refreshDb = openDatabase(pmemPath);  // open once
+          const refreshDb = openMaintenanceDatabase(pmemPath);  // open once
           const refreshed: string[] = [];
           for (const cardId of cardIds) {
             const card = refreshDb.prepare('SELECT file_path FROM cards WHERE id = ?').get(cardId) as { file_path: string } | undefined;
@@ -578,7 +579,7 @@ function aggregationKey(flag: DirtyFlagDetailed): string {
  */
 function getLatestSessionEnd(pmemPath: string): string | null {
   try {
-    const db = openDatabase(pmemPath);
+    const db = openMaintenanceDatabase(pmemPath);
     const row = db.prepare(
       "SELECT ended_at FROM sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
     ).get() as { ended_at: string } | undefined;
@@ -593,7 +594,7 @@ function getLatestSessionEnd(pmemPath: string): string | null {
  */
 function getActiveSessionStart(pmemPath: string): string | null {
   try {
-    const db = openDatabase(pmemPath);
+    const db = openMaintenanceDatabase(pmemPath);
     const row = db.prepare(
       "SELECT started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
     ).get() as { started_at: string } | undefined;
@@ -618,9 +619,9 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
     };
   }
 
-  let db: ReturnType<typeof openDatabase>;
+  let db: MaintenanceDatabase;
   try {
-    db = openDatabase(pmemPath);
+    db = openMaintenanceDatabase(pmemPath);
   } catch {
     return {
       summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
@@ -927,7 +928,7 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
 
 function getCardCount(pmemPath: string): number {
   try {
-    const db = openDatabase(pmemPath);
+    const db = openMaintenanceDatabase(pmemPath);
     const row = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0 AND is_candidate = 0').get() as { count: number };
     return row?.count ?? 0;
   } catch {
@@ -1038,7 +1039,7 @@ function applySuggestionAction(pmemPath: string, suggestionId: string): void {
 
   switch (action) {
     case 'update_card': {
-      const db = openDatabase(pmemPath);
+      const db = openMaintenanceDatabase(pmemPath);
       // Mark the card's last_verified_at as expired
       db.prepare(
         "UPDATE cards SET last_verified_at = ? WHERE id = ?"
@@ -1079,7 +1080,7 @@ Continue as planned.
       console.log(`  Reason: ${reason}`);
 
       // Resolve the associated dirty flags
-      const db = openDatabase(pmemPath);
+      const db = openMaintenanceDatabase(pmemPath);
       const activeSession = getActiveSession(db);
       // Resolve all dirty flags matching this target+reason
       resolveDirtyFlags(db, 'card', target);
@@ -1115,7 +1116,7 @@ function manageEdges(pmemPath: string, acceptRaw?: string, rejectRaw?: string): 
     process.exit(2);
   }
 
-  const db = openDatabase(pmemPath);
+  const db = openMaintenanceDatabase(pmemPath);
 
   // Accept edges: upgrade from inferred to explicit
   if (acceptRaw) {
@@ -1139,7 +1140,7 @@ function manageEdges(pmemPath: string, acceptRaw?: string, rejectRaw?: string): 
 
   if (!acceptRaw && !rejectRaw) {
     // Show current inferred edges for review
-    const db2 = openDatabase(pmemPath);
+    const db2 = openMaintenanceDatabase(pmemPath);
     const inferred = getInferredEdges(db2);
     if (inferred.length === 0) {
       console.log('No inferred edges to review.');
@@ -1181,7 +1182,7 @@ function enrichWithEdgeSuggestions(
   if (!fileExists(dbPath)) return report;
 
   try {
-    const db = openDatabase(pmemPath);
+    const db = openMaintenanceDatabase(pmemPath);
     const inferred = getInferredEdges(db);
     if (inferred.length === 0) return report;
 

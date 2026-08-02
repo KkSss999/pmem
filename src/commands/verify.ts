@@ -2,7 +2,7 @@ import * as path from 'path';
 import { statSync } from 'fs';
 import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock, lockOwnedBySelf } from '../core/fs';
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
-import { openDatabase, createSchema } from '../core/db';
+import { openMaintenanceDatabase, type MaintenanceDatabase } from '../runtime/maintenance';
 import { computeHash, tokenCount } from '../core/hash';
 import { checkStaleMemory, checkDocSync, verifyMemory, checkModuleContracts } from '../core/consistency';
 import type { VerifyIssue, VerifyResult, CardRow, EdgeRow, SemanticReadinessSummary } from '../types';
@@ -148,7 +148,7 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   //    missing_database warning when rebuild is busy creating the index).
   const dbPath = path.join(pmemPath, 'pmem.db');
   const dbExists = fileExists(dbPath);
-  let db: ReturnType<typeof openDatabase> | null = null;
+  let db: MaintenanceDatabase | null = null;
 
   if (!dbExists) {
     issues.push({
@@ -159,8 +159,7 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     });
   } else {
     try {
-      db = openDatabase(pmemPath);
-      createSchema(db);
+      db = openMaintenanceDatabase(pmemPath);
     } catch (err: any) {
       issues.push({
         severity: 'error',
@@ -531,7 +530,7 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   // Called before rebuildCommand() so --fix / --fix-stale can immediately
   // remove stale card references without waiting for a full index rebuild.
   // Wrapped in a transaction for atomicity — a crash mid-cleanup rolls back.
-  const cleanupMissingCards = (db: ReturnType<typeof openDatabase>, issues: VerifyIssue[]): void => {
+  const cleanupMissingCards = (db: MaintenanceDatabase, issues: VerifyIssue[]): void => {
     const missingCardIssues = issues.filter(i => i.type === 'missing_card_file' && i.card_id);
     if (missingCardIssues.length === 0) return;
 
@@ -699,7 +698,7 @@ function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', de
 }
 
 
-function printDistillSuggestion(db: ReturnType<typeof openDatabase> | null, pmemPath: string): void {
+function printDistillSuggestion(db: MaintenanceDatabase | null, pmemPath: string): void {
   if (!db) return;
   try {
     const traceRow = db.prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0").get() as { count: number };

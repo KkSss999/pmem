@@ -29,6 +29,8 @@ export interface CaptureOptions {
   full?: boolean;
   force?: boolean;
   cwd?: string;
+  /** Runtime adapter defers the canonical lifecycle event to its Backend transaction. */
+  deferRuntimeEvent?: boolean;
 }
 
 export interface CaptureResult {
@@ -413,30 +415,32 @@ ${listItems(traceSummary.next)}
   }
 
   try {
-    const eventDb = openDatabase(pmemPath);
-    createSchema(eventDb);
-    const eventTx = eventDb.transaction(() => {
-      const activeSession = getActiveSession(eventDb);
-      const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
-      const traceCardId = `trace.${today}-${todayNum}`;
-      const branch = getCurrentBranch(cwd);
-      insertUpdateLog(eventDb, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
-      insertRuntimeEvent(eventDb, {
-        eventType: 'memory.capture.committed',
-        memoryId: traceCardId,
-        branch,
-        sessionId: activeSession?.id,
-        payload: {
-          trace_path: path.relative(cwd, traceFile),
-          summary: traceSummary.summary,
-          changed_files: changedFiles.map(f => f.path),
-          diff_hash: diffHash,
-        },
-        success: true,
+    if (!options.deferRuntimeEvent) {
+      const eventDb = openDatabase(pmemPath);
+      createSchema(eventDb);
+      const eventTx = eventDb.transaction(() => {
+        const activeSession = getActiveSession(eventDb);
+        const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
+        const traceCardId = `trace.${today}-${todayNum}`;
+        const branch = getCurrentBranch(cwd);
+        insertUpdateLog(eventDb, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
+        insertRuntimeEvent(eventDb, {
+          eventType: 'memory.capture.committed',
+          memoryId: traceCardId,
+          branch,
+          sessionId: activeSession?.id,
+          payload: {
+            trace_path: path.relative(cwd, traceFile),
+            summary: traceSummary.summary,
+            changed_files: changedFiles.map(f => f.path),
+            diff_hash: diffHash,
+          },
+          success: true,
+        });
       });
-    });
-    eventTx();
-    closeDatabase();
+      eventTx();
+      closeDatabase();
+    }
   } catch (err: any) {
     try { closeDatabase(); } catch {}
     if (fileExists(traceFile)) {

@@ -10,14 +10,14 @@ import {
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
 import {
-  openDatabase,
+  openMaintenanceDatabase,
   createSchema,
   insertDirtyFlag,
   resolveDirtyFlags,
   insertUpdateLog,
   getActiveSession,
   closeDatabase
-} from '../core/db';
+} from '../runtime/maintenance';
 import { getChangedFiles } from './status';
 import { acknowledgeStatusChanges } from '../core/query/status';
 
@@ -60,7 +60,7 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
     if (!fileExists(dbPath)) {
       throw new Error('SQLite database not found. Run pmem rebuild first.');
     }
-    db = openDatabase(pmemPath);
+    db = openMaintenanceDatabase(pmemPath);
     createSchema(db);
 
     // Start SQLite transaction

@@ -2,7 +2,7 @@ import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { validatePathScope } from '../mcp/security';
 import { startMcpServer } from '../mcp/server';
-import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import { findProjectPaths } from '../core/projectRoot';
 
 /**
@@ -12,7 +12,7 @@ import { findProjectPaths } from '../core/projectRoot';
  * MCP protocol transport channel. Any non-JSON output will cause protocol
  * errors. Use stderr for diagnostics if absolutely necessary.
  */
-export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readonly'): Promise<void> {
+export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readonly', runtimeOptions?: CommandRuntimeOptions): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
@@ -23,7 +23,7 @@ export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readon
   }
 
   const dbPath = path.join(pmemPath, 'pmem.db');
-  if (!fileExists(dbPath)) {
+  if (!runtimeOptions?.backend && !fileExists(dbPath)) {
     process.stderr.write('Error: No .pmem/pmem.db found. Run `pmem rebuild` first.\n');
     process.exit(2);
   }
@@ -31,6 +31,6 @@ export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readon
   // Security: validate path scope before starting
   validatePathScope(pmemPath, project?.projectRoot ?? cwd);
 
-  const runtime = await Pmem.open({ root: project?.projectRoot ?? cwd });
+  const runtime = await openCommandRuntime(project?.projectRoot ?? cwd, runtimeOptions);
   await startMcpServer(runtime, writeMode);
 }

@@ -3,6 +3,7 @@ import { fileExists } from '../core/fs';
 import { statusQuery } from '../core/query/status';
 import { findProjectPaths } from '../core/projectRoot';
 import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import type { CliFormat } from '../types';
 
 // === Data structures ===
@@ -47,7 +48,7 @@ export function getChangedFiles(cwd: string, since?: string) {
 
 // === Main command ===
 
-export async function statusCommand(options: { since?: string; format?: string }): Promise<void> {
+export async function statusCommand(options: { since?: string; format?: string; runtime?: CommandRuntimeOptions }): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
@@ -63,7 +64,7 @@ export async function statusCommand(options: { since?: string; format?: string }
   try {
     result = await (async () => {
       try {
-        pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
+        pmem = await openCommandRuntime(project?.projectRoot ?? cwd, options.runtime);
         return await pmem.status({ since: options.since });
       } finally {
         if (pmem) await pmem.close();

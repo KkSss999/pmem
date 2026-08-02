@@ -98,6 +98,32 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
   }
 });
 
+test('Pmem.query executes a backend-neutral plan through the RetrieverRegistry', async () => {
+  const root = makeProject();
+  const memory = await Pmem.open({ root });
+  try {
+    const now = new Date().toISOString();
+    const tx = await memory.backend.beginTransaction();
+    await tx.putRecord({
+      id: 'memory.runtime-query',
+      schema: { id: 'memory', version: '1.0.0' },
+      data: { title: 'Runtime query record' },
+      scope: 'project',
+      provenance: { source: 'runtime-test' },
+      created_at: now,
+      updated_at: now,
+    });
+    await tx.commit();
+
+    const result = await memory.query('memory.runtime-query', 1);
+    assert.equal(result.hits[0]?.id, 'memory.runtime-query');
+    assert.ok(result.executed.includes('exact'));
+    assert.ok(result.executed.includes('packing'));
+  } finally {
+    await memory.close();
+  }
+});
+
 test('Pmem.forget rejects an unknown card or event without writing a tombstone', async () => {
   const root = makeProject();
   const memory = await Pmem.open({ root });

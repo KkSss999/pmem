@@ -1,57 +1,78 @@
-import Database from 'better-sqlite3';
-import { askQuery, askQueryWithSemantic } from '../core/query/ask';
-import { recallQuery } from '../core/query/recall';
-import { contextQuery } from '../core/query/context';
-import { relatedQuery } from '../core/query/related';
-import { statusQuery } from '../core/query/status';
-import { captureCore } from '../core/capture';
-import { createSchema, forgetMemory, openOwnedDatabase } from '../core/db';
-import { loadManifest } from '../core/manifest';
 import {
+  askQuery,
+  askQueryWithSemantic,
+  captureCore,
+  contextQuery,
   createOfflineTransformersProvider,
+  getCurrentBranch,
+  getSemanticStatus,
+  inspectModelCache,
+  loadManifest,
+  recallQuery,
+  relatedQuery,
+  statusQuery,
   DEFAULT_SEMANTIC_DIMENSION,
   DEFAULT_SEMANTIC_DTYPE,
   DEFAULT_SEMANTIC_MODEL,
   DEFAULT_SEMANTIC_MODEL_REVISION,
-  getSemanticStatus,
-  inspectModelCache,
-  type DisposableEmbeddingProvider,
-} from '../core/semantic';
+} from '../compatibility/v1_2_runtime';
+import { createDefaultRetrieverRegistry, createQueryPlan, type QueryExecutionResult } from '../query';
+import type { DisposableEmbeddingProvider } from '../compatibility/v1_2_runtime';
 import { loadRuntimeConfig } from './config';
 import { PACKAGE_VERSION } from '../version';
 import { EventStore } from './event-store';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
-import { toPmemPath, type CapabilitySet, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type MemoryCapability, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type SessionResult, type StatusOptions, type StatusResult } from './types';
-import type { AskOptions, AskResultV03 } from '../core/query/ask';
+import { EMPTY_SCHEMA_REGISTRY, SqliteMemoryBackend, type SqliteDatabase } from '../storage/sqlite';
+import { toPmemPath, type CapabilitySet, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type MemoryBackend, type MemoryCapability, type MemoryEvent, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type SessionResult, type StatusOptions, type StatusResult } from './types';
+import type { AskOptions, AskResultV03 } from '../compatibility/v1_2_runtime';
 
 export class Pmem implements PmemInstance {
   readonly pmemPath: string;
-  private db: Database.Database;
+  readonly backend: MemoryBackend;
+  private db: SqliteDatabase;
+  private readonly compatibilityBackend: SqliteMemoryBackend | null;
   private readonly scope: ScopeManager;
   private readonly policy: PolicyEngine;
   private events: EventStore;
   private readonly registeredCapabilities: CapabilitySet[];
+  private readonly retrievers = createDefaultRetrieverRegistry();
   private closed = false;
   private semanticProvider: Promise<DisposableEmbeddingProvider> | null = null;
 
   static async open(opts: PmemOpenOptions): Promise<Pmem> {
     const config = loadRuntimeConfig(opts.root, opts.preset, opts.config);
     const pmemPath = toPmemPath(opts.root);
-    const db = openOwnedDatabase(pmemPath);
-    createSchema(db);
-    return new Pmem(opts.root, pmemPath, config, db, opts.capabilities);
+    const backend = opts.backend ?? new SqliteMemoryBackend(pmemPath);
+    await backend.open({ root: opts.root, schema: opts.schema ?? EMPTY_SCHEMA_REGISTRY });
+
+    // Existing v1.2 query/capture paths still require a SQLite handle. When a
+    // non-SQLite backend is injected, keep a short-lived compatibility adapter
+    // for those legacy paths until VS-2 migrates them onto MemoryBackend.
+    let compatibilityBackend: SqliteMemoryBackend | null = null;
+    let db = backend instanceof SqliteMemoryBackend ? backend.database : null;
+    if (!db) {
+      compatibilityBackend = new SqliteMemoryBackend(pmemPath);
+      compatibilityBackend.open({ root: opts.root, schema: opts.schema ?? EMPTY_SCHEMA_REGISTRY });
+      db = compatibilityBackend.database;
+    }
+    if (!db) throw new Error('SQLite compatibility backend failed to open.');
+    return new Pmem(opts.root, pmemPath, config, db, backend, compatibilityBackend, opts.capabilities);
   }
 
   private constructor(
     readonly root: string,
     pmemPath: string,
     readonly config: RuntimeConfig,
-    db: Database.Database,
+    db: SqliteDatabase,
+    backend: MemoryBackend,
+    compatibilityBackend: SqliteMemoryBackend | null,
     capabilities?: CapabilitySet[],
   ) {
     this.pmemPath = pmemPath;
     this.db = db;
+    this.backend = backend;
+    this.compatibilityBackend = compatibilityBackend;
     this.scope = new ScopeManager(root, config);
     this.policy = new PolicyEngine(config, capabilities ?? []);
     this.events = new EventStore(db, config.working.ttl);
@@ -61,6 +82,14 @@ export class Pmem implements PmemInstance {
   async ask(query: string, opts?: AskOptions): Promise<AskResultV03> {
     this.assertOpen();
     try {
+      const registryResult = await this.executeQueryPlan(createQueryPlan(query, opts?.limit));
+      // A non-SQLite backend has no legacy card/query engine to fall back to;
+      // expose the backend-neutral result directly. SQLite keeps the mature
+      // v1.2 ranking/diagnostic envelope while still executing the registry as
+      // its capability-aware first pass.
+      if (this.backend.id !== 'sqlite' && registryResult.hits.length > 0) {
+        return this.registryAskResult(query, registryResult);
+      }
       const deterministicOptions = { ...opts, now: opts?.now ?? Date.now(), db: this.db };
       let semantic: ReturnType<Pmem['semanticConfig']>;
       try {
@@ -94,6 +123,15 @@ export class Pmem implements PmemInstance {
     } finally {
       // Pmem owns this DB; read helpers must not close it.
     }
+  }
+
+  async query(query: string, limit?: number): Promise<QueryExecutionResult> {
+    return this.executeQueryPlan(createQueryPlan(query, limit));
+  }
+
+  async executeQueryPlan(plan: import('../query').QueryPlan): Promise<QueryExecutionResult> {
+    this.assertOpen();
+    return this.retrievers.execute({ backend: this.backend, plan });
   }
 
   async recall(opts?: RecallOptions): Promise<RecallQueryResult> {
@@ -173,17 +211,18 @@ export class Pmem implements PmemInstance {
       metadata: change.metadata,
     };
     const requiresConfirmation = this.policy.requiresConfirmation(proposal);
-    const event = this.events.append({
+    const event = await this.withBackendTransaction(async tx => tx.appendEvent({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type: 'observe',
       scope,
-      created_at: change.at,
+      created_at: change.at ?? new Date().toISOString(),
       payload: {
         file: change.file,
         summary: change.summary,
         action: change.action,
         metadata: change.metadata,
       },
-    });
+    }));
     return {
       id: event.id,
       type: event.type,
@@ -205,11 +244,21 @@ export class Pmem implements PmemInstance {
       summary: request.reason,
       metadata: request.metadata,
     });
-    const durable = forgetMemory(this.db, request.id, {
-      reason: request.reason,
-      branch: scope.startsWith('branch:') ? scope.slice('branch:'.length) : null,
-      sessionId: scope.startsWith('session:') ? scope.slice('session:'.length) : null,
-    });
+    const durableRecord = await this.backend.getRecord(request.id);
+    const durable = durableRecord
+      ? await this.withBackendTransaction(async tx => {
+          const event: MemoryEvent = {
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            type: 'forget',
+            scope,
+            created_at: request.at ?? new Date().toISOString(),
+            payload: { target_id: request.id, reason: request.reason, metadata: request.metadata },
+            record_id: request.id,
+          };
+          await tx.deleteRecord(request.id, event);
+          return { success: true, memoryId: request.id, message: `Memory forgotten: ${request.id}` };
+        })
+      : { success: false, memoryId: request.id, message: `Memory not found: ${request.id}` };
     // `forget` accepts either a durable card ID or an existing runtime event
     // ID. A target that is neither must not create a success-shaped tombstone:
     // that would turn a typo into misleading history. Existing event IDs still
@@ -217,31 +266,34 @@ export class Pmem implements PmemInstance {
     if (!durable.success && !target) {
       throw new Error(durable.message);
     }
-    const event = durable.success
-      ? this.events.find(String(durable.eventId)) ?? this.events.append({
-          id: String(durable.eventId),
-          type: 'forget',
-          scope,
-          created_at: request.at,
-          payload: {
-            target_id: request.id,
-            reason: request.reason,
-            metadata: request.metadata,
-            durable: true,
-          },
-        })
-      : this.events.append({
-          type: 'forget',
-          scope,
-          created_at: request.at,
-          payload: {
-            target_id: request.id,
-            reason: request.reason,
-            metadata: request.metadata,
-            durable: false,
-            error: durable.message,
-          },
-        });
+    let event: MemoryEvent;
+    if (durable.success) {
+      event = this.events.replay().filter(candidate =>
+        candidate.type === 'forget' && candidate.payload.target_id === request.id
+      ).at(-1) ?? {
+        id: request.id,
+        type: 'forget',
+        scope,
+        created_at: request.at ?? new Date().toISOString(),
+        payload: { target_id: request.id, reason: request.reason, metadata: request.metadata, durable: true },
+      };
+    } else if (target) {
+      event = await this.withBackendTransaction(async tx => tx.appendEvent({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        type: 'forget',
+        scope,
+        created_at: request.at ?? new Date().toISOString(),
+        payload: {
+          target_id: request.id,
+          reason: request.reason,
+          metadata: request.metadata,
+          durable: false,
+          error: durable.message,
+        },
+      }));
+    } else {
+      throw new Error(durable.message);
+    }
     return {
       id: event.id,
       type: event.type,
@@ -260,13 +312,43 @@ export class Pmem implements PmemInstance {
     this.requireCapability(principal, 'memory.commit', scope);
     const quotaCheck = this.policy.checkQuota(principal, 'capture');
     if (!quotaCheck.allowed) throw new Error(`QuotaExceededError: capture quota exceeded for ${principal}`);
-    return captureCore(this.pmemPath, { ...opts, summary: captureSummary || undefined, cwd: this.root });
+    // captureCore is a filesystem Projection workflow. It owns its rebuild
+    // and journal/rollback boundaries, so holding the backend SQL lock across
+    // it would deadlock the legacy rebuild connection. Complete the projection
+    // first, then commit its canonical lifecycle event through the backend.
+    const result = captureCore(this.pmemPath, {
+      ...opts,
+      summary: captureSummary || undefined,
+      cwd: this.root,
+      deferRuntimeEvent: true,
+    });
+    if (!result.success) return result;
+    return this.withBackendTransaction(async tx => {
+      await tx.appendEvent({
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        type: 'commit',
+        scope,
+        created_at: new Date().toISOString(),
+        payload: {
+          trace_path: result.tracePath,
+          summary: captureSummary,
+          branch: getCurrentBranch(this.root) ?? undefined,
+        },
+      });
+      return result;
+    });
   }
 
   async endSession(result: SessionResult): Promise<void> {
     this.assertOpen();
     const scope = this.scope.resolve('', { summary: result.summary, metadata: result.metadata });
-    this.events.append({ type: 'session_end', scope, payload: { result } });
+    await this.withBackendTransaction(async tx => tx.appendEvent({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'session_end',
+      scope,
+      created_at: new Date().toISOString(),
+      payload: { result },
+    }));
     this.events.expire();
   }
 
@@ -283,7 +365,8 @@ export class Pmem implements PmemInstance {
       try { await (await this.semanticProvider).dispose(); } catch {}
       this.semanticProvider = null;
     }
-    this.db.close();
+    if (this.compatibilityBackend) this.compatibilityBackend.close();
+    await this.backend.close();
     this.closed = true;
   }
 
@@ -299,6 +382,43 @@ export class Pmem implements PmemInstance {
 
   private assertOpen(): void {
     if (this.closed) throw new Error('Pmem instance is already closed.');
+  }
+
+  private async withBackendTransaction<T>(work: (tx: import('./model').BackendTransaction) => T | PromiseLike<T>): Promise<T> {
+    const tx = await this.backend.beginTransaction();
+    try {
+      const result = await work(tx);
+      await tx.commit();
+      return result;
+    } catch (error) {
+      try { await tx.rollback(error); } catch {}
+      throw error;
+    }
+  }
+
+  private registryAskResult(query: string, result: QueryExecutionResult): AskResultV03 {
+    const matched = result.hits.map(hit => {
+      const data = hit.record?.data ?? {};
+      const file = typeof data.file_path === 'string' ? data.file_path : '';
+      const title = typeof data.title === 'string' ? data.title : hit.id;
+      return {
+        id: hit.id,
+        title,
+        match_type: 'keyword_fallback' as const,
+        confidence: Math.max(0, Math.min(1, hit.score)),
+        graph_distance: hit.channels.includes('graph') ? 1 : 0,
+        file,
+        score: hit.score,
+        reasons: hit.channels.map(channel => ({ channel, detail: `backend retriever: ${channel}`, base: hit.score })) as any,
+      };
+    });
+    return {
+      query,
+      matched,
+      recommended_files: matched.map(item => item.file).filter(Boolean),
+      evidence_paths: matched.map(item => item.file).filter(Boolean),
+      warnings: result.warnings ? [...result.warnings] : undefined,
+    };
   }
 
   private semanticConfig(): {
@@ -347,8 +467,25 @@ export class Pmem implements PmemInstance {
 
 }
 
+export * from './model';
 export * from './types';
 export { loadRuntimeConfig, PRESET_DEFAULTS } from './config';
 export { ScopeManager } from './scope';
 export { PolicyEngine } from './policy';
 export { EventStore } from './event-store';
+export { SqliteMemoryBackend } from '../storage/sqlite';
+export {
+  createDefaultRetrieverRegistry,
+  createQueryPlan,
+  RetrieverRegistry,
+} from '../query';
+export type {
+  QueryExecutionResult,
+  QueryPlan,
+  QueryStage,
+  Retriever,
+  RetrieverContext,
+  RetrieverHit,
+  RetrieverId,
+  RetrieverResult,
+} from '../query';

@@ -3,13 +3,14 @@ import { fileExists } from '../core/fs';
 import { findProjectPaths } from '../core/projectRoot';
 import { formatOutput } from '../core/format';
 import { Pmem } from '../runtime';
+import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import type { CliFormat } from '../types';
 
 export async function recallCommand(
   budget: number = 2000,
   format: CliFormat = 'compact',
   since?: string,
-  options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep' }
+  options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep'; runtime?: CommandRuntimeOptions }
 ): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
@@ -22,7 +23,7 @@ export async function recallCommand(
 
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
+    pmem = await openCommandRuntime(project?.projectRoot ?? cwd, options?.runtime);
     const result = await pmem.recall({
       budget,
       since,

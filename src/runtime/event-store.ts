@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import type { MemoryEvent, MemoryEventType, WorkingMemory } from './types';
 import { parseDurationMs } from './policy';
+import type { SqliteDatabase } from '../storage/sqlite';
 
 interface EventRow {
   id: string;
@@ -18,7 +18,7 @@ interface EventRow {
 
 export class EventStore {
   constructor(
-    private readonly db: Database.Database,
+    private readonly db: SqliteDatabase,
     private readonly workingTtl = '12h',
   ) {
     this.createSchema();

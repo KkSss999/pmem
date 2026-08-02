@@ -2,7 +2,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock, toPosixPath } from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
+import { upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../runtime/maintenance';
+import { openMaintenanceDatabase } from '../runtime/maintenance';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import { findProjectPaths } from '../core/projectRoot';
@@ -72,8 +73,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     return;
   }
 
-  const db = openDatabase(pmemPath);
-  createSchema(db);
+  const db = openMaintenanceDatabase(pmemPath);
   // Core runtime schema is versioned independently in createSchema(). The
   // manifest version remains the source card protocol and should not downgrade
   // the DB schema (events table rebuild behavior is append-only for incremental
