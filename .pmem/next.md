@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-完成全量 1.3.0 验收后进入二次验收；继续维护唯一 maintenance adapter 边界
+进入用户二次验收；若继续开发，从 Perview/v1.3.0-runtime-first 分支开始
 
 ## Why
 PR #46 is merged and v1.2.4 issue cleanup is complete. v1.3.0 must now establish the canonical Runtime/model/backend boundary before any broad command migration.
