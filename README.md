@@ -29,7 +29,7 @@ The design is intentionally **local and Git-friendly**. Markdown cards are the s
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-**v1.2 (current)** ships **Unified Memory Intelligence**: the deterministic hybrid engine remains authoritative, with optional local multilingual semantic recall, contextual reranking, and explainable memory-health diagnostics.
+**v1.3.1 (current)** ships the **Semantic Runtime Default**: deterministic retrieval remains authoritative, while local multilingual semantic retrieval is a standard, versioned, automatically maintained Runtime capability with safe degradation.
 
 ## Who It's For
 
@@ -43,7 +43,7 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 ### Base CLI — recommended for every user
 
 ```bash
-npm install -g pmem-ai@1.2.4
+npm install -g pmem-ai@1.3.1
 pmem --version
 ```
 
@@ -59,7 +59,7 @@ Run `pmem doctor` anytime to check the health of your project memory setup.
 ### Optional semantic companion — install only when needed
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.4
+npm install -g pmem-ai-semantic@1.3.1
 ```
 
 `pmem-ai-semantic` is not a second CLI. It is the opt-in local inference runtime
@@ -273,7 +273,7 @@ model. To enable it for a project:
 ```bash
 # Install only on machines that need local semantic inference. The base pmem-ai
 # package intentionally does not install Transformers.js or native ONNX/image runtimes.
-npm install -g pmem-ai-semantic@1.2.4
+npm install -g pmem-ai-semantic@1.3.1
 
 pmem semantic enable                # guided setup + current-project index
 pmem semantic status
@@ -302,7 +302,7 @@ data and can always be rebuilt from canonical Markdown cards plus the shared
 model.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
-For SDK installations, install `pmem-ai-semantic@1.2.4` in the same project as
+For SDK installations, install `pmem-ai-semantic@1.3.1` in the same project as
 `pmem-ai`. If the companion is absent or incompatible, setup/rebuild and SDK
 semantic queries report the exact install command while deterministic recall remains available.
 The pinned model is stored once for all projects at
@@ -719,7 +719,7 @@ Fresh v1.2 projects create this index during `pmem init`. The manual command is 
 ### Semantic Companion Is Missing
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.4
+npm install -g pmem-ai-semantic@1.3.1
 pmem semantic enable
 ```
 

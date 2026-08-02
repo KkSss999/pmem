@@ -12,7 +12,7 @@ allowed-tools: Bash(pmem:*)
 
 ```bash
 # Install the complete model-free base CLI
-npm install -g pmem-ai@1.2.4
+npm install -g pmem-ai@1.3.1
 
 # First time in a project: init also builds the first local index
 pmem init my-project
@@ -52,8 +52,8 @@ review-heavy maintenance.
 
 | Mode | Install | User outcome |
 |---|---|---|
-| Base, recommended | `npm install -g pmem-ai@1.2.4` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
-| Semantic enhancement, macOS and Windows | Base package plus `npm install -g pmem-ai-semantic@1.2.4` | Adds local multilingual embeddings and contextual reranking |
+| Base, recommended | `npm install -g pmem-ai@1.3.1` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
+| Semantic enhancement, macOS and Windows | Base package plus `npm install -g pmem-ai-semantic@1.3.1` | Adds local multilingual embeddings and contextual reranking |
 
 `pmem-ai-semantic` is an optional runtime companion, not another CLI. If the
 companion, shared model, or semantic index is unavailable, `ask`, `context`, and
@@ -96,7 +96,7 @@ pmem rebuild --card module.core  # rebuild single card
 ### Optional Semantic Retrieval (macOS and Windows)
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.4
+npm install -g pmem-ai-semantic@1.3.1
 pmem semantic enable
 pmem semantic status
 ```

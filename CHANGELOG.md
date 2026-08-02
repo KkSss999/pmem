@@ -2,6 +2,21 @@
 
 All notable changes to pmem are documented here.
 
+## v1.3.1 — Semantic Runtime Default (2026-08-02)
+
+### Added
+
+- **Semantic Runtime Default**: opening a compatible project now records the pinned local semantic model contract without downloading model assets implicitly.
+- **Automatic semantic lifecycle**: successful Runtime captures trigger best-effort incremental semantic refresh; canonical capture remains successful when semantic assets are unavailable.
+- **Versioned semantic metadata**: receipts and SQLite semantic indexes record metadata version, model coordinates, dimension, and heading-aware chunk strategy.
+- **Production validation**: the pmem repository's own `.pmem` root has a complete `44 cards / 646 chunks` semantic index and a successful Runtime capture refresh.
+
+### Compatibility
+
+- The base CLI and optional `pmem-ai-semantic` companion advance together to `1.3.1`.
+- Deterministic, exact, lexical, graph, and fusion ranking remain authoritative; semantic retrieval remains a degradable perception channel.
+- `pmem semantic clear` records an explicit `auto_enabled: false` opt-out and preserves the model cache.
+
 ## v1.2.4 — Maintenance and Retrieval Reliability (2026-08-02)
 
 ### Added
