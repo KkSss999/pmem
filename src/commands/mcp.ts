@@ -3,6 +3,7 @@ import { fileExists } from '../core/fs';
 import { validatePathScope } from '../mcp/security';
 import { startMcpServer } from '../mcp/server';
 import { Pmem } from '../runtime';
+import { findProjectPaths } from '../core/projectRoot';
 
 /**
  * Start a read-only stdio MCP server for agent tool integration.
@@ -13,7 +14,8 @@ import { Pmem } from '../runtime';
  */
 export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readonly'): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
 
   if (!fileExists(pmemPath)) {
     process.stderr.write('Error: No .pmem directory found. Run `pmem init` first.\n');
@@ -27,9 +29,8 @@ export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readon
   }
 
   // Security: validate path scope before starting
-  validatePathScope(pmemPath, cwd);
+  validatePathScope(pmemPath, project?.projectRoot ?? cwd);
 
-  const runtime = await Pmem.open({ root: cwd });
+  const runtime = await Pmem.open({ root: project?.projectRoot ?? cwd });
   await startMcpServer(runtime, writeMode);
 }
-

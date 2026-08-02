@@ -6,6 +6,7 @@ import { getDefaultManifest, saveManifest } from '../core/manifest';
 import { InitScanResult, InitScanCandidate } from '../types';
 import { DOMAIN_PRESETS, type DomainPreset } from '../core/domainPresets';
 import { rebuildCommand } from './rebuild';
+import { findProjectPaths } from '../core/projectRoot';
 
 const PMEM_DIR = '.pmem';
 
@@ -432,9 +433,10 @@ export async function initCommand(options: {
   domain?: string;
 }): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const existingProject = findProjectPaths(cwd);
+  const pmemPath = existingProject?.pmemPath ?? path.join(cwd, PMEM_DIR);
 
-  if (fileExists(pmemPath)) {
+  if (existingProject || fileExists(pmemPath)) {
     console.log(`.pmem already exists at ${pmemPath}`);
     console.log('To reinitialize, remove .pmem/ first.');
     return;

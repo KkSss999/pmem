@@ -15,6 +15,9 @@ related_to:
   - feature.v0_8_hybrid_recall_engine_20260626
   - feature.v1_1_1_lightweight_semantic_layer_20260626
 last_verified: "2026-06-26T12:15:00.000Z"
+classification: risk
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # RAG Scope Creep Into Heavy Vector Stack
 

@@ -30,7 +30,10 @@ related_to:
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
   - module.recall_retrieval_runtime_20260626
-last_verified: "2026-07-03T00:00:00.000Z"
+last_verified: "2026-08-02T08:44:58.629Z"
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Post v0.7 Project RAG OS Roadmap
 

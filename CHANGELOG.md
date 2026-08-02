@@ -2,6 +2,28 @@
 
 All notable changes to pmem are documented here.
 
+## v1.2.4 — Maintenance and Retrieval Reliability (2026-08-02)
+
+### Added
+
+- **Unified maintenance workflow**: `pmem maintain` previews or explicitly applies metadata repair, deterministic rebuild, and optional semantic rebuild with structured recovery guidance.
+- **Project-root discovery**: commands can resolve the nearest project `.pmem` directory from subdirectories, with lock diagnostics and domain-aware health thresholds.
+- **More useful query output**: `ask` exposes browse-style results and safe snippets, while `recall` restores foundation and recent-trace context within the requested budget.
+- **Retrieval quality safeguards**: factual queries preserve graph provenance and small-project evaluation fixtures cover ranking regressions.
+
+### Fixed
+
+- Oversized semantic chunks are bounded, and card-level embedding failures now produce partial/failed index status instead of an apparently ready index.
+- Semantic companion loading resolves its own Transformers runtime and reports actionable install/version errors.
+- Health metadata creation, verification, and migration now preserve trust/sensitivity provenance and provide actionable repair hints.
+- Project-root, lock, non-Git, and domain-specific paths are handled consistently across rebuild, status, verify, health, semantic, and query commands.
+
+### Compatibility
+
+- The base CLI and optional `pmem-ai-semantic` companion advance together to `1.2.4`.
+- Markdown cards remain canonical; SQLite, semantic chunks, vectors, and query fixtures remain rebuildable derived data.
+- Linux remains unsupported for semantic retrieval. Windows semantic setup remains locally covered by packaging smoke tests, not by a fresh real-machine acceptance in this release preparation.
+
 ## v1.2.3 — Windows Semantic Retrieval (2026-07-29)
 
 ### Added

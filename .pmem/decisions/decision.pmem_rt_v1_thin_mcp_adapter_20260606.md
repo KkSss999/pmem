@@ -14,6 +14,9 @@ related_to:
   - task.post_v0_7_optimization_roadmap_20260602
   - risk.pmem_rt_v1_security_threat_model_20260606
   - trace.pmem_rt_v2_upgrade_gates_20260606
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # pmem-rt v1: Thin MCP Adapter
 

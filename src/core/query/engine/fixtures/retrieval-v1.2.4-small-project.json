@@ -1,0 +1,118 @@
+{
+  "fixture_version": "v1.2.4-small-project-2026-08-02.1",
+  "description": "Small creative-project fixture for semantic collapse and Chinese factual graph retrieval.",
+  "cards": [
+    {
+      "id": "character.lin_xiao",
+      "type": "character",
+      "title": "林骁",
+      "summary": "学院里的年轻法师，擅长把递归魔法用于实战。",
+      "body": "林骁是学院学员，也是第三章决斗的参与者。",
+      "aliases": ["主角"],
+      "tags": ["学院", "角色"],
+      "source_path": ".pmem/characters/character.lin_xiao.md"
+    },
+    {
+      "id": "character.karl",
+      "type": "character",
+      "title": "卡尔",
+      "summary": "学院里的对手，参加了训练场决斗。",
+      "body": "卡尔是林骁在第三章遇到的对手。",
+      "aliases": ["对手"],
+      "tags": ["学院", "角色"],
+      "source_path": ".pmem/characters/character.karl.md"
+    },
+    {
+      "id": "character.mentor",
+      "type": "character",
+      "title": "梅导师",
+      "summary": "学院导师，负责讲解考试规则和施法安全。",
+      "body": "梅导师是学院里负责训练学生的导师。",
+      "aliases": ["导师"],
+      "tags": ["学院", "角色"],
+      "source_path": ".pmem/characters/character.mentor.md"
+    },
+    {
+      "id": "world.magic_academy",
+      "type": "world",
+      "title": "月环学院",
+      "summary": "学院的区域、社团和日常课程组成了魔法世界的背景。",
+      "body": "学院收纳学生、导师和各类课程。",
+      "aliases": ["学院设定"],
+      "tags": ["学院", "世界"],
+      "source_path": ".pmem/world/world.magic_academy.md"
+    },
+    {
+      "id": "world.magic_exam",
+      "type": "world",
+      "title": "魔法考试",
+      "summary": "考试检查咒式稳定性、临场判断和基础魔法理论。",
+      "body": "魔法考试分为理论题和实战题，要求学生解释施法步骤。",
+      "aliases": ["考试规则"],
+      "tags": ["考试", "魔法"],
+      "source_path": ".pmem/world/world.magic_exam.md"
+    },
+    {
+      "id": "system.lazy_evaluation",
+      "type": "system",
+      "title": "惰性递归魔法",
+      "summary": "递归魔法先保存未完成的咒式，再在需要结果时逐层展开。",
+      "body": "惰性求值让递归咒式只在被观察时继续运作，并避免无穷展开。",
+      "aliases": ["递归咒式"],
+      "tags": ["递归", "魔法系统"],
+      "source_path": ".pmem/systems/system.lazy_evaluation.md"
+    },
+    {
+      "id": "chapter.ch03_training",
+      "type": "chapter",
+      "title": "第三章训练场决斗",
+      "summary": "训练场上的决斗改变了林骁和卡尔之间的关系。",
+      "body": "第三章记录了训练场上的一场决斗：林骁用惰性求值击败了卡尔。",
+      "aliases": ["训练场"],
+      "tags": ["章节", "决斗"],
+      "source_path": ".pmem/chapters/chapter.ch03_training.md"
+    },
+    {
+      "id": "chapter.exam_day",
+      "type": "chapter",
+      "title": "考试日",
+      "summary": "学院考试日展示了理论题、实战题和学生的准备过程。",
+      "body": "考试日里，林骁先完成理论题，再解释咒式的稳定性。",
+      "aliases": ["考试章节"],
+      "tags": ["章节", "考试"],
+      "source_path": ".pmem/chapters/chapter.exam_day.md"
+    }
+  ],
+  "edges": [
+    { "from_id": "chapter.ch03_training", "to_id": "character.lin_xiao", "type": "references", "source": "mention", "confidence": 1 },
+    { "from_id": "chapter.ch03_training", "to_id": "character.karl", "type": "references", "source": "mention", "confidence": 1 },
+    { "from_id": "chapter.exam_day", "to_id": "world.magic_exam", "type": "references", "source": "mention", "confidence": 1 },
+    { "from_id": "character.lin_xiao", "to_id": "system.lazy_evaluation", "type": "related_to", "source": "explicit", "confidence": 1 }
+  ],
+  "queries": [
+    {
+      "id": "creative-characters",
+      "query": "学院里还有哪些角色",
+      "relevant_ids": ["character.lin_xiao", "character.karl", "character.mentor"],
+      "semantic_scores": { "character.lin_xiao": 0.84, "character.karl": 0.83, "character.mentor": 0.82, "world.magic_academy": 0.81, "world.magic_exam": 0.80, "system.lazy_evaluation": 0.79, "chapter.ch03_training": 0.78, "chapter.exam_day": 0.77 }
+    },
+    {
+      "id": "creative-exam",
+      "query": "魔法考试考什么",
+      "relevant_ids": ["world.magic_exam", "chapter.exam_day"],
+      "semantic_scores": { "world.magic_exam": 0.84, "chapter.exam_day": 0.83, "character.mentor": 0.82, "world.magic_academy": 0.81, "character.lin_xiao": 0.80, "character.karl": 0.79, "chapter.ch03_training": 0.78, "system.lazy_evaluation": 0.77 }
+    },
+    {
+      "id": "creative-recursion",
+      "query": "递归魔法怎么运作",
+      "relevant_ids": ["system.lazy_evaluation"],
+      "semantic_scores": { "system.lazy_evaluation": 0.84, "character.lin_xiao": 0.83, "chapter.ch03_training": 0.82, "world.magic_academy": 0.81, "world.magic_exam": 0.80, "character.mentor": 0.79, "character.karl": 0.78, "chapter.exam_day": 0.77 }
+    },
+    {
+      "id": "fact-defeat-karl",
+      "query": "谁击败了卡尔",
+      "relevant_ids": ["chapter.ch03_training"],
+      "semantic_scores": { "world.magic_academy": 0.84, "world.magic_exam": 0.83, "character.mentor": 0.82, "character.karl": 0.81, "character.lin_xiao": 0.80, "chapter.ch03_training": 0.79, "chapter.exam_day": 0.78, "system.lazy_evaluation": 0.77 }
+    }
+  ]
+}

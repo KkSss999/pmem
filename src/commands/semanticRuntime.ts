@@ -6,11 +6,13 @@ import { pipeline } from 'node:stream/promises';
 import type { SemanticModelSpec, SemanticOperations, SemanticRuntimeStatus } from './semantic';
 import {
   createOfflineTransformersProvider,
+  assertSemanticRuntimeAvailable,
   loadSemanticCompanion,
   nativeDynamicImport,
   type SemanticCompanionLoader,
 } from '../core/semantic/transformers';
 import { inspectSemanticReadiness } from '../core/health/semantic';
+import { PACKAGE_VERSION } from '../version';
 import { loadManifest } from '../core/manifest';
 import {
   inspectModelCache,
@@ -44,7 +46,7 @@ function sourceUrl(spec: SemanticModelSpec, file: string): URL {
 function getWithRedirects(url: URL, redirects = 0): Promise<import('node:http').IncomingMessage> {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
-      headers: { 'user-agent': 'pmem-semantic-setup/1.2.1', accept: 'application/octet-stream' },
+      headers: { 'user-agent': `pmem-semantic-setup/${PACKAGE_VERSION}`, accept: 'application/octet-stream' },
     }, response => {
       const status = response.statusCode ?? 0;
       if (status >= 300 && status < 400 && response.headers.location) {
@@ -139,6 +141,7 @@ export function createDefaultSemanticOperations(
       // Fail before downloading ~145 MB when the explicitly opt-in inference
       // runtime is unavailable or incompatible.
       await loadSemanticCompanion(loadCompanion);
+      await assertSemanticRuntimeAvailable(loadCompanion);
       const existing = await inspectModelCache(spec);
       if (existing.cached) return;
       const receipt = await downloadModelSnapshot(spec);
@@ -165,6 +168,9 @@ export function createDefaultSemanticOperations(
           pipelineVersion: value.pipelineVersion ?? null,
           indexCompatible: value.pipelineVersion != null && value.compatible === true,
           indexFresh: readiness?.index_fresh ?? false,
+          buildStatus: value.buildStatus,
+          failedCardCount: value.failedCardCount,
+          failedCardIds: value.failedCardIds,
           eligibleCards: readiness?.eligible_cards ?? 0,
           excludedCards: readiness?.excluded_cards ?? 0,
           excludedByReason: readiness?.excluded_by_reason ?? {},
@@ -180,6 +186,9 @@ export function createDefaultSemanticOperations(
           pipelineVersion: null,
           indexCompatible: false,
           indexFresh: false,
+          buildStatus: 'none',
+          failedCardCount: 0,
+          failedCardIds: [],
           eligibleCards: 0,
           excludedCards: 0,
           excludedByReason: {},
@@ -197,7 +206,16 @@ export function createDefaultSemanticOperations(
       const provider = await createOfflineTransformersProvider(spec, loadCompanion);
       try {
         const result = await core.rebuildSemanticProject(pmemPath, provider, { mode });
-        return { indexedCards: result.cardsSeen - result.cardsExcluded, indexedChunks: result.chunksTotal };
+        return {
+          indexedCards: result.cardsIndexed ?? result.cardsSeen - result.cardsExcluded,
+          indexedChunks: result.chunksTotal,
+          eligibleCards: result.cardsSeen - result.cardsExcluded,
+          excludedCards: result.cardsExcluded,
+          buildStatus: result.buildStatus,
+          cardsFailed: result.cardsFailed,
+          failedCardIds: result.failedCardIds,
+          failures: result.failures,
+        };
       } finally {
         await provider.dispose();
       }

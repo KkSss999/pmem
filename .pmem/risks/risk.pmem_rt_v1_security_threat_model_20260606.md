@@ -10,6 +10,9 @@ depends_on: []
 related_to:
   - decision.pmem_rt_v1_thin_mcp_adapter_20260606
   - decision.mcp_pmem_rt_explicitly_deferred_to_post_v0_7_5_20260606
+classification: risk
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # pmem-rt v1 Security Threat Model
 

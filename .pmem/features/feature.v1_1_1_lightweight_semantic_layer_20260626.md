@@ -19,7 +19,10 @@ depends_on:
 related_to:
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
-last_verified: "2026-06-26T12:15:00.000Z"
+last_verified: "2026-08-02T08:44:58.629Z"
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # v1.1.1 Lightweight Semantic Layer
 

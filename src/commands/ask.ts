@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
+import { findProjectPaths } from '../core/projectRoot';
 import { formatOutput } from '../core/format';
 import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
@@ -39,7 +40,8 @@ function noResultNextSteps(result: AskResultV03): string[] {
 
 export async function askCommand(query: string, format: CliFormat = 'compact', options: AskCommandOptions = {}): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, PMEM_DIR);
   const dbPath = path.join(pmemPath, 'pmem.db');
 
   if (!fileExists(pmemPath)) {
@@ -55,7 +57,7 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
   let result;
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root: cwd });
+    pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
     result = await pmem.ask(query, {
       explain: options.explain,
       limit: options.limit,
@@ -102,6 +104,10 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
       lines.push('');
       for (const step of askNextSteps) lines.push(`  - ${step}`);
     } else {
+      if (result.browse) {
+        lines.push(`Browse: all ${result.browse.total} card(s) of type ${result.browse.type} (complete)`);
+        lines.push('');
+      }
       lines.push('Matched:');
       for (const m of result.matched) {
         const score = m.score !== undefined ? ` (${m.score})` : '';
@@ -117,6 +123,8 @@ export async function askCommand(query: string, format: CliFormat = 'compact', o
           annotation = ` [${via}]`;
         }
         lines.push(`  - ${m.id}${score}${annotation}${stale}: "${m.title}"`);
+        if (m.summary) lines.push(`      Summary: ${m.summary}`);
+        if (m.snippet && m.snippet !== m.summary) lines.push(`      Excerpt: ${m.snippet}`);
       }
       lines.push('');
       lines.push('Recommended:');

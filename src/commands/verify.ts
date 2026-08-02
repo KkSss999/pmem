@@ -10,6 +10,7 @@ import { rebuildCommand } from './rebuild';
 import { parseFrontmatter } from '../core/yaml';
 import { getDistillUrgency } from '../runtime/policy';
 import { buildVerifyResult, healthBaselinePath, inspectSemanticReadiness, readHealthBaseline } from '../core/health';
+import { findProjectPaths } from '../core/projectRoot';
 
 const PMEM_DIR = '.pmem';
 
@@ -29,7 +30,8 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     throw new Error('`pmem verify --format json` cannot be combined with --fix or --fix-stale. Run the repair first, then run JSON verification separately.');
   }
   const cwd = options.cwd ?? process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, PMEM_DIR);
 
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
@@ -414,7 +416,9 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
           severity: sev as 'error' | 'warning' | 'info',
           type: ci.type,
           message: ci.message,
-          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix',
+          fix: metadataFixFor(ci) ?? (ci.card_id
+            ? `Run: pmem update --confirm to update ${ci.card_id}.`
+            : 'Run: pmem verify --fix'),
           card_id: ci.card_id,
           evidence_count: ci.evidence_count,
         });
@@ -706,6 +710,25 @@ function printDistillSuggestion(db: ReturnType<typeof openDatabase> | null, pmem
     }
   } catch {
     // Silently ignore DB errors — distill is a suggestion only
+  }
+}
+
+/**
+ * Metadata migration is the only existing command that writes trust labels.
+ * Keep the choices explicit: verify must never silently promote an old card.
+ */
+function metadataFixFor(issue: { type: string }): string | undefined {
+  switch (issue.type) {
+    case 'untrusted_memory':
+      return 'Run: pmem health migrate --apply --trust-label <label> --sensitivity <level> (choose explicit values; add --classification-by-type type=classification if the dry-run reports an unresolved classification).';
+    case 'unclassified_sensitivity':
+      return 'Run: pmem health migrate --apply --sensitivity <level> (choose an explicit value; add --trust-label <label> or --classification-by-type type=classification if the dry-run reports them unresolved).';
+    case 'unclassified_card':
+      return 'Run: pmem health migrate --apply --classification-by-type type=classification (choose an explicit mapping; add --trust-label <label> and --sensitivity <level> if the dry-run reports them unresolved).';
+    case 'invalid_trust_label':
+      return 'Run: pmem health migrate --apply --trust-label <label> --sensitivity <level> after correcting the invalid value (choose explicit values; review the dry-run first).';
+    default:
+      return undefined;
   }
 }
 

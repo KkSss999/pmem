@@ -72,10 +72,11 @@ class SpyProvider implements EmbeddingProvider {
   passages: string[] = [];
   queries: string[] = [];
   fail = false;
+  failWhen: string | null = null;
 
   async embedPassages(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
     this.passages.push(...texts);
-    if (this.fail) throw new Error('provider failed');
+    if (this.fail || (this.failWhen && texts.some(text => text.includes(this.failWhen!)))) throw new Error('provider failed');
     return texts.map(text => {
       const chinese = /[\u3400-\u9fff]/.test(text) ? 1 : 0;
       return [text.length + 1, chinese + 1, 1];
@@ -126,6 +127,18 @@ describe('semantic chunking and vectors', () => {
     assert.ok(chunks.length > 1);
     assert.ok(chunks.every(chunk => chunk.estimatedTokens <= 480));
     assert.deepStrictEqual(chunks.map(chunk => chunk.chunkId), chunkCard(document('feature.large', body)).map(chunk => chunk.chunkId));
+  });
+
+  it('bounds oversized title and section context without dropping the card', () => {
+    const title = 'Long title '.repeat(400);
+    const heading = 'Long section '.repeat(200);
+    const card = document('trace.oversized-context', `# ${heading}\nbody`, { title });
+    const chunks = chunkCard(card);
+    assert.ok(chunks.length > 0);
+    assert.ok(chunks.every(chunk => chunk.estimatedTokens <= 480));
+    assert.match(chunks[0].content, /^Title: /);
+    assert.ok(!chunks[0].content.includes(title));
+    assert.deepStrictEqual(chunks, chunkCard(card));
   });
 
   it('normalizes Float32 vectors into portable SQLite BLOBs', () => {
@@ -208,6 +221,9 @@ describe('semantic safety and SQLite lifecycle', () => {
       assert.equal(provider.passages.length, 0);
       assert.deepEqual(getSemanticStatus(db), {
         available: true,
+        buildStatus: 'complete',
+        failedCardCount: 0,
+        failedCardIds: [],
         pipelineVersion: SEMANTIC_PIPELINE_VERSION,
         compatible: true,
         modelId: provider.modelId,
@@ -300,20 +316,45 @@ describe('semantic safety and SQLite lifecycle', () => {
     }
   });
 
-  it('preserves the old index if provider work fails', async () => {
-    const db = dbWithCards(['one']);
+  it('isolates one card embedding failure and marks the committed index partial', async () => {
+    const db = dbWithCards(['one', 'two']);
     const provider = new SpyProvider();
     try {
-      await rebuildSemanticIndex(db, [document('one', 'old text')], provider, { mode: 'full' });
-      const before = getSemanticStatus(db);
-      provider.fail = true;
-      await assert.rejects(
-        rebuildSemanticIndex(db, [document('one', 'new text')], provider, { mode: 'full' }),
-        /provider failed/,
-      );
-      assert.deepStrictEqual(getSemanticStatus(db), before);
-      const content = db.prepare('SELECT content FROM semantic_chunks').get() as { content: string };
-      assert.match(content.content, /old text/);
+      await rebuildSemanticIndex(db, [document('one', 'old text'), document('two', 'healthy text')], provider, { mode: 'full' });
+      provider.failWhen = 'new text';
+      const result = await rebuildSemanticIndex(db, [document('one', 'new text'), document('two', 'healthy text')], provider, { mode: 'full' });
+      assert.strictEqual(result.buildStatus, 'partial');
+      assert.strictEqual(result.cardsFailed, 1);
+      assert.deepStrictEqual(result.failedCardIds, ['one']);
+      assert.deepStrictEqual(result.failures, [{ cardId: 'one', stage: 'embed', error: 'provider failed' }]);
+      assert.strictEqual(result.chunksEmbedded, 1);
+      assert.strictEqual(getSemanticStatus(db).available, false);
+      assert.strictEqual(getSemanticStatus(db).buildStatus, 'partial');
+      assert.deepStrictEqual(getSemanticStatus(db).failedCardIds, ['one']);
+      const indexed = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks ORDER BY card_id').all() as Array<{ card_id: string }>;
+      assert.deepStrictEqual(indexed.map(row => row.card_id), ['two']);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('isolates one card chunk failure and continues indexing healthy cards', async () => {
+    const db = dbWithCards(['broken', 'healthy']);
+    const provider = new SpyProvider();
+    try {
+      const result = await rebuildSemanticIndex(db, [
+        document('broken', 'never indexed', { title: null as any }),
+        document('healthy', 'healthy text'),
+      ], provider, { mode: 'full' });
+      assert.strictEqual(result.buildStatus, 'partial');
+      assert.deepStrictEqual(result.failedCardIds, ['broken']);
+      assert.strictEqual(result.failures.length, 1);
+      assert.strictEqual(result.failures[0].cardId, 'broken');
+      assert.strictEqual(result.failures[0].stage, 'chunk');
+      assert.match(result.failures[0].error, /trim/);
+      const indexed = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{ card_id: string }>;
+      assert.deepStrictEqual(indexed.map(row => row.card_id), ['healthy']);
+      assert.strictEqual(getSemanticStatus(db).available, false);
     } finally {
       db.close();
     }

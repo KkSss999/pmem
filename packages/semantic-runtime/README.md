@@ -7,7 +7,7 @@ and image-processing dependencies that deterministic pmem users do not need.
 Install this package explicitly only on a machine where semantic retrieval is wanted:
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.1
+npm install -g pmem-ai-semantic@1.2.4
 pmem semantic enable
 ```
 

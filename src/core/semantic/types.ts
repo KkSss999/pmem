@@ -5,6 +5,8 @@ export const DEFAULT_MAX_MODEL_TOKENS = 512;
 export const DEFAULT_CHUNK_TOKEN_BUDGET = 480;
 export const SEMANTIC_PIPELINE_VERSION = 2;
 
+export type SemanticBuildStatus = 'none' | 'complete' | 'partial';
+
 export interface SemanticCardDocument {
   id: string;
   type?: string | null;
@@ -64,6 +66,11 @@ export interface SemanticIndexResult {
   mode: 'full' | 'incremental';
   cardsSeen: number;
   cardsExcluded: number;
+  cardsIndexed: number;
+  cardsFailed: number;
+  failedCardIds: string[];
+  failures: SemanticIndexFailure[];
+  buildStatus: Exclude<SemanticBuildStatus, 'none'>;
   chunksTotal: number;
   chunksEmbedded: number;
   chunksReused: number;
@@ -71,8 +78,17 @@ export interface SemanticIndexResult {
   indexContentHash: string;
 }
 
+export interface SemanticIndexFailure {
+  cardId: string;
+  stage: 'chunk' | 'embed';
+  error: string;
+}
+
 export interface SemanticStatus {
   available: boolean;
+  buildStatus: SemanticBuildStatus;
+  failedCardCount: number;
+  failedCardIds: string[];
   pipelineVersion: number | null;
   compatible: boolean;
   modelId: string | null;

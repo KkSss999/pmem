@@ -13,6 +13,9 @@ related_to:
   - feature.v0_7_5_graph_visualization_20260606
   - decision.v0_7_5_architecture_sigma_js_hybrid_markdown_pipel_20260606
 last_verified: "2026-06-26T12:25:00.000Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Deferred Web UI Wikilink Interaction
 

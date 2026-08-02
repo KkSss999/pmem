@@ -4,7 +4,9 @@ import * as readline from 'node:readline';
 import type { ManifestV03 } from '../types';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { fileExists } from '../core/fs';
+import { findProjectPaths } from '../core/projectRoot';
 import { createDefaultSemanticOperations } from './semanticRuntime';
+import { PACKAGE_VERSION } from '../version';
 import {
   DEFAULT_SEMANTIC_DIMENSION,
   DEFAULT_SEMANTIC_DTYPE,
@@ -44,11 +46,20 @@ export interface SemanticRuntimeStatus {
   excludedCards?: number;
   excludedByReason?: Record<string, number>;
   excludedByTrustDetail?: Record<string, number>;
+  buildStatus?: 'none' | 'complete' | 'partial';
+  failedCardCount?: number;
+  failedCardIds?: string[];
 }
 
 export interface SemanticRebuildResult {
   indexedCards: number;
   indexedChunks: number;
+  eligibleCards?: number;
+  excludedCards?: number;
+  buildStatus?: 'complete' | 'partial';
+  cardsFailed?: number;
+  failedCardIds?: string[];
+  failures?: Array<{ cardId: string; stage: string; error: string }>;
 }
 
 /** Boundary between CLI/config concerns and the derived semantic index runtime. */
@@ -131,7 +142,7 @@ function configuredSpec(manifest: ManifestV03): SemanticModelSpec {
     || !config.cache_path
     || !path.isAbsolute(config.cache_path)
   ) {
-    throw new Error('Semantic manifest configuration is incompatible with v1.2.1. Run `pmem semantic setup` to repair it.');
+    throw new Error(`Semantic manifest configuration is incompatible with ${PACKAGE_VERSION}. Run \`pmem semantic setup\` to repair it.`);
   }
   return modelSpec(config.cache_path, config.source ?? DEFAULT_SEMANTIC_SOURCE);
 }
@@ -165,7 +176,7 @@ export async function semanticCommand(
   overrides: Partial<SemanticCommandDependencies> = {},
 ): Promise<void> {
   const cwd = options.cwd ?? process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const pmemPath = findProjectPaths(cwd)?.pmemPath ?? path.join(cwd, '.pmem');
   const manifest = requireManifest(pmemPath);
   const deps: SemanticCommandDependencies = {
     platform: overrides.platform ?? process.platform,
@@ -177,7 +188,7 @@ export async function semanticCommand(
 
   if (action === 'setup' || action === 'enable') {
     if (deps.platform !== 'darwin' && deps.platform !== 'win32') {
-      throw new Error(`Semantic ${action} is supported on macOS and Windows only in v1.2.3.`);
+      throw new Error(`Semantic ${action} is supported on macOS and Windows only in ${PACKAGE_VERSION}.`);
     }
     const source = options.source ?? DEFAULT_SEMANTIC_SOURCE;
     if (source !== 'modelscope' && source !== 'huggingface') {
@@ -258,33 +269,56 @@ export async function semanticCommand(
     }
 
     if (format === 'compact') deps.log('Building the current project semantic index...');
+    let indexResultEmitted = false;
     try {
       const result = await deps.operations.rebuild(pmemPath, spec, 'full');
+      const partial = result.buildStatus === 'partial' || (result.cardsFailed ?? 0) > 0;
+      const noEligible = result.eligibleCards === 0 && (result.excludedCards ?? 0) > 0;
+      const failed = partial || noEligible;
       writeOutput(deps.log, format, {
         ...downloadInfo,
-        status: 'ready',
+        status: failed ? 'index_failed' : 'ready',
         manifest_enabled: true,
         index_mode: 'full',
+        index_ready: !failed,
         indexed_cards: result.indexedCards,
         indexed_chunks: result.indexedChunks,
+        ...(result.eligibleCards !== undefined ? { eligible_cards: result.eligibleCards } : {}),
+        ...(result.excludedCards !== undefined ? { excluded_cards: result.excludedCards } : {}),
+        ...(result.cardsFailed !== undefined ? { failed_cards: result.cardsFailed } : {}),
+        ...(result.failedCardIds ? { failed_card_ids: result.failedCardIds } : {}),
+        ...(result.failures ? { failures: result.failures } : {}),
+        ...(noEligible ? { error: 'No cards are eligible for semantic indexing; inspect exclusions and run the metadata repair flow.' } : {}),
       }, [
-        `Semantic retrieval enabled: ${result.indexedCards} cards / ${result.indexedChunks} chunks indexed.`,
+        failed
+          ? `Semantic model setup completed but index is ${partial ? 'partial' : 'empty'}: ${result.indexedCards} cards / ${result.indexedChunks} chunks indexed.`
+          : `Semantic retrieval enabled: ${result.indexedCards} cards / ${result.indexedChunks} chunks indexed.`,
+        ...(partial && result.failedCardIds?.length ? [`Failed cards: ${result.failedCardIds.join(', ')}`] : []),
+        ...(noEligible ? ['No cards are eligible for semantic indexing; inspect exclusions and apply metadata repair.'] : []),
         'The model is cached locally and subsequent inference keeps remote loading disabled.',
       ]);
+      indexResultEmitted = true;
+      if (failed) {
+        throw new Error(noEligible
+          ? 'Semantic index is empty because all cards are excluded from indexing.'
+          : `Semantic index is partial; ${result.cardsFailed ?? result.failedCardIds?.length ?? 0} card(s) failed.`);
+      }
     } catch (error: any) {
       const recovery = 'pmem semantic rebuild --full';
-      writeOutput(deps.log, format, {
-        ...downloadInfo,
-        status: 'index_failed',
-        manifest_enabled: true,
-        model_cached: true,
-        index_ready: false,
-        error: error?.message ?? String(error),
-        recovery_command: recovery,
-      }, [
-        'Semantic model setup succeeded and the manifest remains enabled, but index construction failed.',
-        `Recover with: ${recovery}`,
-      ]);
+      if (!indexResultEmitted || format !== 'json') {
+        writeOutput(deps.log, format, {
+          ...downloadInfo,
+          status: 'index_failed',
+          manifest_enabled: true,
+          model_cached: true,
+          index_ready: false,
+          error: error?.message ?? String(error),
+          recovery_command: recovery,
+        }, [
+          'Semantic model setup succeeded and the manifest remains enabled, but index construction failed.',
+          `Recover with: ${recovery}`,
+        ]);
+      }
       throw new Error(
         `Semantic model is cached and enabled, but index construction failed: ${error?.message ?? error}. Recover with: ${recovery}`,
         { cause: error },
@@ -324,10 +358,19 @@ export async function semanticCommand(
     const spec = configuredSpec(manifest);
     const mode = options.full ? 'full' : 'incremental';
     const result = await deps.operations.rebuild(pmemPath, spec, mode);
+    const partial = result.buildStatus === 'partial' || (result.cardsFailed ?? 0) > 0;
+    const noEligible = result.eligibleCards === 0 && (result.excludedCards ?? 0) > 0;
     writeOutput(deps.log, format, result, [
-      `Semantic index rebuilt (${mode}): ${result.indexedCards} cards / ${result.indexedChunks} chunks.`,
+      `Semantic index rebuilt (${mode}): ${result.indexedCards} cards / ${result.indexedChunks} chunks${partial ? ' (partial)' : ''}.`,
+      ...(partial && result.failedCardIds?.length ? [`Failed cards: ${result.failedCardIds.join(', ')}`] : []),
+      ...(noEligible ? ['No cards are eligible for semantic indexing; inspect exclusions and apply metadata repair.'] : []),
       'Remote model loading remained disabled.',
     ]);
+    if (partial || noEligible) {
+      throw new Error(noEligible
+        ? 'Semantic index is empty because all cards are excluded from indexing.'
+        : `Semantic index is partial; ${result.cardsFailed ?? result.failedCardIds?.length ?? 0} card(s) failed.`);
+    }
     return;
   }
 

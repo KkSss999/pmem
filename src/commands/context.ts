@@ -3,10 +3,12 @@ import { fileExists, readFile, writeFile } from '../core/fs';
 import { parseStructuredNext } from '../core/next';
 import { Pmem } from '../runtime';
 import type { PmemSessionData } from '../types';
+import { findProjectPaths } from '../core/projectRoot';
 
 export async function contextCommand(task: string, options: { budget?: number; format?: string }): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
 
   if (!fileExists(pmemPath)) {
     console.error('Error: No .pmem directory found. Run `pmem init` first.');
@@ -22,7 +24,7 @@ export async function contextCommand(task: string, options: { budget?: number; f
   try {
     result = await (async () => {
       try {
-        pmem = await Pmem.open({ root: cwd });
+        pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
         return await pmem.context(task, budget);
       } finally {
         if (pmem) await pmem.close();

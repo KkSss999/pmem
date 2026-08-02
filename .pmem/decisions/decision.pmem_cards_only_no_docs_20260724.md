@@ -10,6 +10,9 @@ related_to:
   - decision.pmem_two_layer_architecture_20260722
   - decision.post_v1_1_macos_required_platform_20260724
   - decision.v1_1_1_macos_semantic_retrieval_20260724
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # Documentation Policy: pmem Cards Only
 

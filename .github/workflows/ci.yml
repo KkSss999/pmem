@@ -58,6 +58,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:release-registry
+      - run: npm run test:e2e:semantic-runtime
       - name: Audit root production dependencies
         run: |
           set +e

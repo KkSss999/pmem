@@ -15,4 +15,21 @@ describe('v0.8 intent parsing', () => {
   it('deduplicates tokens deterministically', () => {
     assert.deepStrictEqual(tokenize('recall recall, ask'), ['recall', 'ask']);
   });
+
+  it('detects English inventory intent and canonicalizes plural card types', () => {
+    const intent = parseIntent('list all characters', ['character', 'chapter']);
+    assert.deepStrictEqual(intent.typeHints, ['character']);
+    assert.strictEqual(intent.enumeration, true);
+  });
+
+  it('detects Chinese inventory intent and maps domain aliases', () => {
+    const intent = parseIntent('有哪些角色', ['character', 'world']);
+    assert.deepStrictEqual(intent.typeHints, ['character']);
+    assert.strictEqual(intent.enumeration, true);
+  });
+
+  it('does not turn an ordinary type keyword into an inventory request', () => {
+    const intent = parseIntent('character motivation', ['character']);
+    assert.strictEqual(intent.enumeration, false);
+  });
 });

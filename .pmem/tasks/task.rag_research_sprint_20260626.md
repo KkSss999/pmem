@@ -17,6 +17,9 @@ related_to:
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
   - risk.rag_scope_creep_heavy_vector_stack_20260626
 last_verified: "2026-06-26T12:19:26.214Z"
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # RAG Research Sprint for v0.8 Architecture
 

@@ -79,6 +79,7 @@ function parseSections(markdown: string): MarkdownSection[] {
 }
 
 function takeUtf8Prefix(value: string, maxBytes: number): number {
+  if (maxBytes <= 0) return 0;
   let bytes = 0;
   let index = 0;
   for (const symbol of value) {
@@ -88,6 +89,15 @@ function takeUtf8Prefix(value: string, maxBytes: number): number {
     index += symbol.length;
   }
   return index;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  if (conservativeTokenCount(value) <= maxBytes) return value;
+  if (maxBytes <= 0) return '';
+  const suffix = '…';
+  const suffixBytes = conservativeTokenCount(suffix);
+  if (maxBytes <= suffixBytes) return value.slice(0, takeUtf8Prefix(value, maxBytes));
+  return `${value.slice(0, takeUtf8Prefix(value, maxBytes - suffixBytes)).trimEnd()}${suffix}`;
 }
 
 function chooseSplitPoint(value: string, hardEnd: number): number {
@@ -116,11 +126,37 @@ function splitWithinBudget(value: string, maxBytes: number): string[] {
   return parts;
 }
 
-function contextPrefix(card: SemanticCardDocument, section: MarkdownSection): string {
-  const lines: string[] = [`Title: ${card.title}`];
-  if (card.summary?.trim()) lines.push(`Summary: ${card.summary.trim()}`);
-  if (section.headingPath.length > 0) lines.push(`Section: ${section.headingPath.join(' > ')}`);
-  return lines.join('\n');
+function contextPrefix(card: SemanticCardDocument, section: MarkdownSection, budget: number): string {
+  const separator = section.body ? '\n\n' : '';
+  const firstBodySymbol = section.body ? Array.from(section.body)[0] : undefined;
+  const minimumBodyBytes = firstBodySymbol ? conservativeTokenCount(firstBodySymbol) : 0;
+  const maxPrefixBytes = budget - conservativeTokenCount(`passage: ${separator}`) - minimumBodyBytes;
+  const fields = [
+    { label: 'Title', value: card.title, weight: 0.5 },
+    ...(section.headingPath.length > 0 ? [{ label: 'Section', value: section.headingPath.join(' > '), weight: 0.35 }] : []),
+    ...(card.summary?.trim() ? [{ label: 'Summary', value: card.summary, weight: 0.15 }] : []),
+  ];
+  const overhead = fields.reduce((total, field) => total + conservativeTokenCount(`${field.label}: `), 0)
+    + Math.max(0, fields.length - 1);
+  const valueBudget = maxPrefixBytes - overhead;
+  if (valueBudget < fields.length || maxPrefixBytes <= 0) {
+    throw new Error(`Semantic metadata for card ${card.id} cannot fit the configured chunk budget`);
+  }
+
+  let remainingBudget = valueBudget;
+  const totalWeight = fields.reduce((total, field) => total + field.weight, 0);
+  const lines = fields.map((field, index) => {
+    const share = index === fields.length - 1
+      ? remainingBudget
+      : Math.max(1, Math.floor(valueBudget * field.weight / totalWeight));
+    const fieldBudget = Math.min(192, share);
+    remainingBudget -= fieldBudget;
+    return `${field.label}: ${truncateUtf8(field.value.trim().replace(/\s+/g, ' '), fieldBudget)}`;
+  });
+  const prefix = lines.join('\n');
+  const bounded = truncateUtf8(prefix, maxPrefixBytes);
+  if (!bounded) throw new Error(`Semantic metadata for card ${card.id} cannot fit the configured chunk budget`);
+  return bounded;
 }
 
 function compactContextLine(card: SemanticCardDocument): string | null {
@@ -150,12 +186,11 @@ export function chunkCard(card: SemanticCardDocument, options: ChunkingOptions =
 
   const chunks: SemanticChunk[] = [];
   for (const section of sections) {
-    const prefix = contextPrefix(card, section);
+    const prefix = contextPrefix(card, section, budget);
     const separator = section.body ? '\n\n' : '';
     const fixedBytes = conservativeTokenCount(`passage: ${prefix}${separator}`);
-    if (fixedBytes >= budget) {
-      throw new Error(`Semantic metadata for card ${card.id} exceeds the chunk token budget`);
-    }
+    if (fixedBytes >= budget && section.body) throw new Error(`Semantic metadata for card ${card.id} cannot leave room for body content`);
+    if (fixedBytes > budget) throw new Error(`Semantic metadata for card ${card.id} exceeds the chunk token budget`);
     const bodies = section.body ? splitWithinBudget(section.body, budget - fixedBytes) : [''];
     for (const bodyPart of bodies) {
       const content = `${prefix}${bodyPart ? `\n\n${bodyPart}` : ''}`;

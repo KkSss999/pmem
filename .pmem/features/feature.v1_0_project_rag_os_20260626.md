@@ -6,7 +6,7 @@ status: completed
 tags: [v1.0, agentic-memory-runtime, two-layer, sdk, mcp, software-preset, released]
 created: "2026-07-22"
 updated: "2026-07-22T11:30:00.000Z"
-last_verified: "2026-07-22T11:30:00.000Z"
+last_verified: "2026-08-02T08:44:58.629Z"
 source_files:
   - .pmem/manifest.yml
   - src/runtime/index.ts
@@ -18,6 +18,9 @@ related_to:
   - feature.v0_8_hybrid_recall_engine_20260626
   - decision.pmem_rt_v1_thin_mcp_adapter_20260606
   - feature.v1_1_system_memory_release_20260722
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 
 # v1.0 Agentic Memory Runtime

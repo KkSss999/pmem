@@ -20,6 +20,10 @@ depends_on:
   - decision.v1_1_system_memory_release_20260722
 related_to:
   - decision.pmem_two_layer_architecture_20260722
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
+last_verified: "2026-08-02T08:44:58.629Z"
 ---
 # v1.1 System Memory Release
 

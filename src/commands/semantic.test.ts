@@ -18,6 +18,7 @@ import {
 import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
 import {
   createOfflineTransformersProvider,
+  assertSemanticRuntimeAvailable,
   loadSemanticCompanion,
   SEMANTIC_COMPANION_PACKAGE,
   SEMANTIC_COMPANION_VERSION,
@@ -129,7 +130,7 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.3';
+    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.2.4';
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
@@ -143,7 +144,7 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.3');
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.2.4');
     assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
@@ -206,6 +207,29 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_enabled, true);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.recovery_command, 'pmem semantic rebuild --full');
+  });
+
+  it('enable JSON partial result remains one truthful failure document', async () => {
+    const { cwd } = project();
+    const output: string[] = [];
+    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
+      platform: 'darwin',
+      operations: fakeOperations({ rebuild: async () => ({
+        indexedCards: 2,
+        indexedChunks: 4,
+        eligibleCards: 3,
+        excludedCards: 0,
+        buildStatus: 'partial',
+        cardsFailed: 1,
+        failedCardIds: ['module.bad'],
+      }) }),
+      log: line => output.push(line),
+    }), /index construction failed/);
+    assert.strictEqual(output.length, 1);
+    const result = JSON.parse(output[0]);
+    assert.strictEqual(result.status, 'index_failed');
+    assert.strictEqual(result.index_ready, false);
+    assert.deepStrictEqual(result.failed_card_ids, ['module.bad']);
   });
 
   it('cancels setup without calling the downloader or mutating the manifest', async () => {
@@ -521,6 +545,33 @@ describe('pmem semantic command', () => {
     assert.strictEqual(calls[0].local, true);
     assert.strictEqual(env.allowRemoteModels, true);
     await provider.dispose();
+  });
+
+  it('keeps the companion package metadata, dependency, and remediation version aligned', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../packages/semantic-runtime/package.json'), 'utf8')) as any;
+    assert.strictEqual(packageJson.version, SEMANTIC_COMPANION_VERSION);
+    assert.strictEqual(packageJson.dependencies['@huggingface/transformers'], '4.2.0');
+    assert.strictEqual(packageJson.exports, './index.js');
+  });
+
+  it('probes the companion Transformers runtime before a cached setup is accepted', async () => {
+    let probed = false;
+    await assertSemanticRuntimeAvailable(async specifier => {
+      assert.strictEqual(specifier, SEMANTIC_COMPANION_PACKAGE);
+      return {
+        apiVersion: 1,
+        assertTransformersRuntimeAvailable: async () => { probed = true; },
+        createOfflineTransformersProvider: async () => ({
+          modelId: SEMANTIC_MODEL,
+          revision: SEMANTIC_MODEL_REVISION,
+          dimension: SEMANTIC_DIMENSION,
+          embedPassages: async () => [],
+          embedQuery: async () => [],
+          dispose: async () => {},
+        }),
+      };
+    });
+    assert.strictEqual(probed, true);
   });
 
   it('loads a compatible injected companion without resolving a root dependency', async () => {

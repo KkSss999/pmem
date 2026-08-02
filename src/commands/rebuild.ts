@@ -5,6 +5,7 @@ import { loadManifest } from '../core/manifest';
 import { openDatabase, createSchema, upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../core/db';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
+import { findProjectPaths } from '../core/projectRoot';
 import { acknowledgeStatusChanges } from '../core/query/status';
 import type { CardFrontmatter, GraphNode, GraphEdge, GraphIndex, CardRow, EdgeRow } from '../types';
 
@@ -42,7 +43,8 @@ type CardParseResult =
 
 export function rebuildCommand(options: RebuildOptions = {}): void {
   const cwd = options.cwd ?? process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, PMEM_DIR);
 
   // v0.7.6 FIX-1 (issue #9): hold `.pmem/.lock` for the duration of the
   // rebuild so a concurrent `pmem verify` waits (or reports `active_lock`)
@@ -51,7 +53,7 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   // `pmem update --confirm` (which already holds the lock) it just runs
   // the body without an extra acquire/release round trip.
   withLock(pmemPath, () => {
-    rebuildLocked(pmemPath, options, cwd);
+    rebuildLocked(pmemPath, options, project?.projectRoot ?? cwd);
   }, { timeoutMs: 30000, onTimeout: 'error' });
 }
 

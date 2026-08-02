@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { statusQuery } from '../core/query/status';
+import { findProjectPaths } from '../core/projectRoot';
 import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
 
@@ -34,7 +35,10 @@ function formatAffectedCardDetail(ac: AffectedCard): string {
 // Back-compat for syncCommand's legacy internal use. CLI status reads go through
 // Pmem Runtime via statusCommand below.
 export function getChangedFiles(cwd: string, since?: string) {
-  return statusQuery(path.join(cwd, '.pmem'), { since, cwd }).changes.map(c => ({
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
+  const projectRoot = project?.projectRoot ?? cwd;
+  return statusQuery(pmemPath, { since, cwd: projectRoot }).changes.map(c => ({
     path: c.path,
     status: c.status,
     relatedCards: c.related_cards.map(rc => ({ card_id: rc.card_id, match_type: rc.match_type })),
@@ -45,7 +49,8 @@ export function getChangedFiles(cwd: string, since?: string) {
 
 export async function statusCommand(options: { since?: string; format?: string }): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
   const format = (options.format || 'compact') as CliFormat;
 
   if (!fileExists(pmemPath)) {
@@ -58,7 +63,7 @@ export async function statusCommand(options: { since?: string; format?: string }
   try {
     result = await (async () => {
       try {
-        pmem = await Pmem.open({ root: cwd });
+        pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
         return await pmem.status({ since: options.since });
       } finally {
         if (pmem) await pmem.close();

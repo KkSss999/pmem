@@ -10,6 +10,9 @@ related_to:
   - feature.v1_0_agentic_memory_runtime_20260722
   - decision.project_rag_os_positioning_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # pmem v1.0: Two-Layer Architecture
 

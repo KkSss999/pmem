@@ -1,8 +1,28 @@
 import * as path from 'path';
 import { ensureDir, atomicWrite, fileExists } from '../core/fs';
 import { loadManifest, renderIdPattern, resolveConfig } from '../core/manifest';
+import { findProjectPaths } from '../core/projectRoot';
 
 const PMEM_DIR = '.pmem';
+
+/**
+ * `pmem new` is an explicit authoring action. Structured cards created this
+ * way are therefore user-confirmed by default, while traces remain evidence
+ * produced by an agent/workflow and must stay outside the trusted semantic
+ * allowlist until a user promotes them deliberately.
+ */
+const TRUST_LABEL_BY_TYPE: Record<string, 'user_confirmed' | 'agent_generated'> = {
+  trace: 'agent_generated',
+};
+const DEFAULT_TRUST_LABEL = 'user_confirmed' as const;
+const DEFAULT_SENSITIVITY = 'internal' as const;
+const SAFE_CLASSIFICATION_BY_TYPE: Record<string, string> = {
+  decision: 'decision',
+  task: 'plan',
+  feature: 'plan',
+  risk: 'risk',
+  assumption: 'assumption',
+};
 
 export interface NewCommandOptions {
   id?: string;
@@ -10,7 +30,7 @@ export interface NewCommandOptions {
 
 export function newCommand(type: string, title: string, options: NewCommandOptions = {}): void {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, PMEM_DIR);
+  const pmemPath = findProjectPaths(cwd)?.pmemPath ?? path.join(cwd, PMEM_DIR);
 
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
@@ -109,6 +129,8 @@ export function newCommand(type: string, title: string, options: NewCommandOptio
 
   // Generate frontmatter
   const created = new Date().toISOString().slice(0, 10);
+  const trustLabel = TRUST_LABEL_BY_TYPE[type] ?? DEFAULT_TRUST_LABEL;
+  const classification = SAFE_CLASSIFICATION_BY_TYPE[type];
   // Escape double-quotes and backslashes in title for valid YAML
   const yamlSafeTitle = trimmedTitle.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
@@ -118,6 +140,9 @@ export function newCommand(type: string, title: string, options: NewCommandOptio
     `type: ${type}`,
     `title: "${yamlSafeTitle}"`,
     'status: draft',
+    ...(classification ? [`classification: ${classification}`] : []),
+    `trust_label: ${trustLabel}`,
+    `sensitivity: ${DEFAULT_SENSITIVITY}`,
     'tags: []',
     `created: "${created}"`,
     'source_files: []',

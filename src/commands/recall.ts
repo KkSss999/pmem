@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
+import { findProjectPaths } from '../core/projectRoot';
 import { formatOutput } from '../core/format';
 import { Pmem } from '../runtime';
 import type { CliFormat } from '../types';
@@ -11,7 +12,8 @@ export async function recallCommand(
   options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep' }
 ): Promise<void> {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
 
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
@@ -20,7 +22,7 @@ export async function recallCommand(
 
   let pmem: Pmem | null = null;
   try {
-    pmem = await Pmem.open({ root: cwd });
+    pmem = await Pmem.open({ root: project?.projectRoot ?? cwd });
     const result = await pmem.recall({
       budget,
       since,

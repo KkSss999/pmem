@@ -30,6 +30,9 @@ EXPECTED_VERSION="$(node -e "console.log(require('./package.json').version)")"
 
 mkdir -p "$PROJECT"
 cd "$PROJECT"
+git init -q
+git config user.email "pmem-e2e@example.com"
+git config user.name "pmem e2e"
 "$PREFIX/bin/pmem" init first-project | tee init-output.txt
 grep -q 'pmem is ready for project "first-project"' init-output.txt
 test -f .pmem/pmem.db

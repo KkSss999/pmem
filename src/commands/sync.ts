@@ -22,10 +22,12 @@ import { getChangedFiles } from './status';
 import { acknowledgeStatusChanges } from '../core/query/status';
 
 import { writeManagedNext } from '../core/next';
+import { findProjectPaths } from '../core/projectRoot';
 
 export function syncCommand(options: { summary?: string; next?: string }): void {
   const cwd = process.cwd();
-  const pmemPath = path.join(cwd, '.pmem');
+  const project = findProjectPaths(cwd);
+  const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
 
   if (!fileExists(pmemPath)) {
     console.log('No .pmem directory found. Run `pmem init` first.');
@@ -152,7 +154,7 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
         console.log(`Trace written: ${relativeTrace}`);
       }
       console.log('Rebuilding indexes...');
-      rebuildCommand();
+      rebuildCommand({ cwd: project?.projectRoot ?? cwd });
       acknowledgeStatusChanges(pmemPath, changes.map(change => change.path));
       console.log('\n✓ Memory sync and update completed.');
     } else {

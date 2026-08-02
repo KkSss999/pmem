@@ -6,7 +6,7 @@ status: implemented
 tags: [v1.0.1, agent-trust, verify, confidence, classification, supersede, next, distill, done]
 created: "2026-07-22"
 updated: "2026-07-22T13:00:00.000Z"
-last_verified: "2026-07-22T13:00:00.000Z"
+last_verified: "2026-08-02T08:44:58.629Z"
 source_files:
   - src/types/cards.ts
   - src/core/consistency.ts
@@ -20,6 +20,9 @@ depends_on:
   - decision.v1_0_pr_review_fixes_20260722
 related_to:
   - feature.v1_1_system_memory_release_20260722
+classification: plan
+trust_label: user_confirmed
+sensitivity: internal
 ---
 
 # v1.0.1 Agent-Trust Operations

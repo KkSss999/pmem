@@ -36,6 +36,25 @@ export interface RecallResult {
     file_path: string;
   }>;
   context_summary?: string[];
+  foundation_summaries?: Array<{
+    id: string;
+    type: string;
+    title: string;
+    file_path: string;
+    summary?: string;
+    snippet?: string;
+    updated_at?: string | null;
+  }>;
+  recent_summaries?: Array<{
+    id: string;
+    type: string;
+    title: string;
+    file_path: string;
+    summary?: string;
+    snippet?: string;
+    updated_at?: string | null;
+  }>;
+  content_budget?: { requested: number; used: number; dropped: number };
 }
 
 export type MatchType = 'exact_id' | 'exact_title' | 'alias' | 'tag' | 'graph_expansion' | 'keyword_fallback';

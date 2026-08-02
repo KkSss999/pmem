@@ -43,7 +43,7 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 ### Base CLI — recommended for every user
 
 ```bash
-npm install -g pmem-ai@1.2.1
+npm install -g pmem-ai@1.2.4
 pmem --version
 ```
 
@@ -59,7 +59,7 @@ Run `pmem doctor` anytime to check the health of your project memory setup.
 ### Optional semantic companion — install only when needed
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.3
+npm install -g pmem-ai-semantic@1.2.4
 ```
 
 `pmem-ai-semantic` is not a second CLI. It is the opt-in local inference runtime
@@ -273,7 +273,7 @@ model. To enable it for a project:
 ```bash
 # Install only on machines that need local semantic inference. The base pmem-ai
 # package intentionally does not install Transformers.js or native ONNX/image runtimes.
-npm install -g pmem-ai-semantic@1.2.3
+npm install -g pmem-ai-semantic@1.2.4
 
 pmem semantic enable                # guided setup + current-project index
 pmem semantic status
@@ -302,7 +302,7 @@ data and can always be rebuilt from canonical Markdown cards plus the shared
 model.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
-For SDK installations, install `pmem-ai-semantic@1.2.3` in the same project as
+For SDK installations, install `pmem-ai-semantic@1.2.4` in the same project as
 `pmem-ai`. If the companion is absent or incompatible, setup/rebuild and SDK
 semantic queries report the exact install command while deterministic recall remains available.
 The pinned model is stored once for all projects at
@@ -332,7 +332,12 @@ pmem health migrate --apply \
 
 Migration only fills missing metadata, always creates a backup before an
 applied change, and never silently promotes old cards to user- or
-system-trusted. Contextual reranking uses the existing local E5 model plus a
+system-trusted. If `verify` reports `untrusted_memory`, its fix points to this
+command because `pmem update --confirm` does not write trust metadata. Review
+the dry-run and choose explicit trust, sensitivity, and classification values.
+`pmem new` labels explicitly created structured cards `user_confirmed`; traces
+are labeled `agent_generated` and remain outside the trusted semantic index.
+Contextual reranking uses the existing local E5 model plus a
 bounded TypeScript feature pass; it does not download a second model.
 
 ### Hybrid Recall Engine (v0.8)
@@ -714,7 +719,7 @@ Fresh v1.2 projects create this index during `pmem init`. The manual command is 
 ### Semantic Companion Is Missing
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.3
+npm install -g pmem-ai-semantic@1.2.4
 pmem semantic enable
 ```
 

@@ -148,6 +148,11 @@ describe('pmem init domain presets', () => {
       'project', 'character', 'chapter', 'world', 'arc', 'decision', 'trace'
     ]);
     assert.deepStrictEqual(manifest.schema.foundational_types, ['character', 'chapter']);
+    assert.deepStrictEqual(manifest.card_policy.warn_when_related_count_gt_by_type, {
+      character: 30,
+      chapter: 25,
+      world: 25,
+    });
     assert.deepStrictEqual(manifest.source_of_truth.card_globs, [
       '.pmem/characters/**/*.md',
       '.pmem/chapters/**/*.md',
@@ -201,6 +206,10 @@ describe('pmem init domain presets', () => {
       'project', 'source', 'claim', 'note', 'experiment', 'decision', 'trace'
     ]);
     assert.deepStrictEqual(manifest.schema.foundational_types, ['source', 'claim']);
+    assert.deepStrictEqual(manifest.card_policy.warn_when_related_count_gt_by_type, {
+      source: 20,
+      claim: 20,
+    });
     assert.deepStrictEqual(manifest.source_of_truth.card_globs, [
       '.pmem/sources/**/*.md',
       '.pmem/claims/**/*.md',

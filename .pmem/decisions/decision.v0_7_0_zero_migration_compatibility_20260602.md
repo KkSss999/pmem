@@ -13,7 +13,10 @@ depends_on: []
 related_to:
   - module.manifest_runtime_20260602
   - feature.v0_7_0_universal_agent_memory_20260602
-last_verified: "2026-07-02T20:48:42.244Z"
+last_verified: "2026-08-02T08:44:58.629Z"
+classification: decision
+trust_label: user_confirmed
+sensitivity: internal
 ---
 # v0.7.0 Zero Migration Compatibility
 
