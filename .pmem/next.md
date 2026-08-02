@@ -2,17 +2,17 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Reproduce #33 against the target production corpus, implement or retest semantic ranking, and obtain a real Windows global-install acceptance before publishing v1.2.4.
+Freeze the v1.3.0 Runtime-first, Schema-driven, Backend-pluggable contracts and start VS-1 on the continuous `Perview/v1.3.0-runtime-first` branch.
 
 ## Why
-The v1.2.4 implementation and local release gates are complete. Commit/push, CI, npm publication, GitHub Release creation, and issue-state updates remain explicitly separate release actions.
+PR #46 is merged and v1.2.4 issue cleanup is complete. v1.3.0 must now establish the canonical Runtime/model/backend boundary before any broad command migration.
 
 ## Needed Context
-- decision.v1_1_1_macos_semantic_retrieval_20260724
-- task.v1_1_1_macos_semantic_retrieval_20260724
-- decision.v1_2_0_unified_memory_intelligence_release_20260724
-- task.v1_2_0_unified_release_20260724
-- feature.v1_1_1_lightweight_semantic_layer_20260626
+- decision.v1_3_0_runtime_first_schema_driven_backend_pluggable_20260802
+- task.v1_3_0_total_architecture_and_vertical_slices_20260802
+- decision.pmem_two_layer_architecture_20260722
+- feature.v1_0_agentic_memory_runtime_20260722
 - module.recall_retrieval_runtime_20260626
-- task.v1_2_1_deep_usage_reliability_20260724
+- module.cli_runtime_20260602
+- module.manifest_runtime_20260602
 <!-- pmem:next:end -->
