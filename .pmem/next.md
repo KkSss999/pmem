@@ -2,17 +2,12 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Review and merge the v1.3.1 semantic runtime default branch; then validate model setup and semantic retrieval quality on a real project.
+Merge the docs-only semantic distribution and ContextPack guidance PR, then run the final v1.3.2 release/version audit.
 
 ## Why
-PR #46 is merged and v1.2.4 issue cleanup is complete. v1.3.0 must now establish the canonical Runtime/model/backend boundary before any broad command migration.
+PR #49 is merged; v1.3.x now has one user-facing CLI entry, a separately distributed semantic Runtime component, and a stable ContextPack contract for Agent integrations.
 
 ## Needed Context
+- decision.v1_3_2_semantic_distribution_experience_20260803
 - decision.v1_3_0_runtime_first_schema_driven_backend_pluggable_20260802
-- task.v1_3_0_total_architecture_and_vertical_slices_20260802
-- decision.pmem_two_layer_architecture_20260722
-- feature.v1_0_agentic_memory_runtime_20260722
-- module.recall_retrieval_runtime_20260626
-- module.cli_runtime_20260602
-- module.manifest_runtime_20260602
 <!-- pmem:next:end -->

@@ -6,7 +6,7 @@ allowed-tools: Bash(pmem:*)
 
 # Project Memory with pmem
 
-`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.2** adds optional local semantic recall, contextual reranking, and multidimensional memory health while keeping deterministic retrieval authoritative. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
+`pmem` gives agents persistent project memory across sessions. It stores memory as Markdown cards under `.pmem/` and builds SQLite indexes for fast recall. **v1.3.x** makes local semantic retrieval a standard Runtime capability while keeping deterministic retrieval authoritative; ContextPack provides the stable Agent-facing payload with evidence, provenance, budget, and diagnostics. Domain-neutral since v0.7.0: the same workflow works for software projects, novels, research work, and custom card schemas.
 
 ## Quick start
 
@@ -29,8 +29,10 @@ pmem verify
 
 The base `pmem-ai` package is the default and complete product experience. It
 does not install or download Transformers, ONNX Runtime, `sharp`, or a semantic
-model. Do not instruct users to install `pmem-ai-semantic` unless they explicitly
-want local semantic recall.
+model. Lead users through the base CLI first; when semantic retrieval is useful,
+start with `pmem semantic setup`. If the local companion is missing, the CLI
+reports the exact compatible install command. Never make the companion a
+prerequisite for deterministic `ask`, `context`, or `recall`.
 
 ## Core Workflow
 
@@ -52,12 +54,12 @@ review-heavy maintenance.
 
 | Mode | Install | User outcome |
 |---|---|---|
-| Base, recommended | `npm install -g pmem-ai@1.3.1` | Deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
-| Semantic enhancement, macOS and Windows | Base package plus `npm install -g pmem-ai-semantic@1.3.1` | Adds local multilingual embeddings and contextual reranking |
+| Base CLI entry point | `npm install -g pmem-ai@1.3.1` | Complete deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
+| Semantic Runtime component | Installed when setup reports it is missing: `npm install -g pmem-ai-semantic@1.3.1` | Local multilingual embeddings and contextual reranking; not a second CLI |
 
-`pmem-ai-semantic` is an optional runtime companion, not another CLI. If the
-companion, shared model, or semantic index is unavailable, `ask`, `context`, and
-`recall` must remain usable through deterministic retrieval.
+`pmem-ai-semantic` is a separately distributed Runtime component, not another
+CLI. If the component, shared model, or semantic index is unavailable, `ask`,
+`context`, and `recall` must remain usable through deterministic retrieval.
 
 ## Commands
 
@@ -93,28 +95,52 @@ pmem rebuild --full          # full rebuild, clear all tables
 pmem rebuild --card module.core  # rebuild single card
 ```
 
-### Optional Semantic Retrieval (macOS and Windows)
+### Semantic Runtime setup (macOS and Windows)
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.1
-pmem semantic enable
+pmem semantic setup
 pmem semantic status
 ```
 
-`semantic enable` explicitly prepares or reuses the one verified global model
-cache under `~/.pmem-global/models` and builds the current project's derived
-vectors in `.pmem/pmem.db`. Models are never copied per project. The default
-install and `pmem init` never download a model. Operators may use
-`pmem semantic setup` and `pmem semantic rebuild` separately.
+The base CLI is the user-facing entry point. `semantic setup` asks before
+preparing or reusing the one verified global model cache under
+`~/.pmem-global/models`. If setup reports a missing companion, install the exact
+compatible component and rerun:
+
+```bash
+npm install -g pmem-ai-semantic@1.3.1
+pmem semantic setup --yes
+pmem semantic rebuild
+```
+
+Models are never copied per project. The default install and `pmem init` never
+download a model. `pmem semantic enable` remains available for a guided
+one-shot setup plus current-project rebuild; expert operators may use `setup`,
+`rebuild`, `status`, and `clear` separately.
 
 When guiding a user:
 
 1. Start with the base CLI and confirm `pmem init`, `context`, and `ask` work.
-2. Offer semantic enhancement only as an explicit optional step.
-3. Run `pmem semantic enable`; it handles confirmation, cache reuse/download,
-   manifest enablement, and the current-project full semantic rebuild.
+2. When semantic retrieval is useful, start with `pmem semantic setup`.
+3. If the companion is missing, show the CLI's exact install command, then rerun
+   setup and `pmem semantic rebuild`.
 4. Use `pmem semantic status` for readiness and `pmem semantic clear` to disable
    the project index without deleting the global model.
+
+### ContextPack (v1.3.2)
+
+Use the Runtime-generated ContextPack as the Agent-facing memory payload:
+
+```bash
+pmem context-pack "payment timeout" --budget 2000 --format json
+```
+
+Do not assemble a competing prompt format in a skill, CLI command, or MCP
+handler. ContextPack contains `records`, validated `evidence`, execution
+`provenance`, `budget`, omission `diagnostics`, and `schemaVersion`. It reserves
+normal budget for evidence, caps evidence at three items per record by default,
+and uses deterministic diversity ordering. It is structured memory context, not
+an instruction prompt; the Agent decides how to present it to a model.
 
 ### Domain Presets & Custom Schemas (v0.7.0)
 
