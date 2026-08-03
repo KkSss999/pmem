@@ -36,6 +36,8 @@ export interface RepairCheckpointReceipt {
   id: string;
   path: string;
   reversible: boolean;
+  state?: 'pending' | 'applied' | 'partial' | 'rolled_back' | 'rollback_failed';
+  appliedIds?: readonly string[];
 }
 
 export type RepairApplyStatus = 'dry-run' | 'applied' | 'partial' | 'failed';
@@ -43,12 +45,20 @@ export type RepairApplyStatus = 'dry-run' | 'applied' | 'partial' | 'failed';
 export interface RepairApplyFailure {
   id: string;
   message: string;
+  compensation?: 'rolled_back' | 'rollback_failed';
 }
 
 export interface RepairApplyResult {
   status: RepairApplyStatus;
   appliedIds: readonly string[];
   skippedIds: readonly string[];
+  failures: readonly RepairApplyFailure[];
+  rollback?: RepairRollbackResult;
+}
+
+export interface RepairRollbackResult {
+  status: 'not-requested' | 'restored' | 'partial' | 'failed' | 'not-reversible';
+  restoredIds: readonly string[];
   failures: readonly RepairApplyFailure[];
 }
 
@@ -138,7 +148,12 @@ export function applyRepairPlan(
       appliedIds.push(change.id);
     } catch (error) {
       failed = true;
-      failures.push({ id: change.id, message: error instanceof Error ? error.message : String(error) });
+      const detail = error as Error & { compensation?: RepairApplyFailure['compensation'] };
+      failures.push({
+        id: change.id,
+        message: error instanceof Error ? error.message : String(error),
+        ...(detail?.compensation ? { compensation: detail.compensation } : {}),
+      });
     }
   }
   const applied = new Set(appliedIds);

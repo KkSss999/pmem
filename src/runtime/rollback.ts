@@ -8,6 +8,8 @@ export interface RollbackCheckpoint {
   changes: readonly RepairChange[];
   reversible: boolean;
   source: string;
+  state?: 'pending' | 'applied' | 'partial' | 'rolled_back' | 'rollback_failed';
+  appliedIds?: readonly string[];
 }
 export interface RollbackCheckpointInput {
   id: string;
@@ -16,6 +18,8 @@ export interface RollbackCheckpointInput {
   changes: readonly RepairChange[];
   reversible: boolean;
   source: string;
+  state?: RollbackCheckpoint['state'];
+  appliedIds?: readonly string[];
 }
 
 export interface RollbackRestoreFailure {
@@ -57,6 +61,13 @@ export function validateRollbackCheckpoint(input: RollbackCheckpoint): RollbackC
   if (typeof input.reversible !== 'boolean') throw new TypeError('Rollback reversible must be a boolean');
   nonEmpty(input.source, 'source');
   const plan = buildRepairPlan(input.changes, { apply: true });
+  if (input.state !== undefined && !['pending', 'applied', 'partial', 'rolled_back', 'rollback_failed'].includes(input.state)) {
+    throw new TypeError('Rollback checkpoint has an invalid state');
+  }
+  const appliedIds = input.appliedIds ?? [];
+  if (!Array.isArray(appliedIds) || appliedIds.some(id => typeof id !== 'string' || !plan.changes.some(change => change.id === id))) {
+    throw new TypeError('Rollback checkpoint appliedIds must reference checkpoint changes');
+  }
   return {
     version: 1,
     id: input.id,
@@ -65,6 +76,8 @@ export function validateRollbackCheckpoint(input: RollbackCheckpoint): RollbackC
     changes: plan.changes,
     reversible: input.reversible,
     source: input.source,
+    ...(input.state ? { state: input.state } : {}),
+    ...(appliedIds.length > 0 ? { appliedIds } : {}),
   };
 }
 

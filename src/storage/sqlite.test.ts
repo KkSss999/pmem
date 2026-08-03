@@ -99,6 +99,21 @@ test('SQLite record-scoped history filters before the bounded global event windo
   }
 });
 
+test('SQLite history preserves insertion order for equal timestamps', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    const at = '2026-08-03T10:00:00.000Z';
+    tx.appendEvent({ id: 'nine', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 9 } });
+    tx.appendEvent({ id: 'ten', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 10 } });
+    tx.commit();
+    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.tie', limit: 10 }).map(event => event.payload.value), [9, 10]);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('SQLite codec persists arbitrary schema data without creating a Card row', () => {
   const { root, backend } = makeBackend();
   try {

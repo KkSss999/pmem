@@ -52,6 +52,7 @@ export type {
   RepairPlan,
   RepairPlanMode,
   RepairPlanOptions,
+  RepairRollbackResult,
 } from '../runtime';
 export type {
   RollbackCheckpoint,

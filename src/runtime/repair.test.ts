@@ -45,6 +45,13 @@ describe('runtime repair protocol', () => {
     assert.deepEqual(partial.skippedIds, ['card.b']);
   });
 
+  it('preserves machine-readable compensation status from a writer', () => {
+    const plan = buildRepairPlan([changes[0]!], { apply: true });
+    const failure = Object.assign(new Error('audit insert failed; rolled_back'), { compensation: 'rolled_back' as const });
+    const result = applyRepairPlan(plan, () => { throw failure; });
+    assert.equal(result.failures[0]?.compensation, 'rolled_back');
+  });
+
   it('rejects duplicate ids, invalid snapshots, and conflicting modes', () => {
     assert.throws(() => buildRepairPlan([changes[0]!, changes[0]!]), /duplicate id card.b/);
     assert.throws(() => buildRepairPlan([{ ...changes[0]!, before: Number.NaN }]), /JSON-compatible/);

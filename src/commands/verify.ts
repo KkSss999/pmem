@@ -11,7 +11,7 @@ import { parseFrontmatter } from '../core/yaml';
 import { getDistillUrgency } from '../runtime/policy';
 import { buildVerifyResult, healthBaselinePath, inspectSemanticReadiness, readHealthBaseline } from '../core/health';
 import { findProjectPaths } from '../core/projectRoot';
-import { buildRepairPlan, type RepairChange, type RepairPlan } from '../runtime/repair';
+import { buildRepairPlan, type RepairChange, type RepairPlan, type RepairRollbackResult } from '../runtime/repair';
 import { applyRepairPlan } from '../runtime/repair';
 import { createRollbackCheckpoint, restoreRollbackCheckpoint } from '../runtime/rollback';
 import { randomUUID } from 'node:crypto';
@@ -154,8 +154,10 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   // warning that disappears on the next verify). If we cannot acquire the
   // lock, surface a single info-level `active_lock` note and skip the
   // freshness checks entirely.
-  const lockAlreadyOwned = lockOwnedBySelf(lockPath);
-  const lockAcquired = acquireLock(lockPath, 500);
+  // A dry-run is observational: do not acquire, replace, or release locks.
+  // In particular acquireLock's stale-lock recovery is itself a mutation.
+  const lockAlreadyOwned = options.dryRun || lockOwnedBySelf(lockPath);
+  const lockAcquired = options.dryRun ? true : acquireLock(lockPath, 500);
   if (!lockAcquired) {
     const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
     issues.push({
@@ -656,29 +658,70 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     return true;
   };
 
+  const frontmatterSnapshot = (filePath: string, field: string): string | null => frontmatterValue(readFile(filePath) ?? '', field);
+  const snapshotValue = (change: RepairChange, field: string, snapshot: RepairChange['before']): string | null => {
+    if (snapshot === null) return null;
+    if (field === 'classification' && snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      const value = (snapshot as Record<string, unknown>).classification;
+      return typeof value === 'string' ? value : null;
+    }
+    return typeof snapshot === 'string' ? snapshot : String(snapshot);
+  };
+  const writeSnapshot = (filePath: string, field: string, snapshot: RepairChange['after']): boolean => {
+    if (snapshot === null) return removeFrontmatterField(filePath, field);
+    const value = snapshotValue({} as RepairChange, field, snapshot);
+    if (value === null) return removeFrontmatterField(filePath, field);
+    return updateFrontmatterField(filePath, field, field === 'last_verified' ? JSON.stringify(value) : value);
+  };
+
   const executeRepairChange = (change: RepairChange): void => {
     if (change.action === 'refresh_last_verified' || change.action === 'rollback:refresh_last_verified') {
       const filePath = repairFiles.get(change.id);
       if (!filePath) throw new Error(`Unable to locate ${change.id}`);
-      const changed = change.after === null
-        ? removeFrontmatterField(filePath, 'last_verified')
-        : updateFrontmatterField(filePath, 'last_verified', JSON.stringify(change.after));
+      const expected = snapshotValue(change, 'last_verified', change.before);
+      if (frontmatterSnapshot(filePath, 'last_verified') !== expected) {
+        throw new Error(`Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`);
+      }
+      const changed = writeSnapshot(filePath, 'last_verified', change.after);
       if (!changed) throw new Error(`Unable to update ${change.id}`);
-      if (db) recordRepairEvent(db, change.id.split(':last_verified')[0], change);
+      try {
+        if (db) recordRepairEvent(db, change.id.split(':last_verified')[0], change);
+      } catch (error) {
+        try { writeSnapshot(filePath, 'last_verified', change.before); }
+        catch (rollbackError) {
+          const failure = new Error(`Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`) as Error & { compensation?: 'rollback_failed' };
+          failure.compensation = 'rollback_failed';
+          throw failure;
+        }
+        const failure = new Error(`Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`) as Error & { compensation?: 'rolled_back' };
+        failure.compensation = 'rolled_back';
+        throw failure;
+      }
       if (!change.action.startsWith('rollback:')) console.log(`  Updated last_verified timestamp for card: ${change.id.split(':last_verified')[0]}`);
       return;
     }
     if (change.action === 'update_frontmatter' || change.action === 'rollback:update_frontmatter') {
       const filePath = repairFiles.get(change.id);
       if (!filePath) throw new Error(`Unable to locate ${change.id}`);
-      const classification = change.after && typeof change.after === 'object' && !Array.isArray(change.after)
-        ? (change.after as Record<string, unknown>).classification
-        : undefined;
-      const changed = classification === undefined
-        ? removeFrontmatterField(filePath, 'classification')
-        : updateFrontmatterField(filePath, 'classification', String(classification));
+      const expected = snapshotValue(change, 'classification', change.before);
+      if (frontmatterSnapshot(filePath, 'classification') !== expected) {
+        throw new Error(`Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`);
+      }
+      const changed = writeSnapshot(filePath, 'classification', change.after);
       if (!changed) throw new Error(`Unable to update ${change.id}`);
-      if (db) recordRepairEvent(db, change.id.split(':classification')[0], change);
+      try {
+        if (db) recordRepairEvent(db, change.id.split(':classification')[0], change);
+      } catch (error) {
+        try { writeSnapshot(filePath, 'classification', change.before); }
+        catch (rollbackError) {
+          const failure = new Error(`Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`) as Error & { compensation?: 'rollback_failed' };
+          failure.compensation = 'rollback_failed';
+          throw failure;
+        }
+        const failure = new Error(`Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`) as Error & { compensation?: 'rolled_back' };
+        failure.compensation = 'rolled_back';
+        throw failure;
+      }
       return;
     }
     if (change.action === 'cleanup_missing_card') {
@@ -705,6 +748,14 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   if (repairPlan && repairPlan.changes.length > 0) {
     let checkpointReceipt: RepairPlan['checkpoint'];
     let checkpoint: ReturnType<typeof createRollbackCheckpoint> | undefined;
+    let checkpointPath: string | undefined;
+    let rollbackResult: RepairRollbackResult | undefined;
+    const persistCheckpoint = (changes: readonly RepairChange[], state: NonNullable<RepairPlan['checkpoint']>['state'], appliedIds: readonly string[]): void => {
+      if (!checkpoint || !checkpointPath) return;
+      checkpoint = createRollbackCheckpoint({ ...checkpoint, changes, state, appliedIds });
+      atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
+      checkpointReceipt = { id: checkpoint.id, path: checkpointPath, reversible: checkpoint.reversible, state, appliedIds };
+    };
     if (!options.dryRun) {
       const reversible = repairPlan.changes.every(change => ['refresh_last_verified', 'update_frontmatter'].includes(change.action));
       const checkpointId = randomUUID();
@@ -715,23 +766,39 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
         changes: repairPlan.changes,
         reversible,
         source: 'pmem verify',
+        state: 'pending',
+        appliedIds: [],
       });
       const checkpointDir = path.join(pmemPath, 'rollback');
       mkdirSync(checkpointDir, { recursive: true });
-      const checkpointPath = path.join(checkpointDir, `${checkpointId}.json`);
+      checkpointPath = path.join(checkpointDir, `${checkpointId}.json`);
       atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
-      checkpointReceipt = { id: checkpointId, path: checkpointPath, reversible };
+      checkpointReceipt = { id: checkpointId, path: checkpointPath, reversible, state: 'pending', appliedIds: [] };
     }
+    const appliedChanges: RepairChange[] = [];
     const applied = applyRepairPlan(repairPlan, change => {
       if (options.dryRun) throw new Error('dry-run writer must not execute');
       executeRepairChange(change);
+      appliedChanges.push(change);
+      persistCheckpoint(appliedChanges, 'pending', appliedChanges.map(item => item.id));
     });
+    let finalAppliedIds = applied.appliedIds;
     if (!options.dryRun && applied.failures.length > 0 && checkpoint && applied.appliedIds.length > 0 && checkpoint.reversible) {
       const appliedCheckpoint = createRollbackCheckpoint({ ...checkpoint, changes: checkpoint.changes.filter(change => applied.appliedIds.includes(change.id)) });
-      restoreRollbackCheckpoint(appliedCheckpoint, executeRepairChange);
+      const restored = restoreRollbackCheckpoint(appliedCheckpoint, executeRepairChange);
+      rollbackResult = {
+        status: restored.status,
+        restoredIds: restored.restoredIds,
+        failures: restored.failures,
+      };
+      finalAppliedIds = applied.appliedIds.filter(id => !restored.restoredIds.includes(id));
+      persistCheckpoint(appliedCheckpoint.changes.filter(change => finalAppliedIds.includes(change.id)), restored.status === 'restored' ? 'rolled_back' : 'rollback_failed', finalAppliedIds);
+    } else if (!options.dryRun) {
+      persistCheckpoint(appliedChanges, applied.failures.length === 0 ? 'applied' : 'partial', applied.appliedIds);
     }
-    repairPlan = { ...repairPlan, ...(checkpointReceipt ? { checkpoint: checkpointReceipt } : {}), apply_result: applied };
-    if (!options.dryRun && applied.appliedIds.length > 0 && repairPlan.changes.some(change => ['refresh_last_verified', 'update_frontmatter', 'cleanup_missing_card'].includes(change.action))) {
+    const applyResult = rollbackResult ? { ...applied, appliedIds: finalAppliedIds, rollback: rollbackResult } : applied;
+    repairPlan = { ...repairPlan, ...(checkpointReceipt ? { checkpoint: checkpointReceipt } : {}), apply_result: applyResult };
+    if (!options.dryRun && finalAppliedIds.length > 0 && repairPlan.changes.some(change => ['refresh_last_verified', 'update_frontmatter', 'cleanup_missing_card'].includes(change.action))) {
       console.log('Rebuilding indexes for repaired canonical state...');
       rebuildCommand({ cwd });
     }

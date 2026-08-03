@@ -106,9 +106,42 @@ describe('MCP Memory History surface', () => {
       assert.equal(response.isError, undefined);
       const body = JSON.parse(response.content[0]?.text ?? '{}');
       assert.deepEqual(body.entries.map((entry: any) => entry.eventId), ['1']);
-      const ownerResponse = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.scoped', principal: 'agent-a' });
+      const ownerResponse = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.scoped' }, { principal: 'agent-a' });
       const ownerBody = JSON.parse(ownerResponse.content[0]?.text ?? '{}');
       assert.deepEqual(ownerBody.entries.map((entry: any) => entry.eventId), ['1', '2']);
+      const forged = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.scoped', principal: 'agent-a' });
+      assert.equal(forged.isError, true);
+      assert.match(forged.content[0]?.text ?? '', /unknown parameter/i);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('continues paginating when the newest backend page is entirely invisible', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-mcp-history-page-'));
+    roots.push(root);
+    const backend = new SqliteMemoryBackend(path.join(root, '.pmem'));
+    const runtime = await Pmem.open({ root, backend });
+    const tx = backend.beginTransaction();
+    tx.appendEvent({
+      id: 'visible-old', type: 'commit', scope: 'project',
+      occurred_at: '2026-08-03T09:00:00.000Z', recorded_at: '2026-08-03T09:00:00.000Z',
+      record_id: 'memory.page', payload: { summary: 'visible' },
+    });
+    for (let index = 0; index < 500; index += 1) {
+      const timestamp = new Date(Date.parse('2026-08-03T10:00:00.000Z') + index * 1000).toISOString();
+      tx.appendEvent({
+        id: `hidden-${index}`, type: 'commit', scope: 'private:other-agent',
+        occurred_at: timestamp, recorded_at: timestamp,
+        record_id: 'memory.page', payload: { summary: 'hidden' },
+      });
+    }
+    tx.commit();
+    try {
+      const response = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.page' });
+      assert.equal(response.isError, undefined);
+      const body = JSON.parse(response.content[0]?.text ?? '{}');
+      assert.deepEqual(body.entries.map((entry: any) => entry.eventId), ['1']);
     } finally {
       await runtime.close();
     }

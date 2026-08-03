@@ -8,6 +8,11 @@ import { buildMemoryDiff, buildMemoryHistory } from './history';
 import { randomUUID } from 'node:crypto';
 import { toPmemPath, type AskOptions, type AskResultV03, type CapabilitySet, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type MemoryBackend, type MemoryCapability, type MemoryDiffResult, type MemoryEvent, type MemoryHistoryOptions, type MemoryHistoryResult, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type RuntimeLegacyAdapter, type SessionResult, type StatusOptions, type StatusResult } from './types';
 
+function normalizeHistoryLimit(limit?: number): number {
+  if (!Number.isFinite(limit)) return 100;
+  return Math.min(500, Math.max(1, Math.floor(limit as number)));
+}
+
 export class Pmem implements PmemInstance {
   readonly pmemPath: string;
   readonly backend: MemoryBackend;
@@ -117,8 +122,7 @@ export class Pmem implements PmemInstance {
     if (!this.backend.listEvents) {
       throw new Error(`Memory history is not supported by backend '${this.backend.id}'.`);
     }
-    const events = await this.backend.listEvents({ ...options, recordId: normalizedId });
-    const visible = events.filter(event => this.eventVisibleTo(event, principal));
+    const visible = await this.listVisibleEvents(normalizedId, options, principal, normalizeHistoryLimit(options.limit));
     return buildMemoryHistory(normalizedId, visible, options);
   }
 
@@ -130,9 +134,32 @@ export class Pmem implements PmemInstance {
     if (!this.backend.listEvents) {
       throw new Error(`Memory diff is not supported by backend '${this.backend.id}'.`);
     }
-    const events = await this.backend.listEvents({ ...options, recordId: normalizedId, limit: 500 });
-    const visible = events.filter(event => this.eventVisibleTo(event, principal));
+    const visible = await this.listVisibleEvents(normalizedId, options, principal, 2);
     return buildMemoryDiff(normalizedId, visible, options);
+  }
+
+  private async listVisibleEvents(memoryId: string, options: MemoryHistoryOptions, principal: string, required: number): Promise<readonly MemoryEvent[]> {
+    if (!this.backend.listEvents) return [];
+    const visible: MemoryEvent[] = [];
+    const seen = new Set<string>();
+    let cursor = options.cursor;
+    for (let page = 0; page < 1000 && visible.length < required; page += 1) {
+      const events = await this.backend.listEvents({ ...options, recordId: memoryId, limit: 500, cursor });
+      if (events.length === 0) break;
+      for (const event of events) {
+        const key = `${event.sequence ?? ''}:${event.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (this.eventVisibleTo(event, principal)) visible.push(event);
+      }
+      if (events.length < 500) break;
+      const oldest = events[0];
+      const sequence = oldest?.sequence ?? oldest?.id;
+      const nextCursor = JSON.stringify({ recordedAt: oldest?.recorded_at ?? oldest?.occurred_at, id: sequence });
+      if (!oldest || nextCursor === cursor || sequence === undefined || sequence === '') break;
+      cursor = nextCursor;
+    }
+    return visible;
   }
 
   private eventVisibleTo(event: MemoryEvent, principal: string): boolean {
@@ -424,6 +451,7 @@ export type {
   RepairPlan,
   RepairPlanMode,
   RepairPlanOptions,
+  RepairRollbackResult,
 } from './repair';
 export { createRollbackCheckpoint, restoreRollbackCheckpoint, validateRollbackCheckpoint } from './rollback';
 export type {

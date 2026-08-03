@@ -184,6 +184,18 @@ source_files:
     assert.match(checkpoint.changes[0].after, /^20\d\d-\d\d-\d\dT/);
     assert.notEqual(checkpoint.changes[0].before, 'stale');
   });
+
+  it('does not mutate a stale lock during dry-run', () => {
+    const lockPath = path.join(testDir, '.pmem', '.lock');
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, 'pid'), '999999', 'utf8');
+    const old = new Date(Date.now() - 120_000);
+    fs.utimesSync(lockPath, old, old);
+    const before = fs.readdirSync(lockPath).map(name => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]);
+    const result = pmem('verify --fix-locks --dry-run', testDir);
+    assert.strictEqual(result.code, 0, result.stdout);
+    assert.deepEqual(fs.readdirSync(lockPath).map(name => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]), before);
+  });
 });
 
 describe('verify card size accounting', () => {

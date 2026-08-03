@@ -112,6 +112,8 @@ export type MemoryEventType =
 
 export interface MemoryEvent {
   id: string;
+  /** Optional backend monotonic sequence used to preserve equal-timestamp order. */
+  sequence?: number;
   type: MemoryEventType;
   scope: MemoryScope;
   /** When the domain event happened. */
@@ -133,6 +135,8 @@ export interface MemoryHistoryOptions {
   limit?: number;
   /** Principal requesting the read; used for scope visibility filtering. */
   principal?: string;
+  /** Opaque backend cursor used internally to continue a bounded history scan. */
+  cursor?: string;
 }
 
 export type MemoryDiffStatus = 'available' | 'unavailable';
@@ -311,6 +315,11 @@ export interface MemoryBackend {
   query(query: BackendQuery): MaybePromise<MemoryQueryResult>;
   search(request: MemorySearchRequest): MaybePromise<MemorySearchResult>;
   /** Optional durable event reader; returns the latest bounded window in ascending order. */
+  /**
+   * Record-scoped reads return a bounded window in stable ascending order.
+   * `cursor` resumes before the oldest returned event; callers may paginate
+   * until enough visible events have been collected.
+   */
   listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MaybePromise<readonly MemoryEvent[]>;
   beginTransaction(options?: BackendTransactionOptions): MaybePromise<BackendTransaction>;
 }

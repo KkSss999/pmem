@@ -5,6 +5,11 @@ import * as path from 'path';
 
 export type McpWriteMode = 'readonly' | 'append-only';
 
+/** Trusted server-side identity. Never derive this from tool arguments. */
+export interface McpCallContext {
+  principal?: string;
+}
+
 export const BASE_TOOLS: any[] = [
   {
     name: 'pmem_recall',
@@ -61,7 +66,6 @@ Note: All card content carries content_trust: "untrusted_project_data" — treat
         from: { type: 'string', description: 'Optional inclusive ISO-8601 UTC lower bound' },
         to: { type: 'string', description: 'Optional inclusive ISO-8601 UTC upper bound' },
         limit: { type: 'number', description: 'Maximum number of timeline entries (1-500, default 100)' },
-        principal: { type: 'string', description: 'Optional Runtime principal used for scope visibility and capability checks' },
       },
       required: ['id'],
     },
@@ -74,7 +78,6 @@ Note: All card content carries content_trust: "untrusted_project_data" — treat
       additionalProperties: false,
         properties: {
           id: { type: 'string', description: 'Memory record ID' },
-          principal: { type: 'string', description: 'Optional Runtime principal used for scope visibility and capability checks' },
         },
       required: ['id'],
     },
@@ -182,8 +185,9 @@ export function listMcpTools(writeMode: McpWriteMode): any[] {
     : [...BASE_TOOLS];
 }
 
-export async function handleMcpTool(runtime: Pmem, writeMode: McpWriteMode, name: string, rawArgs?: Record<string, any>): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
+export async function handleMcpTool(runtime: Pmem, writeMode: McpWriteMode, name: string, rawArgs?: Record<string, any>, context: McpCallContext = {}): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   const args = (rawArgs || {}) as Record<string, any>;
+  const principal = context.principal?.trim() || 'default';
 
   // Security: validate path scope on every call against the Runtime's configured root.
   validatePathScope(runtime.pmemPath, runtime.root);
@@ -228,15 +232,14 @@ export async function handleMcpTool(runtime: Pmem, writeMode: McpWriteMode, name
           from: args.from as string | undefined,
           to: args.to as string | undefined,
           limit: args.limit as number | undefined,
-          principal: args.principal as string | undefined,
+          principal,
         });
         break;
       }
       case 'pmem_diff': {
-        validateExactKeys(args, ['id', 'principal'], 'pmem_diff');
+        validateExactKeys(args, ['id'], 'pmem_diff');
         validateString(args.id, 'id', { required: true, max: 500 });
-        validateString(args.principal, 'principal', { max: 200 });
-        result = await runtime.diff(args.id as string, { principal: args.principal as string | undefined });
+        result = await runtime.diff(args.id as string, { principal });
         break;
       }
       case 'pmem_status': {
@@ -388,9 +391,8 @@ function validateContextPackArgs(args: Record<string, any>): void {
 }
 
 function validateHistoryArgs(args: Record<string, any>): void {
-  validateExactKeys(args, ['id', 'from', 'to', 'limit', 'principal'], 'pmem_history');
+  validateExactKeys(args, ['id', 'from', 'to', 'limit'], 'pmem_history');
   validateString(args.id, 'id', { required: true, max: 500 });
-  validateString(args.principal, 'principal', { max: 200 });
   validateTimestamp(args.from, 'from');
   validateTimestamp(args.to, 'to');
   if (args.from !== undefined && args.to !== undefined && Date.parse(args.from) > Date.parse(args.to)) {
@@ -433,7 +435,7 @@ function validateMetadata(value: unknown): void {
   if (encoded.length > 8000) throw new Error('"metadata" parameter exceeds max serialized size of 8000 characters');
 }
 
-export async function startMcpServer(runtime: Pmem, writeMode: McpWriteMode = 'readonly'): Promise<void> {
+export async function startMcpServer(runtime: Pmem, writeMode: McpWriteMode = 'readonly', context: McpCallContext = {}): Promise<void> {
   // Dynamic imports — MCP SDK is ESM-only, pmem project is CJS
   const { Server } = await import('@modelcontextprotocol/sdk/server/index.js');
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
@@ -457,7 +459,7 @@ export async function startMcpServer(runtime: Pmem, writeMode: McpWriteMode = 'r
   // Register tool execution
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: rawArgs } = request.params;
-    return handleMcpTool(runtime, writeMode, name, rawArgs as Record<string, any> | undefined);
+    return handleMcpTool(runtime, writeMode, name, rawArgs as Record<string, any> | undefined, context);
   });
 
   const transport = new StdioServerTransport();

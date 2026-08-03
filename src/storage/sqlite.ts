@@ -360,29 +360,35 @@ export class SqliteMemoryBackend implements MemoryBackend {
     const order = options.recordId
       ? 'ORDER BY created_at DESC, rowid DESC'
       : 'ORDER BY created_at ASC, rowid ASC';
-    const recordClause = options.recordId
-      ? `
+    const where = [
+      '(? IS NULL OR created_at >= ?)',
+      '(? IS NULL OR created_at <= ?)',
+    ];
+    const params: Array<string | number | null> = [options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null];
+    if (options.recordId) {
+      where.push(`(
+        memory_id = ?
+        OR (
+          json_valid(COALESCE(payload_json, payload))
           AND (
-            memory_id = ?
-            OR (
-              json_valid(COALESCE(payload_json, payload))
-              AND (
-                json_extract(COALESCE(payload_json, payload), '$.record_id') = ?
-                OR json_extract(COALESCE(payload_json, payload), '$.memory_id') = ?
-                OR json_extract(COALESCE(payload_json, payload), '$.target_id') = ?
-              )
-            )
-          )`
-      : '';
-    const params = options.recordId
-      ? [options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, options.recordId, options.recordId, options.recordId, options.recordId, 500]
-      : [options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, 500];
+            json_extract(COALESCE(payload_json, payload), '$.record_id') = ?
+            OR json_extract(COALESCE(payload_json, payload), '$.memory_id') = ?
+            OR json_extract(COALESCE(payload_json, payload), '$.target_id') = ?
+          )
+        )
+      )`);
+      params.push(options.recordId, options.recordId, options.recordId, options.recordId);
+      const cursor = decodeEventCursor(options.cursor);
+      if (cursor) {
+        where.push('(created_at < ? OR (created_at = ? AND id < ?))');
+        params.push(cursor.recordedAt, cursor.recordedAt, cursor.id);
+      }
+    }
+    params.push(500);
     const rows = db.prepare(
       `SELECT id, event_type, type, memory_id, branch, scope, payload, payload_json, created_at
          FROM events
-        WHERE (? IS NULL OR created_at >= ?)
-          AND (? IS NULL OR created_at <= ?)
-        ${recordClause}
+        WHERE ${where.join('\n          AND ')}
         ${order}
         LIMIT ?`
     ).all(...params) as Array<{
@@ -402,6 +408,7 @@ export class SqliteMemoryBackend implements MemoryBackend {
         const payload = objectJson(row.payload_json ?? row.payload ?? '{}');
         return {
           id: String(row.id),
+          sequence: row.id,
           // Prefer the namespaced event_type: legacy core rows may keep the
           // compatibility type column as `observe` for newer event names.
           type: sqliteEventType(row.event_type ?? row.type),
@@ -654,6 +661,17 @@ function jsonValue(value: string, fallback: unknown): unknown {
 function normalizeLimit(limit?: number): number {
   if (!Number.isFinite(limit)) return 50;
   return Math.min(500, Math.max(1, Math.floor(limit as number)));
+}
+
+function decodeEventCursor(value: string | undefined): { recordedAt: string; id: number } | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { recordedAt?: unknown; id?: unknown };
+    if (typeof parsed.recordedAt !== 'string' || !Number.isSafeInteger(parsed.id) || (parsed.id as number) < 1) return null;
+    return { recordedAt: parsed.recordedAt, id: parsed.id as number };
+  } catch {
+    return null;
+  }
 }
 
 function isSafeColumn(value: string): boolean {

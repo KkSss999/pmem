@@ -14,17 +14,20 @@ export function buildMemoryHistory(memoryId: string, events: readonly MemoryEven
   const to = options.to ? Date.parse(options.to) : Number.POSITIVE_INFINITY;
   const limit = normalizeLimit(options.limit);
   const entries = events
-    .filter(event => event.record_id === memoryId || payloadRecordId(event) === memoryId)
-    .filter(event => {
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.record_id === memoryId || payloadRecordId(event) === memoryId)
+    .filter(({ event }) => {
       const timestamp = Date.parse(event.recorded_at || event.occurred_at);
       return timestamp >= from && timestamp <= to;
     })
-    .sort((left, right) => Date.parse(left.recorded_at) - Date.parse(right.recorded_at) || left.id.localeCompare(right.id))
+    .sort((left, right) => Date.parse(left.event.recorded_at) - Date.parse(right.event.recorded_at)
+      || (left.event.sequence ?? Number.MAX_SAFE_INTEGER) - (right.event.sequence ?? Number.MAX_SAFE_INTEGER)
+      || left.index - right.index)
     // Backends may return a bounded latest window. Keep the same defensive
     // rule here so a backend that returns a larger history cannot make the
     // public limit select the oldest entries.
     .slice(-limit)
-    .map(event => historyEntry(memoryId, event));
+    .map(({ event }) => historyEntry(memoryId, event));
   return {
     memoryId,
     entries,
