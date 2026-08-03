@@ -15,7 +15,9 @@ import { Pmem } from './index';
 import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import { createSchema, upsertCard } from '../core/db';
 import { rebuildSemanticIndex } from '../core/semantic';
+import { createSemanticEvidence } from '../core/semantic';
 import { DEFAULT_SEMANTIC_MODEL, DEFAULT_SEMANTIC_MODEL_REVISION } from '../core/semantic/transformers';
+import { SqliteMemoryBackend } from '../storage';
 import type { CardRow } from '../types';
 
 function makeProject(): string {
@@ -134,6 +136,24 @@ test('v1.3.1 preserves an explicit semantic opt-out across Runtime open', async 
   }
 });
 
+test('v1.3.2 keeps SQLite semantic retrieval deterministic-safe when the model cache is missing', async () => {
+  const root = makeProject();
+  const pmemPath = path.join(root, '.pmem');
+  const manifest = getDefaultManifest('runtime-semantic-missing-cache');
+  manifest.embedding.enabled = true;
+  manifest.embedding.auto_enabled = true;
+  manifest.embedding.cache_path = path.join(root, 'missing-semantic-model');
+  saveManifest(pmemPath, manifest);
+  const memory = await openV12Pmem({ root });
+  try {
+    assert.equal(memory.backend.capabilities.query.semantic, false);
+    const result = await memory.ask('query without model cache');
+    assert.ok(result.warnings?.some((warning: string) => warning.includes('degraded to deterministic recall')));
+  } finally {
+    await memory.close();
+  }
+});
+
 test('Pmem.query executes a backend-neutral plan through the RetrieverRegistry', async () => {
   const root = makeProject();
   const memory = await openV12Pmem({ root });
@@ -184,6 +204,51 @@ test('Pmem.packContext converts ranked Runtime records into a deterministic Cont
     assert.equal(pack.records[0]?.source?.path, 'decisions/payment-timeout.md');
     assert.match(pack.text, /Retry after timeout/);
     assert.ok(pack.provenance.executed);
+  } finally {
+    await memory.close();
+  }
+});
+
+test('Pmem.packContext carries validated semantic provenance into evidence', async () => {
+  const root = makeProject();
+  const backend = new SqliteMemoryBackend(path.join(root, '.pmem'));
+  const memory = await Pmem.open({ root, backend });
+  try {
+    const now = new Date().toISOString();
+    const tx = await backend.beginTransaction();
+    await tx.putRecord({
+      id: 'memory.semantic-pack',
+      schema: { id: 'memory', version: '1.0.0' },
+      data: { title: 'Semantic result', content: 'A semantically relevant memory.' },
+      scope: 'project',
+      provenance: { source: 'runtime-test' },
+      created_at: now,
+      updated_at: now,
+    });
+    await tx.commit();
+    const semanticEvidence = createSemanticEvidence({
+      provenance: { model: 'test-model', revision: 'rev-1', dimension: 3, chunkStrategy: 'heading-aware-v1' },
+      chunkId: 'memory.semantic-pack#0',
+      heading: 'Semantic result',
+      headingPath: ['Semantic result'],
+      similarity: 0.91,
+      parentRecord: 'memory.semantic-pack',
+    });
+    backend.setSemanticAdapter({
+      search: async () => ({
+        hits: [{
+          record_id: 'memory.semantic-pack',
+          score: semanticEvidence.similarity,
+          channels: ['semantic'],
+          metadata: { semanticEvidence },
+        }],
+      }),
+    });
+
+    const pack = await memory.packContext('semantic result', { budget: 400 });
+    assert.equal(pack.evidence[0]?.id, semanticEvidence.chunkId);
+    assert.equal(pack.evidence[0]?.recordId, 'memory.semantic-pack');
+    assert.deepEqual(pack.evidence[0]?.metadata?.semanticEvidence, semanticEvidence);
   } finally {
     await memory.close();
   }

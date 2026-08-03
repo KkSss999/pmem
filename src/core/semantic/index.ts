@@ -10,3 +10,4 @@ export * from './defaults';
 export * from './quality';
 export * from './evidence';
 export * from './evaluation';
+export * from './golden-runner';

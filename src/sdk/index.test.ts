@@ -7,6 +7,7 @@ import {
   SchemaRegistry,
   createSemanticEvidence,
   evaluateGoldenFixture,
+  runGoldenQuality,
   evaluateQuality,
   packContext,
   v12OpenOptionsToCanonical,
@@ -48,5 +49,7 @@ describe('SDK v1.3 public boundary', () => {
       thresholds: { minCoverage: 1, minMeanRecallAtK: 1 },
     });
     assert.equal(golden.gate.passed, true);
+    const goldenRun = runGoldenQuality(golden.fixture, [{ queryId: 'q1', retrievedIds: ['memory.a'] }]);
+    assert.equal(goldenRun.exitCode, 0);
   });
 });

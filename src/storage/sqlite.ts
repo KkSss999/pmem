@@ -30,6 +30,12 @@ import {
 /** Kept as an exported alias so Runtime never imports better-sqlite3 directly. */
 export type SqliteDatabase = Database.Database;
 
+/** Optional semantic projection installed by the v1.2 compatibility adapter.
+ * The default SQLite backend remains deterministic-only when absent. */
+export interface SqliteSemanticSearchAdapter {
+  search(text: string, limit: number): MemorySearchResult | Promise<MemorySearchResult>;
+}
+
 export const SQLITE_BACKEND_CAPABILITIES: BackendCapabilities = {
   transactions: { atomic: true, isolation: 'serializable' },
   query: { structured: true, fulltext: true, graph: true, semantic: false },
@@ -129,12 +135,25 @@ export class LegacyCardCodec implements MemoryCodec<CardRow> {
  */
 export class SqliteMemoryBackend implements MemoryBackend {
   readonly id = 'sqlite';
-  readonly capabilities = SQLITE_BACKEND_CAPABILITIES;
   private db: SqliteDatabase | null = null;
+  private semanticAdapter: SqliteSemanticSearchAdapter | null = null;
   private readonly codec: MemoryCodec = new SqliteMemoryCodec();
   private readonly legacyCardCodec = new LegacyCardCodec();
 
   constructor(private readonly pmemPath: string) {}
+
+  get capabilities(): BackendCapabilities {
+    if (!this.semanticAdapter) return SQLITE_BACKEND_CAPABILITIES;
+    return {
+      ...SQLITE_BACKEND_CAPABILITIES,
+      query: { ...SQLITE_BACKEND_CAPABILITIES.query, semantic: true },
+    };
+  }
+
+  /** Install an explicit semantic adapter without changing default behavior. */
+  setSemanticAdapter(adapter: SqliteSemanticSearchAdapter | null): void {
+    this.semanticAdapter = adapter;
+  }
 
   get database(): SqliteDatabase | null {
     return this.db;
@@ -249,10 +268,21 @@ export class SqliteMemoryBackend implements MemoryBackend {
     return { records: [...canonical.records, ...legacy].slice(0, normalizeLimit(query.limit)), total: canonical.records.length + legacy.length };
   }
 
-  search(request: MemorySearchRequest): MemorySearchResult {
+  search(request: MemorySearchRequest & { channel?: 'lexical' }): MemorySearchResult;
+  search(request: MemorySearchRequest & { channel: 'semantic' }): Promise<MemorySearchResult>;
+  search(request: MemorySearchRequest): MemorySearchResult | Promise<MemorySearchResult> {
     const db = this.requireDb();
     const text = request.text?.trim() ?? '';
     const limit = normalizeLimit(request.limit);
+    if (request.channel === 'semantic') {
+      if (!this.semanticAdapter) {
+        return Promise.resolve({
+          hits: [],
+          warnings: ['semantic retriever unavailable: SQLite semantic adapter is not configured'],
+        });
+      }
+      return this.semanticAdapter.search(text, limit);
+    }
     const scopeClause = request.scope && !scopeIncludesProject((Array.isArray(request.scope) ? request.scope : [request.scope]).map(memoryScopeId))
       ? ' AND 1 = 0'
       : '';

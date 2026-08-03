@@ -12,7 +12,14 @@ import { statusQuery } from '../core/query/status';
 import { captureCore } from '../core/capture';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { getCurrentBranch } from '../core/git';
-import { createOfflineTransformersProvider, inspectModelCache } from '../core/semantic';
+import {
+  createOfflineTransformersProvider,
+  createSemanticEvidence,
+  getSemanticStatus,
+  inspectModelCache,
+  searchSemanticCardsDetailed,
+  SEMANTIC_EVIDENCE_METADATA_KEY,
+} from '../core/semantic';
 import { defaultSemanticModelSpec } from '../core/semantic/defaults';
 export {
   askQuery,
@@ -56,6 +63,8 @@ import { loadRuntimeConfig } from '../runtime/config';
 import { EventStore } from '../runtime/event-store';
 import type { PmemOpenOptions, RuntimeLegacyAdapter } from '../runtime/types';
 import { EMPTY_SCHEMA_REGISTRY, SqliteMemoryBackend } from '../storage/sqlite';
+import type { SqliteSemanticSearchAdapter } from '../storage/sqlite';
+import type { MemorySearchResult } from '../runtime/model';
 
 export async function openV12Pmem(
   options: Omit<PmemOpenOptions, 'backend' | 'legacy'> & { backend?: import('../runtime/model').MemoryBackend },
@@ -69,6 +78,28 @@ export async function openV12Pmem(
   await backend.open({ root: options.root, schema: options.schema ?? EMPTY_SCHEMA_REGISTRY });
   const database = backend.database;
   if (!database) throw new Error('v1.2 SQLite adapter failed to open.');
+  const embedding = (loadManifest(pmemPath) as any)?.embedding;
+  if (embedding?.enabled && embedding.auto_enabled !== false) {
+    try {
+      const cache = await inspectModelCache({
+        model: embedding.model, revision: embedding.revision, dtype: embedding.dtype,
+        dimension: embedding.dimension, source: embedding.source, cachePath: embedding.cache_path,
+      });
+      if (cache.cached) {
+        backend.setSemanticAdapter(createV12SemanticSearchAdapter(database, {
+          model: embedding.model,
+          revision: embedding.revision,
+          dtype: embedding.dtype,
+          dimension: embedding.dimension,
+          source: embedding.source,
+          cachePath: embedding.cache_path,
+        }));
+      }
+    } catch {
+      // A malformed or stale semantic manifest must not block deterministic
+      // Runtime opening; the legacy ask path will surface its own degradation.
+    }
+  }
   const config = loadV12RuntimeConfig(options.root, options.preset, options.config);
   return Pmem.open({
     ...options,
@@ -76,6 +107,75 @@ export async function openV12Pmem(
     config,
     legacy: createV12RuntimeAdapter(options.root, pmemPath, database, config.working.ttl),
   });
+}
+
+interface V12SemanticProviderConfig {
+  model: string;
+  revision: string;
+  dtype: 'uint8';
+  dimension: number;
+  source: 'modelscope' | 'huggingface';
+  cachePath: string;
+}
+
+/**
+ * Adapt the existing SQLite semantic index to the canonical backend search
+ * contract. This adapter is opt-in and only installed when the verified model
+ * cache exists; ordinary SQLite search remains deterministic and unchanged.
+ */
+export function createV12SemanticSearchAdapter(
+  db: import('../storage/sqlite').SqliteDatabase,
+  config: V12SemanticProviderConfig,
+): SqliteSemanticSearchAdapter {
+  return {
+    async search(text, limit): Promise<MemorySearchResult> {
+      try {
+        const provider = await createOfflineTransformersProvider(config);
+        try {
+          const detailed = await searchSemanticCardsDetailed(db, text, provider, limit);
+          const status = getSemanticStatus(db);
+          const hits = detailed.matches.map(match => {
+            const parent = db.prepare('SELECT type, title FROM cards WHERE id = ? LIMIT 1').get(match.cardId) as
+              { type?: string | null; title?: string | null } | undefined;
+            const evidence = createSemanticEvidence({
+              provenance: {
+                model: match.modelId,
+                revision: match.modelRevision,
+                dimension: provider.dimension,
+                chunkStrategy: status.chunkStrategy ?? 'heading-aware-v1',
+              },
+              chunkId: match.chunkId,
+              heading: match.heading,
+              headingPath: match.headingPath,
+              similarity: match.similarity,
+              parentRecord: {
+                id: match.cardId,
+                ...(parent?.type === undefined ? {} : { type: parent.type }),
+                ...(parent?.title === undefined ? {} : { title: parent.title }),
+              },
+            });
+            return {
+              record_id: match.cardId,
+              score: match.similarity,
+              channels: ['semantic'],
+              metadata: { [SEMANTIC_EVIDENCE_METADATA_KEY]: evidence },
+            };
+          });
+          const warnings = detailed.diagnostics.abstainedReason
+            ? [`semantic retrieval abstained: ${detailed.diagnostics.abstainedReason}`]
+            : undefined;
+          return { hits, ...(warnings ? { warnings } : {}) };
+        } finally {
+          await provider.dispose();
+        }
+      } catch (error: any) {
+        return {
+          hits: [],
+          warnings: [`semantic retriever degraded: ${error?.message ?? String(error)}`],
+        };
+      }
+    },
+  };
 }
 
 export function createV12RuntimeAdapter(

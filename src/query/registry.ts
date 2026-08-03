@@ -177,8 +177,11 @@ const lexicalRetriever: Retriever = {
   id: 'lexical',
   supports: backend => backend.capabilities.query.fulltext || backend.capabilities.search_index,
   async retrieve({ backend, plan }) {
-    const result: MemorySearchResult = await backend.search({ text: plan.text, limit: plan.limit });
-    return { hits: await Promise.all(result.hits.map(hit => toSearchHit(backend, hit, 'lexical'))) };
+    const result: MemorySearchResult = await backend.search({ text: plan.text, channel: 'lexical', limit: plan.limit });
+    return {
+      hits: await Promise.all(result.hits.map(hit => toSearchHit(backend, hit, 'lexical'))),
+      ...(result.warnings ? { warnings: result.warnings } : {}),
+    };
   },
 };
 
@@ -205,15 +208,18 @@ const semanticRetriever: Retriever = {
   id: 'semantic',
   supports: backend => backend.capabilities.query.semantic,
   async retrieve({ backend, plan }) {
-    const result = await backend.search({ text: plan.text, limit: plan.limit });
+    const result = await backend.search({ text: plan.text, channel: 'semantic', limit: plan.limit });
     const converted = await Promise.all(result.hits.map(hit => toSemanticSearchHit(backend, hit)));
     const missing = converted.filter(item => !item.hit.evidence);
-    const warnings = missing.length > 0
-      ? [`semantic retriever degraded: semantic evidence unavailable for ${missing.length} hit${missing.length === 1 ? '' : 's'} (${[...new Set(missing.map(item => item.evidenceIssue))].join('; ')})`]
-      : undefined;
+    const warnings = [
+      ...(result.warnings ?? []),
+      ...(missing.length > 0
+        ? [`semantic retriever degraded: semantic evidence unavailable for ${missing.length} hit${missing.length === 1 ? '' : 's'} (${[...new Set(missing.map(item => item.evidenceIssue))].join('; ')})`]
+        : []),
+    ];
     return {
       hits: converted.map(item => item.hit),
-      ...(warnings ? { warnings } : {}),
+      ...(warnings.length > 0 ? { warnings } : {}),
     };
   },
 };

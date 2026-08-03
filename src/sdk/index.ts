@@ -36,6 +36,8 @@ export {
   normalizeGoldenFixture,
   parseGoldenFixture,
   serializeGoldenFixture,
+  runGoldenQuality,
+  serializeGoldenQualityRun,
   ndcgAtK,
   precisionAtK,
   recallAtK,
@@ -63,6 +65,13 @@ export type {
   SemanticQualityGate,
   SemanticQualityGateCheck,
   SemanticQualityThresholds,
+  GoldenQualityRun,
+  GoldenRunnerFailure,
+  GoldenRunnerFailureCode,
+  GoldenRunnerExitCode,
+  GoldenRunnerInput,
+  GoldenRunnerStatus,
+  GoldenRetrievalCaptureInput,
 } from '../core/semantic';
 export {
   createDefaultRetrieverRegistry,
@@ -92,6 +101,7 @@ export {
   inspectMarkdownProjectionJournal,
   MarkdownSerializer,
 } from '../storage';
+export type { SqliteSemanticSearchAdapter } from '../storage';
 export {
   CompatibilityError,
   v12OpenOptionsToCanonical,
