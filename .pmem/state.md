@@ -22,6 +22,9 @@
 
 ## Recent Changes
 
+- 2026-08-03: PR #49 merged; documented the unified semantic Runtime entry, split companion distribution, and ContextPack contract.
+- 2026-08-02: Runtime-level production semantic refresh validation
+- 2026-08-02: Validated v1.3.1 semantic runtime default on the pmem project itself after installing the current project build.
 - 2026-07-23: v1.0.1 Agent-Trust Operations: added confidence/superseded_by/classification fields to CardFrontmatter, enhanced pmem verify with 5 new checks (low_confidence, unclassified_card, superseded_reference, stale_next_step, conflicting_classifications), scoring pipeline applies confidence boost/penalty and superseded penalty, structured next.md with P0/P1/P2/@owner/criteria, context command displays sorted task queue. 310/310 tests passing.
 - 2026-07-22: PR #15 merged: v1.0 Agentic Memory Runtime released to main. Post-merge review fixes applied — SDK type exports, MCP tool schema hardening (additionalProperties: false, path scope validation), CLI forget routed through Runtime, error handling in status/context commands. 310/310 tests passing, E2E green, CI green.
 - 2026-06-26: Repositioned pmem from "project logs plus recall" toward "structured project memory + high-quality RAG + agent-CRUD local knowledge OS".
