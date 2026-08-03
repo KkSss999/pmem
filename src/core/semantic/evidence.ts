@@ -7,6 +7,8 @@
  */
 
 export const SEMANTIC_EVIDENCE_VERSION = 1 as const;
+/** MemorySearchHit.metadata key used by backend adapters to carry evidence. */
+export const SEMANTIC_EVIDENCE_METADATA_KEY = 'semanticEvidence' as const;
 
 export type SemanticEvidenceAuthority = 'supporting';
 

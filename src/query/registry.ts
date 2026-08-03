@@ -5,6 +5,8 @@ import type {
   MemorySearchHit,
   MemorySearchResult,
 } from '../runtime/model';
+import { isSemanticEvidence, SEMANTIC_EVIDENCE_METADATA_KEY } from '../core/semantic/evidence';
+import type { SemanticEvidence } from '../core/semantic/evidence';
 
 export type RetrieverId = 'structured' | 'exact' | 'lexical' | 'graph' | 'semantic';
 export type QueryStage = RetrieverId | 'rerank' | 'packing';
@@ -26,6 +28,8 @@ export interface RetrieverHit {
   score: number;
   channels: readonly string[];
   record?: MemoryRecord;
+  /** Supporting semantic provenance, when the backend supplied it. */
+  evidence?: SemanticEvidence;
 }
 
 export interface RetrieverResult {
@@ -202,7 +206,15 @@ const semanticRetriever: Retriever = {
   supports: backend => backend.capabilities.query.semantic,
   async retrieve({ backend, plan }) {
     const result = await backend.search({ text: plan.text, limit: plan.limit });
-    return { hits: await Promise.all(result.hits.map(hit => toSearchHit(backend, hit, 'semantic'))) };
+    const converted = await Promise.all(result.hits.map(hit => toSemanticSearchHit(backend, hit)));
+    const missing = converted.filter(item => !item.hit.evidence);
+    const warnings = missing.length > 0
+      ? [`semantic retriever degraded: semantic evidence unavailable for ${missing.length} hit${missing.length === 1 ? '' : 's'} (${[...new Set(missing.map(item => item.evidenceIssue))].join('; ')})`]
+      : undefined;
+    return {
+      hits: converted.map(item => item.hit),
+      ...(warnings ? { warnings } : {}),
+    };
   },
 };
 
@@ -220,6 +232,19 @@ async function toSearchHit(backend: MemoryBackend, hit: MemorySearchHit, channel
   return { id: hit.record_id, score: finiteScore(hit.score), channels: [channel, ...(hit.channels ?? [])], record };
 }
 
+async function toSemanticSearchHit(
+  backend: MemoryBackend,
+  hit: MemorySearchHit,
+): Promise<{ hit: RetrieverHit; evidenceIssue?: string }> {
+  const base = await toSearchHit(backend, hit, 'semantic');
+  const candidate = hit.metadata?.[SEMANTIC_EVIDENCE_METADATA_KEY];
+  if (isSemanticEvidence(candidate)) return { hit: { ...base, evidence: candidate } };
+  const evidenceIssue = candidate === undefined
+    ? 'backend did not return validated chunk provenance'
+    : `metadata.${SEMANTIC_EVIDENCE_METADATA_KEY} failed validation`;
+  return { hit: base, evidenceIssue };
+}
+
 function mergeHits(existing: RetrieverHit | undefined, incoming: RetrieverHit): RetrieverHit {
   if (!existing) return { ...incoming, score: finiteScore(incoming.score), channels: [...new Set(incoming.channels)] };
   const channels = [...new Set([...existing.channels, ...incoming.channels])];
@@ -231,6 +256,9 @@ function mergeHits(existing: RetrieverHit | undefined, incoming: RetrieverHit): 
     channels,
     // Hydration is best-effort; retain a record supplied by either channel.
     record: winner.record ?? existing.record ?? incoming.record,
+    // Semantic provenance is additive: retain it even when a deterministic
+    // channel wins the fused score, and never invent it from a record alone.
+    evidence: incoming.evidence ?? existing.evidence,
   };
 }
 

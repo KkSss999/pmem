@@ -1,5 +1,5 @@
 import { createDefaultRetrieverRegistry, createQueryPlan, type QueryExecutionResult } from '../query';
-import { packContext as buildContextPack, type ContextPack, type PackContextOptions } from '../context-pack';
+import { packContext as buildContextPack, type ContextPack, type ContextPackJsonValue, type PackContextOptions } from '../context-pack';
 import { loadRuntimeConfig } from './config';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
@@ -78,9 +78,27 @@ export class Pmem implements PmemInstance {
         metadata: { channels: [...hit.channels] },
       }];
     });
+    const evidence = result.hits.flatMap(hit => {
+      if (!hit.evidence) return [];
+      const semantic = hit.evidence;
+      const location = semantic.headingPath.length > 0
+        ? semantic.headingPath.join(' > ')
+        : semantic.chunkId;
+      return [{
+        id: semantic.chunkId,
+        recordId: hit.id,
+        kind: 'semantic',
+        content: `Semantic match at ${location}`,
+        score: semantic.similarity,
+        metadata: {
+          semanticEvidence: JSON.parse(JSON.stringify(semantic)) as ContextPackJsonValue,
+        },
+      }];
+    });
     return buildContextPack({
       query,
       records,
+      evidence,
       provenance: {
         executed: [...result.executed],
         skipped: [...result.skipped],

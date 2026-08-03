@@ -193,6 +193,9 @@ export interface MemorySearchHit {
   score: number;
   channels?: readonly string[];
   highlights?: readonly string[];
+  /** Backend-neutral extension metadata; semantic retrievers may provide
+   * validated evidence without coupling the canonical model to a provider. */
+  metadata?: Readonly<Record<string, unknown>>;
 }
 
 export interface MemorySearchResult {

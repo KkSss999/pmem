@@ -21,6 +21,7 @@ export type {
 } from '../context-pack';
 export {
   SEMANTIC_EVIDENCE_VERSION,
+  SEMANTIC_EVIDENCE_METADATA_KEY,
   assertSemanticEvidence,
   createSemanticEvidence,
   isSemanticEvidence,
@@ -31,6 +32,10 @@ export {
   aggregateQuality,
   evaluateQuality,
   evaluateQuery,
+  evaluateGoldenFixture,
+  normalizeGoldenFixture,
+  parseGoldenFixture,
+  serializeGoldenFixture,
   ndcgAtK,
   precisionAtK,
   recallAtK,
@@ -50,6 +55,14 @@ export type {
   QueryQualityMetrics,
   QueryQualityResult,
   SemanticQualityReport,
+  GoldenEvaluationOptions,
+  SemanticGoldenEvaluation,
+  SemanticGoldenFixture,
+  SemanticGoldenQuery,
+  SemanticGoldenRetrieval,
+  SemanticQualityGate,
+  SemanticQualityGateCheck,
+  SemanticQualityThresholds,
 } from '../core/semantic';
 export {
   createDefaultRetrieverRegistry,
