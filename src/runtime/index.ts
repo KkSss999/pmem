@@ -1,4 +1,5 @@
 import { createDefaultRetrieverRegistry, createQueryPlan, type QueryExecutionResult } from '../query';
+import { packContext as buildContextPack, type ContextPack, type ContextPackJsonValue, type PackContextOptions } from '../context-pack';
 import { loadRuntimeConfig } from './config';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
@@ -50,6 +51,61 @@ export class Pmem implements PmemInstance {
 
   async query(query: string, limit?: number): Promise<QueryExecutionResult> {
     return this.executeQueryPlan(createQueryPlan(query, limit));
+  }
+
+  async packContext(query: string, options: PackContextOptions = {}): Promise<ContextPack> {
+    this.assertOpen();
+    const result = await this.query(query, options.maxRecords);
+    const records = result.hits.flatMap(hit => {
+      if (!hit.record) return [];
+      const data = hit.record.data;
+      const content = typeof data.content === 'string'
+        ? data.content
+        : typeof data.body === 'string'
+          ? data.body
+          : typeof data.summary === 'string'
+            ? data.summary
+            : JSON.stringify(data);
+      const title = typeof data.title === 'string' ? data.title : undefined;
+      const sourceId = hit.record.provenance.source_id;
+      return [{
+        id: hit.record.id,
+        content,
+        title,
+        type: typeof data.type === 'string' ? data.type : undefined,
+        score: hit.score,
+        source: sourceId ? { path: sourceId } : undefined,
+        metadata: { channels: [...hit.channels] },
+      }];
+    });
+    const evidence = result.hits.flatMap(hit => {
+      if (!hit.evidence) return [];
+      const semantic = hit.evidence;
+      const location = semantic.headingPath.length > 0
+        ? semantic.headingPath.join(' > ')
+        : semantic.chunkId;
+      return [{
+        id: semantic.chunkId,
+        recordId: hit.id,
+        kind: 'semantic',
+        content: `Semantic match at ${location}`,
+        score: semantic.similarity,
+        provenance: JSON.parse(JSON.stringify(semantic.provenance)) as Record<string, ContextPackJsonValue>,
+        metadata: {
+          semanticEvidence: JSON.parse(JSON.stringify(semantic)) as ContextPackJsonValue,
+        },
+      }];
+    });
+    return buildContextPack({
+      query,
+      records,
+      evidence,
+      provenance: {
+        executed: [...result.executed],
+        skipped: [...result.skipped],
+        warnings: [...(result.warnings ?? [])],
+      },
+    }, options);
   }
 
   async executeQueryPlan(plan: import('../query').QueryPlan): Promise<QueryExecutionResult> {

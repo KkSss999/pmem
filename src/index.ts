@@ -23,6 +23,7 @@ import { syncCommand } from './commands/sync';
 import { milestoneCommand } from './commands/milestone';
 import { mcpCommand } from './commands/mcp';
 import { contextCommand } from './commands/context';
+import { contextPackCommand } from './commands/context-pack';
 import { captureCommand } from './commands/capture';
 import { forgetCommand } from './commands/forget';
 import { moduleInferCommand } from './commands/module';
@@ -56,6 +57,25 @@ program
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action(async (task: string, options) => {
     await contextCommand(task, { budget: options.budget ? parseInt(options.budget, 10) : undefined, format: options.format });
+  });
+
+program
+  .command('context-pack <query>')
+  .description('Build a deterministic, budget-aware ContextPack for agent injection')
+  .option('-b, --budget <tokens>', 'Token budget for the packed context', '2000')
+  .option('--max-records <n>', 'Maximum number of records to include')
+  .option('--max-evidence-per-record <n>', 'Maximum evidence items per record')
+  .option('-f, --format <format>', 'Output format (compact, text, json)', 'compact')
+  .action(async (query: string, options) => {
+    const budget = options.budget === undefined ? undefined : Number(options.budget);
+    const maxRecords = options.maxRecords === undefined ? undefined : Number(options.maxRecords);
+    const maxEvidencePerRecord = options.maxEvidencePerRecord === undefined ? undefined : Number(options.maxEvidencePerRecord);
+    if ([budget, maxRecords, maxEvidencePerRecord].some(value => value !== undefined && (!Number.isFinite(value) || value < 0))) {
+      console.error('Error: context-pack numeric options must be finite non-negative numbers.');
+      process.exit(2);
+    }
+    const format = options.format === 'json' || options.format === 'text' ? options.format : 'compact';
+    await contextPackCommand(query, { budget, maxRecords, maxEvidencePerRecord, format });
   });
 
 program

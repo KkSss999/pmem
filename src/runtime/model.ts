@@ -181,6 +181,8 @@ export interface MemorySearchDocument {
 
 export interface MemorySearchRequest {
   text?: string;
+  /** Distinguishes deterministic lexical search from optional semantic search. */
+  channel?: 'lexical' | 'semantic';
   fields?: readonly string[];
   scope?: MemoryScope | readonly MemoryScope[];
   schema?: MemorySchemaRef;
@@ -193,11 +195,15 @@ export interface MemorySearchHit {
   score: number;
   channels?: readonly string[];
   highlights?: readonly string[];
+  /** Backend-neutral extension metadata; semantic retrievers may provide
+   * validated evidence without coupling the canonical model to a provider. */
+  metadata?: Readonly<Record<string, unknown>>;
 }
 
 export interface MemorySearchResult {
   hits: readonly MemorySearchHit[];
   next_cursor?: string;
+  warnings?: readonly string[];
 }
 
 export interface BackendCapabilities {

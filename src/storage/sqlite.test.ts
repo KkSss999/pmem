@@ -143,3 +143,28 @@ test('SQLite graph query returns related target records through edges', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('SQLite semantic adapter is opt-in and never contaminates deterministic search', async () => {
+  const { root, backend } = makeBackend();
+  try {
+    assert.equal(backend.capabilities.query.semantic, false);
+    backend.setSemanticAdapter({
+      search: async (text, limit) => ({
+        hits: [{ record_id: `semantic:${text}`, score: 0.9, channels: ['semantic'] }].slice(0, limit),
+      }),
+    });
+    assert.equal(backend.capabilities.query.semantic, true);
+    const semantic = await backend.search({ channel: 'semantic', text: 'payment', limit: 3 });
+    assert.equal(semantic.hits[0]?.record_id, 'semantic:payment');
+    // The normal path remains the existing SQLite LIKE/FTS projection.
+    assert.deepEqual(backend.search({ channel: 'lexical', text: 'payment', limit: 3 }).hits, []);
+    backend.setSemanticAdapter(null);
+    assert.equal(backend.capabilities.query.semantic, false);
+    const unavailable = await backend.search({ channel: 'semantic', text: 'payment', limit: 3 });
+    assert.deepEqual(unavailable.hits, []);
+    assert.ok(unavailable.warnings?.[0]?.includes('adapter is not configured'));
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

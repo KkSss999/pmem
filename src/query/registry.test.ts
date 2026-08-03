@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDefaultRetrieverRegistry, createQueryPlan, RetrieverRegistry } from './registry';
 import type { BackendCapabilities, MemoryBackend, MemoryRecord } from '../runtime/model';
+import { createSemanticEvidence } from '../core/semantic/evidence';
 
 const caps: BackendCapabilities = {
   transactions: { atomic: true },
@@ -116,6 +117,80 @@ test('graph channel is skipped with a warning when backend lacks relation capabi
   assert.deepEqual(result.hits, []);
   assert.deepEqual(result.skipped, ['graph']);
   assert.ok(result.warnings?.[0]?.includes('backend does not support relation queries'));
+});
+
+test('semantic retriever carries validated supporting evidence from backend metadata', async () => {
+  const evidence = createSemanticEvidence({
+    provenance: { model: 'test-model', revision: 'rev-1', dimension: 3, chunkStrategy: 'heading-aware-v1' },
+    chunkId: 'memory.semantic#0',
+    heading: 'Relevant context',
+    headingPath: ['Relevant context'],
+    similarity: 0.91,
+    parentRecord: { id: 'memory.semantic', type: 'decision', title: 'Semantic result' },
+  });
+  const result = await createDefaultRetrieverRegistry().execute({
+    backend: backend({
+      capabilities: { ...caps, query: { ...caps.query, semantic: true } },
+      search: async () => ({ hits: [{
+        record_id: 'memory.semantic',
+        score: 0.91,
+        metadata: { semanticEvidence: evidence },
+      }] }),
+    }),
+    plan: { text: 'semantic', stages: ['semantic'], limit: 5, deterministic: true },
+  });
+  assert.deepEqual(result.hits[0]?.evidence, evidence);
+  assert.equal(result.warnings, undefined);
+});
+
+test('semantic retriever reports degraded evidence when backend metadata is unavailable', async () => {
+  const result = await createDefaultRetrieverRegistry().execute({
+    backend: backend({
+      capabilities: { ...caps, query: { ...caps.query, semantic: true } },
+      search: async () => ({ hits: [{ record_id: 'memory.semantic', score: 0.91 }] }),
+    }),
+    plan: { text: 'semantic', stages: ['semantic'], limit: 5, deterministic: true },
+  });
+  assert.equal(result.hits[0]?.evidence, undefined);
+  assert.ok(result.warnings?.some(warning => warning.includes('semantic evidence unavailable')));
+});
+
+test('semantic retriever rejects malformed evidence instead of exposing untrusted provenance', async () => {
+  const result = await createDefaultRetrieverRegistry().execute({
+    backend: backend({
+      capabilities: { ...caps, query: { ...caps.query, semantic: true } },
+      search: async () => ({ hits: [{
+        record_id: 'memory.semantic',
+        score: 0.91,
+        metadata: { semanticEvidence: { evidenceVersion: 1, authority: 'supporting' } },
+      }] }),
+    }),
+    plan: { text: 'semantic', stages: ['semantic'], limit: 5, deterministic: true },
+  });
+  assert.equal(result.hits[0]?.evidence, undefined);
+  assert.ok(result.warnings?.some(warning => warning.includes('failed validation')));
+});
+
+test('semantic evidence remains attached when deterministic fusion wins the score', async () => {
+  const evidence = createSemanticEvidence({
+    provenance: { model: 'test-model', revision: 'rev-1', dimension: 3, chunkStrategy: 'heading-aware-v1' },
+    chunkId: 'memory.same#0',
+    similarity: 0.84,
+    parentRecord: 'memory.same',
+  });
+  const result = await createDefaultRetrieverRegistry().execute({
+    backend: backend({
+      capabilities: { ...caps, query: { ...caps.query, semantic: true } },
+      query: async query => query.filters?.[0]?.field === 'id'
+        ? { records: [record('memory.same', 'Same')] }
+        : { records: [] },
+      search: async () => ({ hits: [{ record_id: 'memory.same', score: 0.84, metadata: { semanticEvidence: evidence } }] }),
+    }),
+    plan: { text: 'memory.same', stages: ['exact', 'semantic', 'rerank'], limit: 5, deterministic: true },
+  });
+  const hit = result.hits.find(candidate => candidate.id === 'memory.same');
+  assert.deepEqual(hit?.channels, ['exact', 'semantic']);
+  assert.deepEqual(hit?.evidence, evidence);
 });
 
 test('registry keeps deterministic id ordering when rerank scores tie and packing enforces limit', async () => {
