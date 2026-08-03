@@ -15,7 +15,7 @@ classification: decision
 token_policy: relaxed
 trust_label: user_confirmed
 sensitivity: internal
-last_verified: "2026-08-03T03:46:21.777Z"
+last_verified: "2026-08-03T04:34:22.307Z"
 ---
 
 # v1.3.x Semantic Runtime Distribution and ContextPack Experience

@@ -2,6 +2,21 @@
 
 All notable changes to pmem are documented here.
 
+## v1.3.2 — Semantic Quality and Context Packaging (2026-08-03)
+
+### Added
+
+- **ContextPack contract**: CLI, SDK, and MCP now expose the Runtime-generated structured memory payload with records, evidence, provenance, budget, diagnostics, and schema version.
+- **Semantic quality gates**: deterministic golden fixtures cover precision, recall, MRR, nDCG, context token efficiency, and noise.
+- **Evidence quality controls**: validated SQLite provenance survives Runtime fusion, evidence receives reserved budget, each record is capped at three evidence items by default, and deterministic diversity ordering reduces redundant context.
+- **Unified semantic distribution**: `pmem-ai` remains the single user-facing CLI entry while `pmem-ai-semantic` ships as the separately distributed local execution component; the root package includes the packaged `skills/` directory.
+
+### Compatibility
+
+- The base CLI and semantic companion advance together to `1.3.2`.
+- Deterministic, exact, lexical, graph, and fusion ranking remain authoritative; semantic retrieval remains a degradable perception channel.
+- Markdown cards remain canonical; ContextPack is a structured memory payload rather than a prompt template.
+
 ## v1.3.1 — Semantic Runtime Default (2026-08-02)
 
 ### Added

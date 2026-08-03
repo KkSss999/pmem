@@ -29,7 +29,7 @@ The design is intentionally **local and Git-friendly**. Markdown cards are the s
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-**v1.3.x (current)** ships the **Semantic Runtime**: deterministic retrieval remains authoritative, while local multilingual semantic retrieval is a standard, versioned, automatically maintained Runtime capability with safe degradation. v1.3.2 adds the structured **ContextPack** contract, provenance-bearing evidence, budget-aware packing, deterministic diversity ordering, and measurable semantic quality gates.
+**v1.3.2 (current)** ships the **Semantic Runtime**: deterministic retrieval remains authoritative, while local multilingual semantic retrieval is a standard, versioned, automatically maintained Runtime capability with safe degradation. It adds the structured **ContextPack** contract, provenance-bearing evidence, budget-aware packing, deterministic diversity ordering, and measurable semantic quality gates.
 
 ## Who It's For
 
@@ -43,7 +43,7 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 ### Recommended entry point — one CLI for every user
 
 ```bash
-npm install -g pmem-ai@1.3.1
+npm install -g pmem-ai@1.3.2
 pmem --version
 ```
 
@@ -72,7 +72,7 @@ command reports the exact compatible install command; then install it and rerun
 setup:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.1
+npm install -g pmem-ai-semantic@1.3.2
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
@@ -297,7 +297,7 @@ If setup reports a missing companion, install the exact compatible runtime and
 rerun setup. The companion is an implementation package, not another CLI:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.1
+npm install -g pmem-ai-semantic@1.3.2
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
@@ -324,7 +324,7 @@ data and can always be rebuilt from canonical Markdown cards plus the shared
 model.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
-For SDK installations, install `pmem-ai-semantic@1.3.1` in the same project as
+For SDK installations, install `pmem-ai-semantic@1.3.2` in the same project as
 `pmem-ai`. If the companion is absent or incompatible, setup/rebuild and SDK
 semantic queries report the exact install command while deterministic recall remains available.
 The pinned model is stored once for all projects at
@@ -757,7 +757,7 @@ Fresh v1.2 projects create this index during `pmem init`. The manual command is 
 ### Semantic Companion Is Missing
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.1
+npm install -g pmem-ai-semantic@1.3.2
 pmem semantic setup --yes
 pmem semantic rebuild
 ```

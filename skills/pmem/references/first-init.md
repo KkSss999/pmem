@@ -116,7 +116,7 @@ pmem verify
 Optional semantic enhancement on macOS is a separate, explicit journey:
 
 ```bash
-npm install -g pmem-ai-semantic@1.2.1
+npm install -g pmem-ai-semantic@1.3.2
 pmem semantic enable
 ```
 

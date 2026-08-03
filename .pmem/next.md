@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Merge the docs-only semantic distribution and ContextPack guidance PR, then run the final v1.3.2 release/version audit.
+Verify both v1.3.2 npm packages, packaged skills, and the GitHub release after the main-branch publish Action.
 
 ## Why
 PR #49 is merged; v1.3.x now has one user-facing CLI entry, a separately distributed semantic Runtime component, and a stable ContextPack contract for Agent integrations.
