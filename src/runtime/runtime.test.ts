@@ -248,6 +248,7 @@ test('Pmem.packContext carries validated semantic provenance into evidence', asy
     const pack = await memory.packContext('semantic result', { budget: 400 });
     assert.equal(pack.evidence[0]?.id, semanticEvidence.chunkId);
     assert.equal(pack.evidence[0]?.recordId, 'memory.semantic-pack');
+    assert.deepEqual(pack.evidence[0]?.provenance, semanticEvidence.provenance);
     assert.deepEqual(pack.evidence[0]?.metadata?.semanticEvidence, semanticEvidence);
   } finally {
     await memory.close();

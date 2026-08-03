@@ -7,6 +7,11 @@ export type ContextPackJsonValue =
   | readonly ContextPackJsonValue[]
   | { readonly [key: string]: ContextPackJsonValue };
 
+/** Token counting strategy used by ContextPack budget enforcement. */
+export interface TokenEstimator {
+  estimate(text: string): number;
+}
+
 export interface ContextPackSource {
   path?: string;
   uri?: string;
@@ -23,6 +28,8 @@ export interface ContextPackEvidenceInput {
   content: string;
   score?: number;
   source?: ContextPackSource;
+  /** Structured provenance retained in the ContextPack contract. */
+  provenance?: Readonly<Record<string, ContextPackJsonValue>>;
   metadata?: Readonly<Record<string, ContextPackJsonValue>>;
 }
 
@@ -66,6 +73,8 @@ export interface ContextPackEvidence {
   kind?: string;
   score?: number;
   source?: ContextPackSource;
+  /** Structured provenance retained in the ContextPack contract. */
+  provenance?: Record<string, ContextPackJsonValue>;
   metadata?: Record<string, ContextPackJsonValue>;
   truncated?: boolean;
 }
@@ -89,6 +98,7 @@ export interface ContextPackDiagnostics {
   omissions: ContextPackOmission[];
   omittedRecordIds: string[];
   omittedEvidenceIds: string[];
+  omittedEvidenceCount: number;
 }
 
 export interface ContextPackBudget {
@@ -116,4 +126,8 @@ export interface PackContextOptions {
   tokenBudget?: number;
   maxRecords?: number;
   maxEvidencePerRecord?: number;
+  /** Token counter; defaults to the deterministic fast estimator. */
+  tokenEstimator?: TokenEstimator;
+  /** MMR-style diversity control. Lambda 1 preserves score/id ordering. */
+  diversityLambda?: number;
 }

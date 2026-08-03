@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_QUALITY_K,
   aggregateQuality,
+  contextTokenEfficiency,
   evaluateQuality,
   evaluateQuery,
   ndcgAtK,
+  noiseRatioAtK,
   precisionAtK,
   recallAtK,
   reciprocalRank,
@@ -31,6 +33,19 @@ describe('semantic quality metrics', () => {
     assert.equal(ndcgAtK(['a'], ['b'], 3), 0);
   });
 
+  it('measures weighted context efficiency and noise', () => {
+    assert.equal(contextTokenEfficiency(['a', 'noise', 'b'], ['a', 'b'], [10, 30, 20], 3), 0.5);
+    assert.equal(noiseRatioAtK(['a', 'noise', 'b'], ['a', 'b'], [10, 30, 20], 3), 0.5);
+    const result = evaluateQuery({
+      queryId: 'weighted',
+      relevantIds: ['a', 'b'],
+      retrievedIds: ['a', 'noise', 'b'],
+      retrievedTokenWeights: [10, 30, 20],
+    }, { k: 3 });
+    assert.equal(result.metrics.contextTokenEfficiency, 0.5);
+    assert.equal(result.metrics.noiseRatioAtK, 0.5);
+  });
+
   it('deduplicates relevance hits while preserving rank order', () => {
     assert.equal(precisionAtK(['a', 'a', 'b'], ['a', 'b'], 3), 2 / 3);
     const result = evaluateQuery({ queryId: 'duplicates', relevantIds: ['a', 'b'], retrievedIds: ['a', 'a', 'b'] }, { k: 3 });
@@ -54,6 +69,8 @@ describe('semantic quality metrics', () => {
     assert.equal(report.aggregate.unjudgedQueryCount, 1);
     assert.equal(report.aggregate.coverage, 2 / 3);
     assert.equal(report.aggregate.meanRecallAtK, 2 / 3);
+    assert.equal(report.aggregate.meanContextTokenEfficiency, (0.5 + 0.5 + 0) / 3);
+    assert.equal(report.aggregate.meanNoiseRatioAtK, (0.5 + 0.5 + 1) / 3);
     assert.deepEqual(report.aggregate.latency, { count: 2, meanMs: 20, p50Ms: 10, p95Ms: 30, maxMs: 30 });
   });
 
@@ -70,6 +87,8 @@ describe('semantic quality metrics', () => {
     assert.throws(() => evaluateQuality([], { k: 1.5 }), /positive integer/);
     assert.throws(() => evaluateQuery({ queryId: 'bad', relevantIds: [], retrievedIds: [], latencyMs: -1 }), /non-negative/);
     assert.throws(() => evaluateQuery({ queryId: 'bad', relevantIds: [], retrievedIds: [], latencyMs: Number.NaN }), /finite/);
+    assert.throws(() => evaluateQuery({ queryId: 'bad', relevantIds: [], retrievedIds: [], retrievedTokenWeights: [-1] }), /non-negative/);
+    assert.throws(() => evaluateQuery({ queryId: 'bad', relevantIds: [], retrievedIds: ['a'], retrievedTokenWeights: [] }), /align one-to-one/);
   });
 
   it('uses the documented default cutoff', () => {

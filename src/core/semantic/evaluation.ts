@@ -33,6 +33,8 @@ export interface SemanticGoldenRetrieval {
   queryId: string;
   retrievedIds: readonly string[];
   latencyMs?: number;
+  /** Optional packed-token cost aligned with retrievedIds for context metrics. */
+  retrievedTokenWeights?: readonly number[];
 }
 
 export interface SemanticQualityThresholds {
@@ -41,6 +43,8 @@ export interface SemanticQualityThresholds {
   minMeanRecallAtK?: number;
   minMeanReciprocalRank?: number;
   minMeanNdcgAtK?: number;
+  minMeanContextTokenEfficiency?: number;
+  maxMeanNoiseRatioAtK?: number;
   maxP95LatencyMs?: number;
 }
 
@@ -50,6 +54,8 @@ export type QualityGateMetric =
   | 'meanRecallAtK'
   | 'meanReciprocalRank'
   | 'meanNdcgAtK'
+  | 'meanContextTokenEfficiency'
+  | 'meanNoiseRatioAtK'
   | 'p95LatencyMs';
 
 export interface SemanticQualityGateCheck {
@@ -180,10 +186,18 @@ function validateRetrieval(value: SemanticGoldenRetrieval, index: number): Seman
   if (value.latencyMs !== undefined && (!Number.isFinite(value.latencyMs) || value.latencyMs < 0)) {
     throw new RangeError(`Golden retrieval ${value.queryId} latencyMs must be finite and non-negative`);
   }
+  if (value.retrievedTokenWeights !== undefined && (!Array.isArray(value.retrievedTokenWeights)
+    || value.retrievedTokenWeights.some(weight => !Number.isFinite(weight) || weight < 0))) {
+    throw new RangeError(`Golden retrieval ${value.queryId} retrievedTokenWeights must be finite non-negative numbers`);
+  }
+  if (value.retrievedTokenWeights !== undefined && value.retrievedTokenWeights.length !== value.retrievedIds.length) {
+    throw new RangeError(`Golden retrieval ${value.queryId} retrievedTokenWeights must align one-to-one with retrievedIds`);
+  }
   return {
     queryId: value.queryId,
     retrievedIds: [...value.retrievedIds],
     ...(value.latencyMs === undefined ? {} : { latencyMs: value.latencyMs }),
+    ...(value.retrievedTokenWeights === undefined ? {} : { retrievedTokenWeights: [...value.retrievedTokenWeights] }),
   };
 }
 
@@ -211,6 +225,8 @@ function evaluateGate(
   assertThreshold(thresholds.minMeanRecallAtK, 'minMeanRecallAtK', 'ratio');
   assertThreshold(thresholds.minMeanReciprocalRank, 'minMeanReciprocalRank', 'ratio');
   assertThreshold(thresholds.minMeanNdcgAtK, 'minMeanNdcgAtK', 'ratio');
+  assertThreshold(thresholds.minMeanContextTokenEfficiency, 'minMeanContextTokenEfficiency', 'ratio');
+  assertThreshold(thresholds.maxMeanNoiseRatioAtK, 'maxMeanNoiseRatioAtK', 'ratio');
   assertThreshold(thresholds.maxP95LatencyMs, 'maxP95LatencyMs', 'latency');
 
   const aggregate = report.aggregate;
@@ -220,6 +236,8 @@ function evaluateGate(
   if (thresholds.minMeanRecallAtK !== undefined) checks.push(checkThreshold('meanRecallAtK', aggregate.meanRecallAtK, '>=', thresholds.minMeanRecallAtK));
   if (thresholds.minMeanReciprocalRank !== undefined) checks.push(checkThreshold('meanReciprocalRank', aggregate.meanReciprocalRank, '>=', thresholds.minMeanReciprocalRank));
   if (thresholds.minMeanNdcgAtK !== undefined) checks.push(checkThreshold('meanNdcgAtK', aggregate.meanNdcgAtK, '>=', thresholds.minMeanNdcgAtK));
+  if (thresholds.minMeanContextTokenEfficiency !== undefined) checks.push(checkThreshold('meanContextTokenEfficiency', aggregate.meanContextTokenEfficiency, '>=', thresholds.minMeanContextTokenEfficiency));
+  if (thresholds.maxMeanNoiseRatioAtK !== undefined) checks.push(checkThreshold('meanNoiseRatioAtK', aggregate.meanNoiseRatioAtK, '<=', thresholds.maxMeanNoiseRatioAtK));
   if (thresholds.maxP95LatencyMs !== undefined) checks.push(checkThreshold('p95LatencyMs', aggregate.latency.p95Ms, '<=', thresholds.maxP95LatencyMs));
   return { passed: checks.every(check => check.passed), checks };
 }
@@ -248,6 +266,7 @@ export function evaluateGoldenFixture(
       relevantIds: query.relevantIds,
       retrievedIds: result?.retrievedIds ?? [],
       latencyMs: result?.latencyMs,
+      retrievedTokenWeights: result?.retrievedTokenWeights,
     };
   });
   const quality = evaluateQuality(qualityCases, { k: options.k ?? fixture.k });

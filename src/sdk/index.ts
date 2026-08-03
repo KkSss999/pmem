@@ -2,6 +2,9 @@ export { Pmem } from '../runtime';
 export {
   CONTEXT_PACK_SCHEMA_VERSION,
   DEFAULT_CONTEXT_PACK_BUDGET,
+  DEFAULT_CONTEXT_PACK_DIVERSITY_LAMBDA,
+  DEFAULT_MAX_EVIDENCE_PER_RECORD,
+  DEFAULT_TOKEN_ESTIMATOR,
   estimateContextTokens,
   estimateTokens,
   packContext,
@@ -18,6 +21,7 @@ export type {
   ContextPackRecordInput,
   ContextPackSource,
   PackContextOptions,
+  TokenEstimator,
 } from '../context-pack';
 export {
   SEMANTIC_EVIDENCE_VERSION,
@@ -30,6 +34,7 @@ export {
   validateSemanticEvidence,
   SEMANTIC_QUALITY_VERSION,
   aggregateQuality,
+  contextTokenEfficiency,
   evaluateQuality,
   evaluateQuery,
   evaluateGoldenFixture,
@@ -39,6 +44,7 @@ export {
   runGoldenQuality,
   serializeGoldenQualityRun,
   ndcgAtK,
+  noiseRatioAtK,
   precisionAtK,
   recallAtK,
   reciprocalRank,

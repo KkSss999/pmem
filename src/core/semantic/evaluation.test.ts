@@ -42,6 +42,20 @@ describe('semantic golden evaluation', () => {
     assert.deepEqual(result.unexpectedQueryIds, []);
   });
 
+  it('gates context efficiency and noise from captured token weights', () => {
+    const result = evaluateGoldenFixture(
+      fixture,
+      [
+        { queryId: 'payments', retrievedIds: ['incident-payment', 'noise'], retrievedTokenWeights: [10, 30] },
+        { queryId: 'deploy', retrievedIds: ['runbook-deploy'], retrievedTokenWeights: [5] },
+      ],
+      { thresholds: { minMeanContextTokenEfficiency: 0.5, maxMeanNoiseRatioAtK: 0.5 } },
+    );
+    assert.equal(result.gate.passed, true);
+    assert.equal(result.quality.aggregate.meanContextTokenEfficiency, 0.625);
+    assert.equal(result.quality.aggregate.meanNoiseRatioAtK, 0.375);
+  });
+
   it('fails a regression gate when a required query is missing or below threshold', () => {
     const result = evaluateGoldenFixture(
       fixture,

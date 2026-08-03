@@ -90,6 +90,7 @@ export class Pmem implements PmemInstance {
         kind: 'semantic',
         content: `Semantic match at ${location}`,
         score: semantic.similarity,
+        provenance: JSON.parse(JSON.stringify(semantic.provenance)) as Record<string, ContextPackJsonValue>,
         metadata: {
           semanticEvidence: JSON.parse(JSON.stringify(semantic)) as ContextPackJsonValue,
         },

@@ -18,6 +18,8 @@ export interface QualityQueryCase {
   retrievedIds: readonly string[];
   /** Optional end-to-end retrieval latency in milliseconds. */
   latencyMs?: number;
+  /** Optional packed-token cost aligned with retrievedIds for context metrics. */
+  retrievedTokenWeights?: readonly number[];
 }
 
 export interface QualityEvaluationOptions {
@@ -40,6 +42,10 @@ export interface QueryQualityMetrics {
   ndcgAtK: number;
   /** Whether at least one relevant result was retrieved in the first k. */
   covered: boolean;
+  /** Relevant packed-token weight divided by total packed-token weight at k. */
+  contextTokenEfficiency: number;
+  /** Irrelevant packed-token weight divided by total packed-token weight at k. */
+  noiseRatioAtK: number;
 }
 
 export interface QueryQualityResult {
@@ -70,6 +76,8 @@ export interface QualityAggregate {
   meanRecallAtK: number;
   meanReciprocalRank: number;
   meanNdcgAtK: number;
+  meanContextTokenEfficiency: number;
+  meanNoiseRatioAtK: number;
   latency: LatencySummary;
 }
 
@@ -92,6 +100,55 @@ function assertLatency(value: number | undefined): number | null {
     throw new RangeError(`Query latency must be a finite non-negative number, received ${String(value)}`);
   }
   return value;
+}
+
+function tokenWeights(query: QualityQueryCase, k: number): number[] {
+  const supplied = query.retrievedTokenWeights;
+  if (supplied !== undefined && supplied.some(value => !Number.isFinite(value) || value < 0)) {
+    throw new RangeError(`Query token weights must be finite non-negative numbers, received ${String(supplied)}`);
+  }
+  if (supplied !== undefined && supplied.length !== query.retrievedIds.length) {
+    throw new RangeError('Query token weights must align one-to-one with retrievedIds');
+  }
+  return query.retrievedIds.slice(0, k).map((_, index) => supplied?.[index] ?? 1);
+}
+
+/** Relevant context-token share at the evaluation cutoff. */
+export function contextTokenEfficiency(
+  retrievedIds: readonly string[],
+  relevantIds: readonly string[],
+  retrievedTokenWeights?: readonly number[],
+  k: number = DEFAULT_QUALITY_K,
+): number {
+  assertK(k);
+  if (retrievedTokenWeights?.some(value => !Number.isFinite(value) || value < 0)) {
+    throw new RangeError('Retrieved token weights must be finite non-negative numbers');
+  }
+  if (retrievedTokenWeights !== undefined && retrievedTokenWeights.length !== retrievedIds.length) {
+    throw new RangeError('Retrieved token weights must align one-to-one with retrievedIds');
+  }
+  const relevant = relevantSet(relevantIds);
+  const ranked = retrievedIds.slice(0, k);
+  const weights = ranked.map((_, index) => retrievedTokenWeights?.[index] ?? 1);
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  if (total === 0) return 0;
+  const seen = new Set<string>();
+  const relevantWeight = ranked.reduce((sum, id, index) => {
+    const duplicate = seen.has(id);
+    seen.add(id);
+    return sum + (relevant.has(id) && !duplicate ? weights[index] : 0);
+  }, 0);
+  return relevantWeight / total;
+}
+
+/** Irrelevant context-token share at the evaluation cutoff. */
+export function noiseRatioAtK(
+  retrievedIds: readonly string[],
+  relevantIds: readonly string[],
+  retrievedTokenWeights?: readonly number[],
+  k: number = DEFAULT_QUALITY_K,
+): number {
+  return 1 - contextTokenEfficiency(retrievedIds, relevantIds, retrievedTokenWeights, k);
 }
 
 function relevantSet(ids: readonly string[]): Set<string> {
@@ -172,6 +229,7 @@ export function evaluateQuery(
   const relevant = relevantSet(query.relevantIds);
   const ranked = query.retrievedIds.slice(0, k);
   const hits = new Set(ranked.filter(id => relevant.has(id))).size;
+  const weights = tokenWeights(query, k);
   return {
     queryId: query.queryId,
     k,
@@ -183,6 +241,8 @@ export function evaluateQuery(
       reciprocalRank: reciprocalRank(query.retrievedIds, query.relevantIds, k),
       ndcgAtK: ndcgAtK(query.retrievedIds, query.relevantIds, k),
       covered: hits > 0,
+      contextTokenEfficiency: contextTokenEfficiency(query.retrievedIds, query.relevantIds, weights, k),
+      noiseRatioAtK: noiseRatioAtK(query.retrievedIds, query.relevantIds, weights, k),
     },
     latencyMs: assertLatency(query.latencyMs),
   };
@@ -214,6 +274,8 @@ export function aggregateQuality(results: readonly QueryQualityResult[]): Qualit
     meanRecallAtK: queryCount === 0 ? 0 : sum(result => result.metrics.recallAtK) / queryCount,
     meanReciprocalRank: queryCount === 0 ? 0 : sum(result => result.metrics.reciprocalRank) / queryCount,
     meanNdcgAtK: queryCount === 0 ? 0 : sum(result => result.metrics.ndcgAtK) / queryCount,
+    meanContextTokenEfficiency: queryCount === 0 ? 0 : sum(result => result.metrics.contextTokenEfficiency) / queryCount,
+    meanNoiseRatioAtK: queryCount === 0 ? 0 : sum(result => result.metrics.noiseRatioAtK) / queryCount,
     latency: {
       count: latencyValues.length,
       meanMs: latencyValues.length === 0 ? null : latencyValues.reduce((a, b) => a + b, 0) / latencyValues.length,

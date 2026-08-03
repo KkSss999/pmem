@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { estimateContextTokens, packContext } from './index';
+import {
+  DEFAULT_MAX_EVIDENCE_PER_RECORD,
+  estimateContextTokens,
+  packContext,
+} from './index';
 
 describe('ContextPack', () => {
   const base = {
@@ -83,6 +87,50 @@ describe('ContextPack', () => {
     assert.equal(result.evidence.length, 1);
     assert.equal(result.evidence[0].id, 'r:e1');
     assert.equal(result.diagnostics.omittedEvidenceIds.length, 1);
+  });
+
+  it('applies a safe default evidence limit and reports an explicit count', () => {
+    const result = packContext({
+      query: 'q',
+      records: [{
+        id: 'r', content: 'record', evidence: Array.from({ length: DEFAULT_MAX_EVIDENCE_PER_RECORD + 1 }, (_, index) => ({
+          recordId: 'r',
+          id: `e${index + 1}`,
+          content: `evidence ${index + 1}`,
+        })),
+      }],
+    }, { budget: 500 });
+    assert.equal(result.evidence.length, DEFAULT_MAX_EVIDENCE_PER_RECORD);
+    assert.equal(result.diagnostics.omittedEvidenceCount, 1);
+  });
+
+  it('supports a target-model token estimator and keeps provenance in the wire/text contract', () => {
+    const result = packContext({
+      query: 'q',
+      records: [{ id: 'r', content: 'record', metadata: { channel: 'semantic' } }],
+      evidence: [{
+        id: 'e',
+        recordId: 'r',
+        content: 'evidence',
+        provenance: { model: 'test', revision: 'r1' },
+      }],
+      provenance: { executed: ['semantic'] },
+    }, { budget: 500, tokenEstimator: { estimate: value => value.length } });
+    assert.ok(result.text.includes('model'));
+    assert.deepEqual(result.evidence[0]?.provenance, { model: 'test', revision: 'r1' });
+    assert.ok(result.budget.usedTokens <= result.budget.requestedTokens);
+  });
+
+  it('uses deterministic MMR-style diversity ordering for similar records', () => {
+    const result = packContext({
+      query: 'payment timeout',
+      records: [
+        { id: 'a', content: 'payment timeout retry strategy', score: 1 },
+        { id: 'b', content: 'payment timeout retry backoff', score: 0.99 },
+        { id: 'c', content: 'deployment rollback checklist', score: 0.8 },
+      ],
+    }, { budget: 500, diversityLambda: 0.3 });
+    assert.deepEqual(result.records.map(record => record.id), ['a', 'c', 'b']);
   });
 
   it('does not mutate caller input', () => {
