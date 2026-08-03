@@ -136,7 +136,7 @@ test('v1.3.1 preserves an explicit semantic opt-out across Runtime open', async 
   }
 });
 
-test('v1.3.2 keeps SQLite semantic retrieval deterministic-safe when the model cache is missing', async () => {
+test('v1.3.3 keeps SQLite semantic retrieval deterministic-safe when the model cache is missing', async () => {
   const root = makeProject();
   const pmemPath = path.join(root, '.pmem');
   const manifest = getDefaultManifest('runtime-semantic-missing-cache');

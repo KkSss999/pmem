@@ -9,8 +9,27 @@ import type {
 import { healthRule } from './registry';
 import type { HealthBaselineFile } from './types';
 
-const DIMENSIONS: HealthDimension[] = ['correctness', 'freshness', 'metadata', 'semantic_readiness'];
+const DIMENSIONS: HealthDimension[] = [
+  'correctness', 'freshness', 'metadata', 'semantic_readiness',
+  'conflict', 'stability', 'quality',
+];
 const SEVERITY_RANK: Record<VerifyIssue['severity'], number> = { info: 0, warning: 1, error: 2 };
+
+/**
+ * Additive v1.3.3 health lenses. These intentionally do not rewrite an
+ * issue's historical dimension: legacy scores and baselines remain stable,
+ * while JSON consumers get dedicated conflict/stability/quality views.
+ */
+const EXTENDED_DIMENSION_TYPES: Record<Exclude<HealthDimension, 'correctness' | 'freshness' | 'metadata' | 'semantic_readiness'>, ReadonlySet<string>> = {
+  conflict: new Set(['conflicting_classifications', 'contradictory_memory', 'conflict', 'conflicts_with']),
+  stability: new Set(['stale_memory', 'stale_index', 'memory_dirty', 'stale_next_step', 'active_lock', 'stale_lock', 'missing_database']),
+  quality: new Set([
+    'card_too_large', 'card_too_large_relaxed', 'low_confidence', 'too_many_relations',
+    'orphan_edges', 'missing_contract_field', 'unclassified_card', 'untrusted_memory',
+    'unclassified_sensitivity', 'invalid_trust_label', 'untrusted_content',
+    'untracked_card', 'missing_source_file',
+  ]),
+};
 
 export function issueFingerprint(issue: VerifyIssue): string {
   const scope = issue.card_id ?? 'global';
@@ -66,6 +85,23 @@ function scoreIssues(issues: readonly VerifyIssue[]): number {
   return Math.max(0, Math.round(100 - penalty));
 }
 
+function issuesForExtendedDimension(
+  issues: readonly VerifyIssue[],
+  dimension: 'conflict' | 'stability' | 'quality',
+): VerifyIssue[] {
+  const types = EXTENDED_DIMENSION_TYPES[dimension];
+  return issues.filter(issue => {
+    if (issue.dimension === dimension) return true;
+    if (types.has(issue.type)) return true;
+    // Keep the quality lens extensible for future metadata rules while
+    // reserving explicitly classified conflict/stability signals for their
+    // dedicated dimensions.
+    if (dimension !== 'quality' || issue.dimension !== 'metadata') return false;
+    return !EXTENDED_DIMENSION_TYPES.conflict.has(issue.type)
+      && !EXTENDED_DIMENSION_TYPES.stability.has(issue.type);
+  });
+}
+
 export function buildVerifyResult(
   rawIssues: readonly VerifyIssue[],
   baseline: HealthBaselineFile | null,
@@ -97,7 +133,9 @@ export function buildVerifyResult(
   const dimensions = {} as Record<HealthDimension, HealthDimensionResult>;
   for (const dimension of DIMENSIONS) {
     const applicable = dimension !== 'semantic_readiness' || semanticReadiness.applicable;
-    const selected = issues.filter(issue => issue.dimension === dimension);
+    const selected = dimension === 'conflict' || dimension === 'stability' || dimension === 'quality'
+      ? issuesForExtendedDimension(issues, dimension)
+      : issues.filter(issue => issue.dimension === dimension);
     dimensions[dimension] = {
       status: applicable ? 'applicable' : 'not_applicable',
       score: applicable ? scoreIssues(selected) : null,

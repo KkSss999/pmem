@@ -112,6 +112,8 @@ export type MemoryEventType =
 
 export interface MemoryEvent {
   id: string;
+  /** Optional backend monotonic sequence used to preserve equal-timestamp order. */
+  sequence?: number;
   type: MemoryEventType;
   scope: MemoryScope;
   /** When the domain event happened. */
@@ -124,6 +126,55 @@ export interface MemoryEvent {
   record_id?: string;
   schema?: MemorySchemaRef;
   provenance?: MemoryProvenance;
+}
+
+/** Read-only timeline query for durable memory changes. */
+export interface MemoryHistoryOptions {
+  from?: string;
+  to?: string;
+  limit?: number;
+  /** Principal requesting the read; used for scope visibility filtering. */
+  principal?: string;
+  /** Opaque backend cursor used internally to continue a bounded history scan. */
+  cursor?: string;
+}
+
+export type MemoryDiffStatus = 'available' | 'unavailable';
+
+export interface MemoryDiffChange {
+  path: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface MemoryHistoryEntry {
+  eventId: string;
+  type: MemoryEventType;
+  recordId: string;
+  occurredAt: string;
+  recordedAt: string;
+  scope: string;
+  actor?: string;
+  reason?: string;
+  source?: string;
+  diffStatus: MemoryDiffStatus;
+  changes?: readonly MemoryDiffChange[];
+}
+
+export interface MemoryHistoryResult {
+  memoryId: string;
+  entries: readonly MemoryHistoryEntry[];
+  warnings?: readonly string[];
+}
+
+/** Two-point diff contract: previous durable state (T-1) versus current (T). */
+export interface MemoryDiffResult {
+  memoryId: string;
+  previous: MemoryHistoryEntry | null;
+  current: MemoryHistoryEntry | null;
+  diffStatus: MemoryDiffStatus;
+  changes?: readonly MemoryDiffChange[];
+  warnings?: readonly string[];
 }
 
 export interface MemoryRelation {
@@ -263,6 +314,13 @@ export interface MemoryBackend {
   getRecord(id: string): MaybePromise<MemoryRecord | null>;
   query(query: BackendQuery): MaybePromise<MemoryQueryResult>;
   search(request: MemorySearchRequest): MaybePromise<MemorySearchResult>;
+  /** Optional durable event reader; returns the latest bounded window in ascending order. */
+  /**
+   * Record-scoped reads return a bounded window in stable ascending order.
+   * `cursor` resumes before the oldest returned event; callers may paginate
+   * until enough visible events have been collected.
+   */
+  listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MaybePromise<readonly MemoryEvent[]>;
   beginTransaction(options?: BackendTransactionOptions): MaybePromise<BackendTransaction>;
 }
 

@@ -37,6 +37,7 @@ describe('health baseline locking', () => {
   it('explicitly rejects JSON output combined with mutating repairs', () => {
     assert.throws(() => verifyCommand({ format: 'json', fix: true }), /cannot be combined/);
     assert.throws(() => verifyCommand({ format: 'json', fixStale: true }), /cannot be combined/);
+    assert.throws(() => verifyCommand({ format: 'json', dryRun: true }), /cannot be combined/);
   });
 
   it('detects production orphan-edge evidence growth against a baseline', () => {

@@ -42,6 +42,78 @@ test('SQLite backend opens, writes, reads, structured-queries, and searches', ()
   }
 });
 
+test('SQLite backend exposes a bounded, deterministic event history port', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    tx.appendEvent({
+      id: 'history-one', type: 'commit', scope: 'project', occurred_at: '2026-08-03T10:00:00.000Z',
+      recorded_at: '2026-08-03T10:00:00.000Z', record_id: 'memory.database', payload: { summary: 'mysql' },
+    });
+    tx.appendEvent({
+      id: 'history-two', type: 'commit', scope: 'project', occurred_at: '2026-08-03T11:00:00.000Z',
+      recorded_at: '2026-08-03T11:00:00.000Z', payload: { target_id: 'memory.database', changes: [{ path: 'db', before: 'mysql', after: 'postgres' }] },
+    });
+    tx.appendEvent({
+      id: 'history-three', type: 'commit', scope: 'project', occurred_at: '2026-08-03T12:00:00.000Z',
+      recorded_at: '2026-08-03T12:00:00.000Z', record_id: 'memory.database', payload: { summary: 'postgres + migrated' },
+    });
+    tx.appendEvent({
+      id: 'history-other', type: 'commit', scope: 'project', occurred_at: '2026-08-03T12:00:00.000Z',
+      recorded_at: '2026-08-03T12:00:00.000Z', record_id: 'memory.other', payload: {},
+    });
+    tx.commit();
+    const history = backend.listEvents?.({ recordId: 'memory.database', limit: 10 });
+    assert.deepEqual(history?.map(event => event.id), ['1', '2', '3']);
+    assert.equal(history?.[1]?.payload.target_id, 'memory.database');
+    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.database', limit: 2 }).map(event => event.id), ['2', '3']);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite record-scoped history filters before the bounded global event window', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    tx.appendEvent({
+      id: 'target-before', type: 'commit', scope: 'project', occurred_at: '2026-08-03T10:00:00.000Z',
+      recorded_at: '2026-08-03T10:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target' },
+    });
+    for (let index = 0; index < 600; index += 1) {
+      tx.appendEvent({
+        id: `other-${index}`, type: 'commit', scope: 'project', occurred_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`,
+        recorded_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`, record_id: 'memory.other', payload: {},
+      });
+    }
+    tx.appendEvent({
+      id: 'target-after', type: 'commit', scope: 'project', occurred_at: '2026-08-03T23:00:00.000Z',
+      recorded_at: '2026-08-03T23:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target latest' },
+    });
+    tx.commit();
+    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.target', limit: 10 }).map(event => event.record_id), ['memory.target', 'memory.target']);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('SQLite history preserves insertion order for equal timestamps', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    const at = '2026-08-03T10:00:00.000Z';
+    tx.appendEvent({ id: 'nine', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 9 } });
+    tx.appendEvent({ id: 'ten', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 10 } });
+    tx.commit();
+    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.tie', limit: 10 }).map(event => event.payload.value), [9, 10]);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('SQLite codec persists arbitrary schema data without creating a Card row', () => {
   const { root, backend } = makeBackend();
   try {

@@ -102,7 +102,7 @@ You immediately see what was done, what state the project is in, and what to do 
 On macOS, a user may explicitly add the companion and enable semantic recall:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.2
+npm install -g pmem-ai-semantic@1.3.3
 pmem semantic enable
 ```
 

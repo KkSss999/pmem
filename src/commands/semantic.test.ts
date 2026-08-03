@@ -141,7 +141,7 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@1.3.2';
+    const actionable = `Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@${SEMANTIC_COMPANION_VERSION}`;
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
@@ -155,7 +155,7 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, 'npm install -g pmem-ai-semantic@1.3.2');
+    assert.strictEqual(result.install_command, `npm install -g pmem-ai-semantic@${SEMANTIC_COMPANION_VERSION}`);
     assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });

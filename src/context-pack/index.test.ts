@@ -1,8 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CONTEXT_PACK_CAPABILITIES,
+  CONTEXT_PACK_PROTOCOL_ID,
+  CONTEXT_PACK_PROTOCOL_VERSION,
+  CONTEXT_PACK_UNKNOWN_FIELDS,
   DEFAULT_MAX_EVIDENCE_PER_RECORD,
+  contextPackContract,
   estimateContextTokens,
+  isContextPack,
+  isContextPackContract,
   packContext,
 } from './index';
 
@@ -21,9 +28,38 @@ describe('ContextPack', () => {
     const first = packContext(base, { budget: 500 });
     const second = packContext(base, { budget: 500 });
     assert.equal(first.schemaVersion, '1');
+    assert.deepEqual(first.contract, {
+      id: CONTEXT_PACK_PROTOCOL_ID,
+      version: CONTEXT_PACK_PROTOCOL_VERSION,
+      compatibility: 'additive',
+      unknownFields: CONTEXT_PACK_UNKNOWN_FIELDS,
+      capabilities: CONTEXT_PACK_CAPABILITIES,
+    });
     assert.deepEqual(first, second);
     assert.equal(JSON.stringify(first), JSON.stringify(second));
     assert.deepEqual(Object.keys(first.provenance), ['model', 'retrievers']);
+  });
+
+  it('accepts additive unknown fields and supplies the v1 contract for legacy payloads', () => {
+    const pack = packContext({ query: 'q', records: [] });
+    const withUnknown = { ...pack, futureField: { ignored: true } };
+    assert.equal(isContextPack(withUnknown), true);
+    assert.deepEqual(contextPackContract(withUnknown), pack.contract);
+
+    const legacy = { ...pack };
+    delete (legacy as { contract?: unknown }).contract;
+    assert.equal(isContextPack(legacy), true);
+    assert.deepEqual(contextPackContract(legacy), pack.contract);
+  });
+
+  it('rejects malformed known fields and incompatible contracts while ignoring additive fields', () => {
+    const pack = packContext(base, { budget: 500 });
+    assert.equal(isContextPack({ ...pack, futureField: true }), true);
+    assert.equal(isContextPack({ ...pack, contract: { ...pack.contract, version: '2' } }), false);
+    assert.equal(isContextPack({ ...pack, records: [{ id: 'r', content: 42 }] }), false);
+    assert.equal(isContextPack({ ...pack, evidence: [{ id: 'e', recordId: 'r', content: 'ok', score: 'bad' }] }), false);
+    assert.equal(isContextPackContract({ ...pack.contract, compatibility: 'breaking' }), false);
+    assert.throws(() => contextPackContract({ contract: { ...pack.contract, version: '2' } } as never), /invalid ContextPack contract/i);
   });
 
   it('orders records by score and then id for deterministic ties', () => {

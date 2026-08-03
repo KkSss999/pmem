@@ -270,7 +270,10 @@ source_files: [src/index.ts]
 
     it('preserves read-only defaults and lists write tools only in append-only mode', () => {
       const readonlyNames = listMcpTools('readonly').map(tool => tool.name);
-      assert.deepStrictEqual(readonlyNames, ['pmem_recall', 'pmem_ask', 'pmem_related', 'pmem_status', 'pmem_context', 'pmem_context_pack']);
+      assert.deepStrictEqual(readonlyNames, [
+        'pmem_recall', 'pmem_ask', 'pmem_related', 'pmem_history', 'pmem_diff',
+        'pmem_status', 'pmem_context', 'pmem_context_pack',
+      ]);
 
       const appendOnlyNames = listMcpTools('append-only').map(tool => tool.name);
       assert.ok(appendOnlyNames.includes('pmem_capture'));

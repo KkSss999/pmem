@@ -1,6 +1,11 @@
 export { Pmem } from '../runtime';
 export {
   CONTEXT_PACK_SCHEMA_VERSION,
+  CONTEXT_PACK_PROTOCOL_ID,
+  CONTEXT_PACK_PROTOCOL_VERSION,
+  CONTEXT_PACK_UNKNOWN_FIELDS,
+  CONTEXT_PACK_CAPABILITIES,
+  DEFAULT_CONTEXT_PACK_CONTRACT,
   DEFAULT_CONTEXT_PACK_BUDGET,
   DEFAULT_CONTEXT_PACK_DIVERSITY_LAMBDA,
   DEFAULT_MAX_EVIDENCE_PER_RECORD,
@@ -8,9 +13,13 @@ export {
   estimateContextTokens,
   estimateTokens,
   packContext,
+  isContextPack,
+  isContextPackContract,
+  contextPackContract,
 } from '../context-pack';
 export type {
   ContextPack,
+  ContextPackContract,
   ContextPackBudget,
   ContextPackDiagnostics,
   ContextPackEvidence,
@@ -23,6 +32,35 @@ export type {
   PackContextOptions,
   TokenEstimator,
 } from '../context-pack';
+export type {
+  MemoryDiffChange,
+  MemoryDiffResult,
+  MemoryDiffStatus,
+  MemoryHistoryEntry,
+  MemoryHistoryOptions,
+  MemoryHistoryResult,
+} from '../runtime';
+export { applyRepairPlan, buildRepairPlan } from '../runtime';
+export { createRollbackCheckpoint, restoreRollbackCheckpoint, validateRollbackCheckpoint } from '../runtime';
+export type {
+  RepairApplyFailure,
+  RepairApplyResult,
+  RepairApplyStatus,
+  RepairChange,
+  RepairCheckpointReceipt,
+  RepairJsonValue,
+  RepairPlan,
+  RepairPlanMode,
+  RepairPlanOptions,
+  RepairRollbackResult,
+} from '../runtime';
+export type {
+  RollbackCheckpoint,
+  RollbackCheckpointInput,
+  RollbackRestoreFailure,
+  RollbackRestoreResult,
+  RollbackRestoreStatus,
+} from '../runtime';
 export {
   SEMANTIC_EVIDENCE_VERSION,
   SEMANTIC_EVIDENCE_METADATA_KEY,

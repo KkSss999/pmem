@@ -20,6 +20,8 @@ describe('context-pack CLI surface', () => {
     });
     const parsed = JSON.parse(renderContextPack(pack, 'json'));
     assert.equal(parsed.schemaVersion, '1');
+    assert.equal(parsed.contract.id, 'pmem.context-pack');
+    assert.equal(parsed.contract.unknownFields, 'ignore');
     assert.equal(parsed.query, 'deployment rollback');
     assert.equal(parsed.records[0].id, 'decision.rollback');
     assert.equal(parsed.budget.usedTokens > 0, true);
