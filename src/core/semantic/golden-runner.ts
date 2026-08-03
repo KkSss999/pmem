@@ -54,7 +54,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function evaluateFailures(evaluation: SemanticGoldenEvaluation): GoldenRunnerFailure[] {
+function evaluateFailures(
+  evaluation: SemanticGoldenEvaluation,
+  options: GoldenEvaluationOptions,
+): GoldenRunnerFailure[] {
   const failures: GoldenRunnerFailure[] = [];
   const failedChecks = evaluation.gate.checks.filter(check => !check.passed);
   for (const check of failedChecks) {
@@ -66,14 +69,14 @@ function evaluateFailures(evaluation: SemanticGoldenEvaluation): GoldenRunnerFai
       expected: check.expected,
     });
   }
-  if (evaluation.missingQueryIds.length > 0) {
+  if ((options.requireCompleteResults ?? true) && evaluation.missingQueryIds.length > 0) {
     failures.push({
       code: 'MISSING_QUERY_RESULTS',
       message: `Missing retrieval captures for ${evaluation.missingQueryIds.length} golden quer${evaluation.missingQueryIds.length === 1 ? 'y' : 'ies'}`,
       queryIds: evaluation.missingQueryIds,
     });
   }
-  if (evaluation.unexpectedQueryIds.length > 0) {
+  if ((options.rejectUnexpectedResults ?? true) && evaluation.unexpectedQueryIds.length > 0) {
     failures.push({
       code: 'UNEXPECTED_QUERY_RESULTS',
       message: `Retrieval captures contain ${evaluation.unexpectedQueryIds.length} query id${evaluation.unexpectedQueryIds.length === 1 ? '' : 's'} not present in the fixture`,
@@ -100,7 +103,7 @@ export function runGoldenQuality(
     const fixture = parseGoldenFixture(fixtureInput);
     const retrievals = parseRetrievalCapture(retrievalCaptureInput);
     const evaluation = evaluateGoldenFixture(fixture, retrievals, options);
-    const failures = evaluateFailures(evaluation);
+    const failures = evaluateFailures(evaluation, options);
     return {
       passed: failures.length === 0,
       status: failures.length === 0 ? 'passed' : 'failed',

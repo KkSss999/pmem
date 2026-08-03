@@ -52,6 +52,30 @@ describe('semantic golden quality runner', () => {
     assert.deepEqual(result.failures.at(-1)?.queryIds, ['q2']);
   });
 
+  it('honors relaxed completeness options when constructing runner failures', () => {
+    const missingRelaxed = runGoldenQuality(
+      fixture,
+      [{ queryId: 'q1', retrievedIds: ['a'] }],
+      { requireCompleteResults: false },
+    );
+    assert.equal(missingRelaxed.passed, true);
+    assert.equal(missingRelaxed.exitCode, 0);
+    assert.deepEqual(missingRelaxed.failures, []);
+
+    const unexpectedRelaxed = runGoldenQuality(
+      fixture,
+      [
+        { queryId: 'q1', retrievedIds: ['a'] },
+        { queryId: 'q2', retrievedIds: ['b'] },
+        { queryId: 'future-query', retrievedIds: ['future'] },
+      ],
+      { rejectUnexpectedResults: false },
+    );
+    assert.equal(unexpectedRelaxed.passed, true);
+    assert.equal(unexpectedRelaxed.exitCode, 0);
+    assert.deepEqual(unexpectedRelaxed.failures, []);
+  });
+
   it('returns exit code 2 for malformed fixture or capture input', () => {
     const badFixture = runGoldenQuality('{"version":1,"name":"bad","k":0,"queries":[]}', '[]');
     assert.equal(badFixture.status, 'invalid');
