@@ -1,5 +1,5 @@
 /** Synchronous v1.2 maintenance adapter for legacy command workflows. */
-import { closeDatabase, createSchema, openDatabase } from '../core/db';
+import { closeDatabase, createSchema, insertRuntimeEvent, openDatabase, type RuntimeEventInput } from '../core/db';
 import type Database from 'better-sqlite3';
 
 export * from '../core/db';
@@ -12,4 +12,12 @@ export function openMaintenanceDatabase(pmemPath: string): MaintenanceDatabase {
 }
 export function closeMaintenanceDatabase(db?: MaintenanceDatabase): void {
   closeDatabase(db);
+}
+
+/** Adapter-owned event writer for maintenance commands. */
+export function recordMaintenanceEvent(
+  db: MaintenanceDatabase,
+  event: RuntimeEventInput,
+): number {
+  return insertRuntimeEvent(db, event);
 }

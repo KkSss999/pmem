@@ -1,3 +1,5 @@
+import type { RepairPlan } from '../runtime/repair';
+
 export interface VerifyIssue {
   severity: 'error' | 'warning' | 'info';
   type: string;
@@ -50,7 +52,17 @@ export interface VerifyIssue {
   }>;
 }
 
-export type HealthDimension = 'correctness' | 'freshness' | 'metadata' | 'semantic_readiness';
+/** Stable machine-readable health dimensions. The v1.3.3 dimensions are
+ * additive; existing correctness/freshness/metadata/semantic scores remain
+ * unchanged. */
+export type HealthDimension =
+  | 'correctness'
+  | 'freshness'
+  | 'metadata'
+  | 'semantic_readiness'
+  | 'conflict'
+  | 'stability'
+  | 'quality';
 
 export interface HealthDimensionResult {
   status: 'applicable' | 'not_applicable';
@@ -88,6 +100,8 @@ export interface VerifyResult {
   semantic_readiness: SemanticReadinessSummary;
   baseline: HealthBaselineSummary;
   issues: VerifyIssue[];
+  /** Optional deterministic preview/receipt for a requested Fix Mode run. */
+  repair_plan?: RepairPlan;
 }
 
 export interface ConsistencyIssue {

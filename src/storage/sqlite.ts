@@ -15,6 +15,8 @@ import {
   MaybePromise,
   MemoryBackend,
   MemoryEvent,
+  MemoryEventType,
+  MemoryHistoryOptions,
   MemoryJsonObject,
   MemoryProvenance,
   MemoryQueryResult,
@@ -348,6 +350,56 @@ export class SqliteMemoryBackend implements MemoryBackend {
     };
   }
 
+  listEvents(options: MemoryHistoryOptions & { recordId?: string } = {}): readonly MemoryEvent[] {
+    const db = this.requireDb();
+    const limit = normalizeLimit(options.limit);
+    // A record-scoped read is used by the T-1/T diff path. Read the newest
+    // bounded window first so a long event log cannot make diff select the
+    // oldest states. Reverse after filtering to preserve the public timeline
+    // contract's ascending order.
+    const order = options.recordId
+      ? 'ORDER BY created_at DESC, rowid DESC'
+      : 'ORDER BY created_at ASC, rowid ASC';
+    const rows = db.prepare(
+      `SELECT id, event_type, type, memory_id, branch, scope, payload, payload_json, created_at
+         FROM events
+        WHERE (? IS NULL OR created_at >= ?)
+          AND (? IS NULL OR created_at <= ?)
+        ${order}
+        LIMIT ?`
+    ).all(options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, 500) as Array<{
+      id: number;
+      event_type: string | null;
+      type: string | null;
+      memory_id: string | null;
+      branch: string | null;
+      scope: string | null;
+      payload: string | null;
+      payload_json: string | null;
+      created_at: string;
+    }>;
+    const recordId = options.recordId;
+    const events = rows
+      .map(row => {
+        const payload = objectJson(row.payload_json ?? row.payload ?? '{}');
+        return {
+          id: String(row.id),
+          // Prefer the namespaced event_type: legacy core rows may keep the
+          // compatibility type column as `observe` for newer event names.
+          type: sqliteEventType(row.event_type ?? row.type),
+          scope: row.scope ?? (row.branch ? `branch:${row.branch}` : 'project'),
+          occurred_at: row.created_at,
+          recorded_at: row.created_at,
+          created_at: row.created_at,
+          payload,
+          ...(row.memory_id ? { record_id: row.memory_id } : {}),
+        } satisfies MemoryEvent;
+      })
+      .filter(event => !recordId || event.record_id === recordId || payloadRecordId(event.payload) === recordId)
+    if (recordId) return events.slice(0, limit).reverse();
+    return events.slice(0, limit);
+  }
+
   beginTransaction(options?: BackendTransactionOptions): BackendTransaction {
     const db = this.requireDb();
     if (db.inTransaction) throw new Error('SQLite backend already has an active transaction.');
@@ -607,4 +659,20 @@ function backendEventType(type: string): string {
   if (type === 'commit') return 'memory.capture.committed';
   if (type === 'forget') return 'memory.forget.tombstone';
   return `memory.${type}`;
+}
+
+function sqliteEventType(eventType?: string | null): MemoryEventType {
+  if (eventType === 'memory.capture.committed') return 'commit';
+  if (eventType === 'memory.forget.tombstone') return 'forget';
+  if (eventType === 'memory.observe') return 'observe';
+  if (eventType?.includes('session_end')) return 'session_end';
+  if (eventType?.includes('supersede')) return 'supersede';
+  return (eventType?.replace(/^memory\./, '') || 'observe') as MemoryEventType;
+}
+
+function payloadRecordId(payload: Record<string, unknown>): string | undefined {
+  for (const key of ['record_id', 'memory_id', 'target_id']) {
+    if (typeof payload[key] === 'string') return payload[key] as string;
+  }
+  return undefined;
 }

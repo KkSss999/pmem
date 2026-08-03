@@ -15,6 +15,33 @@ describe('v1.2 health scoring', () => {
     assert.equal(result.change_score, null);
     assert.equal(result.dimensions.metadata.score, 95);
     assert.equal(result.dimensions.semantic_readiness.status, 'not_applicable');
+    assert.equal(result.dimensions.conflict.status, 'applicable');
+    assert.equal(result.dimensions.conflict.score, 100);
+    assert.equal(result.dimensions.stability.score, 100);
+    assert.equal(result.dimensions.quality.score, 95);
+  });
+
+  it('exposes additive conflict, stability, and quality lenses without changing the overall score', () => {
+    const result = buildVerifyResult([
+      issue('conflicting_classifications', 'warning', 'decision.auth'),
+      issue('stale_memory', 'warning', 'module.runtime'),
+      issue('card_too_large', 'warning', 'module.large'),
+    ], null, 'missing', '/tmp/baseline');
+
+    assert.equal(result.score, 85);
+    assert.equal(result.overall_score, 85);
+    assert.deepEqual(Object.keys(result.dimensions).sort(), [
+      'conflict', 'correctness', 'freshness', 'metadata', 'quality', 'semantic_readiness', 'stability',
+    ]);
+    assert.equal(result.dimensions.conflict.issue_count, 1);
+    assert.equal(result.dimensions.conflict.score, 95);
+    assert.equal(result.dimensions.stability.issue_count, 1);
+    assert.equal(result.dimensions.stability.score, 95);
+    assert.equal(result.dimensions.quality.issue_count, 1);
+    assert.equal(result.dimensions.quality.score, 95);
+    // Existing dimension assignment and score remain intact.
+    assert.equal(result.dimensions.metadata.score, 90);
+    assert.equal(result.dimensions.freshness.score, 95);
   });
 
   it('uses diminishing capped penalties for large historical debt', () => {

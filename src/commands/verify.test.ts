@@ -20,7 +20,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { VerifyIssue } from '../types';
-import { compactVerifyIssues } from './verify';
+import { compactVerifyIssues, verifyCommand } from './verify';
 
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
 const TEMP_ROOT = path.join(os.tmpdir(), `pmem-u5-verify-test-${Date.now()}`);
@@ -79,6 +79,99 @@ describe('verify metadata migration guidance', () => {
     assert.match(card, /^trust_label: application_trusted$/m);
     assert.match(card, /^sensitivity: internal$/m);
     assert.match(card, /^classification: fact$/m);
+  });
+});
+
+describe('configurable verify fix mode', () => {
+  const testDir = path.join(TEMP_ROOT, 'fix-mode');
+  // Keep the fixture under the manifest's module glob while exercising a
+  // decision-typed card, so the safe type-to-classification mapping is tested.
+  const cardPath = path.join(testDir, '.pmem/modules/decision.auto.md');
+
+  before(() => {
+    const pmemDir = path.join(testDir, '.pmem');
+    fs.mkdirSync(path.dirname(cardPath), { recursive: true });
+    writeFile(path.join(pmemDir, 'manifest.yml'), makeManifest(10));
+    writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
+    writeFile(path.join(pmemDir, 'state.md'), '# State\n');
+    writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
+    writeFile(path.join(testDir, 'AGENTS.md'), '# Test\n');
+    writeFile(cardPath, `---
+id: decision.auto
+type: decision
+status: active
+trust_label: application_trusted
+sensitivity: internal
+source_files:
+  - src/source.ts
+---
+# User-authored decision
+
+Never rewrite this body during metadata repair.
+`);
+    writeFile(path.join(testDir, 'src/source.ts'), 'export const source = true;\n');
+    const rebuilt = pmem('rebuild --full', testDir);
+    assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
+  });
+
+  after(() => {
+    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+  });
+
+  it('requires confirmation for metadata repair, supports dry-run, and is idempotent', () => {
+    assert.throws(
+      () => verifyCommand({ cwd: testDir, fix: true, only: ['metadata'], noExit: true, silent: true }),
+      /requires explicit confirmation/,
+    );
+    const original = fs.readFileSync(cardPath, 'utf8');
+    const dryRun = pmem('verify --fix --only metadata --confirm --dry-run', testDir);
+    assert.strictEqual(dryRun.code, 0);
+    assert.match(dryRun.stdout, /Repair plan \(dry-run\): 1 change/);
+    assert.match(dryRun.stdout, /null -> \{"classification":"decision"\}/);
+    assert.strictEqual(fs.readFileSync(cardPath, 'utf8'), original);
+
+    const applied = pmem('verify --fix --only metadata --confirm', testDir);
+    assert.strictEqual(applied.code, 0, applied.stdout);
+    const repaired = fs.readFileSync(cardPath, 'utf8');
+    assert.match(repaired, /^classification: decision$/m);
+    assert.match(repaired, /Never rewrite this body/);
+    const history = pmem('history decision.auto --format json', testDir);
+    assert.strictEqual(history.code, 0, history.stdout);
+    const historyJson = JSON.parse(history.stdout);
+    assert.equal(historyJson.entries[0]?.type, 'repair.applied');
+    assert.equal(historyJson.entries[0]?.diffStatus, 'available');
+
+    const reapplied = pmem('verify --fix --only metadata --confirm', testDir);
+    assert.strictEqual(reapplied.code, 0, reapplied.stdout);
+    assert.strictEqual(fs.readFileSync(cardPath, 'utf8'), repaired);
+  });
+
+  it('honors maxChanges for stale repair and leaves later cards untouched', () => {
+    const secondPath = path.join(testDir, '.pmem/modules/decision.second.md');
+    writeFile(secondPath, `---
+id: decision.second
+type: decision
+status: active
+classification: decision
+trust_label: application_trusted
+sensitivity: internal
+source_files:
+  - src/source.ts
+---
+# Second decision
+`);
+    const rebuilt = pmem('rebuild --full', testDir);
+    assert.strictEqual(rebuilt.code, 0, `second rebuild failed: ${rebuilt.stdout}`);
+    runSqlScript(testDir, `db.prepare("UPDATE cards SET updated_at = '2000-01-01T00:00:00.000Z', last_verified_at = '2000-01-01T00:00:00.000Z'").run();`);
+    const beforeFirst = fs.readFileSync(cardPath, 'utf8');
+    const beforeSecond = fs.readFileSync(secondPath, 'utf8');
+    const repaired = pmem('verify --fix-stale --max-changes 1', testDir);
+    assert.strictEqual(repaired.code, 0, repaired.stdout);
+    const afterFirst = fs.readFileSync(cardPath, 'utf8');
+    const afterSecond = fs.readFileSync(secondPath, 'utf8');
+    assert.notStrictEqual(afterFirst, beforeFirst);
+    assert.strictEqual(afterSecond, beforeSecond);
+    assert.match(afterFirst, /^last_verified:/m);
   });
 });
 

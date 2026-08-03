@@ -1,11 +1,11 @@
 import * as path from 'path';
 import type { ContextPack, PackContextOptions } from '../context-pack';
-import type { MemoryBackend, MemoryEvent, MemoryEventType, MemorySchemaRegistry } from './model';
+import type { MemoryBackend, MemoryDiffResult, MemoryEvent, MemoryEventType, MemoryHistoryOptions, MemoryHistoryResult, MemorySchemaRegistry } from './model';
 import type { QueryExecutionResult, QueryPlan } from '../query';
 
 // Keep the historical runtime import path stable while the canonical model
 // lives in a backend-neutral module.
-export type { MemoryBackend, MemoryEvent, MemoryEventType, MemorySchemaRegistry } from './model';
+export type { MemoryBackend, MemoryDiffChange, MemoryDiffResult, MemoryDiffStatus, MemoryEvent, MemoryEventType, MemoryHistoryEntry, MemoryHistoryOptions, MemoryHistoryResult, MemorySchemaRegistry } from './model';
 
 /** Runtime has no built-in product/domain presets; extensions may name one. */
 export type RuntimePreset = string & {};
@@ -85,6 +85,7 @@ export interface RuntimeLegacyAdapter {
   status(opts?: StatusOptions): Promise<StatusResult>;
   capture(summary: string, options: CaptureOptions): Promise<CaptureResult>;
   findEvent(id: string): MemoryEvent | null;
+  listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MemoryEvent[];
   expireEvents(): void;
   mergeBranchMemory(sourceBranch: string, targetBranch: string): number;
   /** Best-effort post-write incremental semantic maintenance. */
@@ -194,6 +195,8 @@ export interface PmemInstance {
   query(query: string, limit?: number): Promise<QueryExecutionResult>;
   executeQueryPlan(plan: QueryPlan): Promise<QueryExecutionResult>;
   packContext(query: string, options?: PackContextOptions): Promise<ContextPack>;
+  history(memoryId: string, options?: MemoryHistoryOptions): Promise<MemoryHistoryResult>;
+  diff(memoryId: string): Promise<MemoryDiffResult>;
   recall(opts?: RecallOptions): Promise<RecallQueryResult>;
   context(task: string, budget?: number): Promise<ContextQueryResult>;
   related(id: string, opts?: RelatedOptions): Promise<RelatedResult>;

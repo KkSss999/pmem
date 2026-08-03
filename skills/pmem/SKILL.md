@@ -12,7 +12,7 @@ allowed-tools: Bash(pmem:*)
 
 ```bash
 # Install the complete model-free base CLI
-npm install -g pmem-ai@1.3.2
+npm install -g pmem-ai@1.3.3
 
 # First time in a project: init also builds the first local index
 pmem init my-project
@@ -54,8 +54,8 @@ review-heavy maintenance.
 
 | Mode | Install | User outcome |
 |---|---|---|
-| Base CLI entry point | `npm install -g pmem-ai@1.3.2` | Complete deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
-| Semantic Runtime component | Installed when setup reports it is missing: `npm install -g pmem-ai-semantic@1.3.2` | Local multilingual embeddings and contextual reranking; not a second CLI |
+| Base CLI entry point | `npm install -g pmem-ai@1.3.3` | Complete deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
+| Semantic Runtime component | Installed when setup reports it is missing: `npm install -g pmem-ai-semantic@1.3.3` | Local multilingual embeddings and contextual reranking; not a second CLI |
 
 `pmem-ai-semantic` is a separately distributed Runtime component, not another
 CLI. If the component, shared model, or semantic index is unavailable, `ask`,
@@ -108,7 +108,7 @@ preparing or reusing the one verified global model cache under
 compatible component and rerun:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.2
+npm install -g pmem-ai-semantic@1.3.3
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
@@ -127,7 +127,7 @@ When guiding a user:
 4. Use `pmem semantic status` for readiness and `pmem semantic clear` to disable
    the project index without deleting the global model.
 
-### ContextPack (v1.3.2)
+### ContextPack (v1.3.3)
 
 Use the Runtime-generated ContextPack as the Agent-facing memory payload:
 

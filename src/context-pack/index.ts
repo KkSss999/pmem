@@ -1,5 +1,6 @@
 import type {
   ContextPack,
+  ContextPackContract,
   ContextPackBudget,
   ContextPackEvidence,
   ContextPackEvidenceInput,
@@ -16,6 +17,17 @@ import type {
 export * from './types';
 
 export const CONTEXT_PACK_SCHEMA_VERSION = '1' as const;
+export const CONTEXT_PACK_PROTOCOL_ID = 'pmem.context-pack' as const;
+export const CONTEXT_PACK_PROTOCOL_VERSION = '1' as const;
+export const CONTEXT_PACK_UNKNOWN_FIELDS = 'ignore' as const;
+export const CONTEXT_PACK_CAPABILITIES = ['records', 'evidence', 'provenance', 'diagnostics', 'text'] as const;
+export const DEFAULT_CONTEXT_PACK_CONTRACT: ContextPackContract = Object.freeze({
+  id: CONTEXT_PACK_PROTOCOL_ID,
+  version: CONTEXT_PACK_PROTOCOL_VERSION,
+  compatibility: 'additive',
+  unknownFields: CONTEXT_PACK_UNKNOWN_FIELDS,
+  capabilities: CONTEXT_PACK_CAPABILITIES,
+});
 export const DEFAULT_CONTEXT_PACK_BUDGET = 2_000;
 export const DEFAULT_MAX_EVIDENCE_PER_RECORD = 3;
 export const DEFAULT_CONTEXT_PACK_DIVERSITY_LAMBDA = 0.85;
@@ -34,6 +46,31 @@ export const DEFAULT_TOKEN_ESTIMATOR: TokenEstimator = Object.freeze({
 
 /** Backwards-friendly short alias for callers that already use estimateTokens. */
 export const estimateTokens = estimateContextTokens;
+
+/**
+ * Tolerant v1 wire guard. Unknown top-level fields are intentionally ignored;
+ * older v1 payloads without `contract` remain valid.
+ */
+export function isContextPack(value: unknown): value is ContextPack {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const pack = value as Partial<ContextPack>;
+  return pack.schemaVersion === CONTEXT_PACK_SCHEMA_VERSION
+    && typeof pack.query === 'string'
+    && Array.isArray(pack.records)
+    && Array.isArray(pack.evidence)
+    && typeof pack.provenance === 'object'
+    && pack.provenance !== null
+    && typeof pack.budget === 'object'
+    && pack.budget !== null
+    && typeof pack.diagnostics === 'object'
+    && pack.diagnostics !== null
+    && typeof pack.text === 'string';
+}
+
+/** Return explicit contract metadata, including for legacy v1 payloads. */
+export function contextPackContract(value: Pick<ContextPack, 'contract'>): ContextPackContract {
+  return value.contract ?? DEFAULT_CONTEXT_PACK_CONTRACT;
+}
 
 function clampBudget(value: number | undefined): number {
   if (value === undefined || !Number.isFinite(value)) return DEFAULT_CONTEXT_PACK_BUDGET;
@@ -487,6 +524,7 @@ export function packContext(input: ContextPackInput, options: PackContextOptions
   };
   return {
     schemaVersion: CONTEXT_PACK_SCHEMA_VERSION,
+    contract: DEFAULT_CONTEXT_PACK_CONTRACT,
     query,
     records: outputRecords,
     evidence: outputEvidence,

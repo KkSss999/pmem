@@ -1,8 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CONTEXT_PACK_CAPABILITIES,
+  CONTEXT_PACK_PROTOCOL_ID,
+  CONTEXT_PACK_PROTOCOL_VERSION,
+  CONTEXT_PACK_UNKNOWN_FIELDS,
   DEFAULT_MAX_EVIDENCE_PER_RECORD,
+  contextPackContract,
   estimateContextTokens,
+  isContextPack,
   packContext,
 } from './index';
 
@@ -21,9 +27,28 @@ describe('ContextPack', () => {
     const first = packContext(base, { budget: 500 });
     const second = packContext(base, { budget: 500 });
     assert.equal(first.schemaVersion, '1');
+    assert.deepEqual(first.contract, {
+      id: CONTEXT_PACK_PROTOCOL_ID,
+      version: CONTEXT_PACK_PROTOCOL_VERSION,
+      compatibility: 'additive',
+      unknownFields: CONTEXT_PACK_UNKNOWN_FIELDS,
+      capabilities: CONTEXT_PACK_CAPABILITIES,
+    });
     assert.deepEqual(first, second);
     assert.equal(JSON.stringify(first), JSON.stringify(second));
     assert.deepEqual(Object.keys(first.provenance), ['model', 'retrievers']);
+  });
+
+  it('accepts additive unknown fields and supplies the v1 contract for legacy payloads', () => {
+    const pack = packContext({ query: 'q', records: [] });
+    const withUnknown = { ...pack, futureField: { ignored: true } };
+    assert.equal(isContextPack(withUnknown), true);
+    assert.deepEqual(contextPackContract(withUnknown), pack.contract);
+
+    const legacy = { ...pack };
+    delete (legacy as { contract?: unknown }).contract;
+    assert.equal(isContextPack(legacy), true);
+    assert.deepEqual(contextPackContract(legacy), pack.contract);
   });
 
   it('orders records by score and then id for deterministic ties', () => {

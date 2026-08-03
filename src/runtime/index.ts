@@ -4,8 +4,9 @@ import { loadRuntimeConfig } from './config';
 import { PolicyEngine } from './policy';
 import { ScopeManager } from './scope';
 import { memoryScopeId } from './model';
+import { buildMemoryDiff, buildMemoryHistory } from './history';
 import { randomUUID } from 'node:crypto';
-import { toPmemPath, type AskOptions, type AskResultV03, type CapabilitySet, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type MemoryBackend, type MemoryCapability, type MemoryEvent, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type RuntimeLegacyAdapter, type SessionResult, type StatusOptions, type StatusResult } from './types';
+import { toPmemPath, type AskOptions, type AskResultV03, type CapabilitySet, type CaptureOptions, type CaptureResult, type ContextQueryResult, type ForgetRequest, type MemoryBackend, type MemoryCapability, type MemoryDiffResult, type MemoryEvent, type MemoryHistoryOptions, type MemoryHistoryResult, type Observation, type PmemInstance, type PmemOpenOptions, type Receipt, type RecallOptions, type RecallQueryResult, type RelatedOptions, type RelatedResult, type RuntimeConfig, type RuntimeLegacyAdapter, type SessionResult, type StatusOptions, type StatusResult } from './types';
 
 export class Pmem implements PmemInstance {
   readonly pmemPath: string;
@@ -106,6 +107,34 @@ export class Pmem implements PmemInstance {
         warnings: [...(result.warnings ?? [])],
       },
     }, options);
+  }
+
+  async history(memoryId: string, options: MemoryHistoryOptions = {}): Promise<MemoryHistoryResult> {
+    this.assertOpen();
+    const normalizedId = memoryId.trim();
+    if (!normalizedId) throw new Error('Memory history requires a non-empty memory id.');
+    const principal = 'default';
+    const scope = this.scope.resolve('', { metadata: { principal } });
+    this.requireCapability(principal, 'memory.read', scope);
+    if (!this.backend.listEvents) {
+      throw new Error(`Memory history is not supported by backend '${this.backend.id}'.`);
+    }
+    const events = await this.backend.listEvents({ ...options, recordId: normalizedId });
+    return buildMemoryHistory(normalizedId, events, options);
+  }
+
+  async diff(memoryId: string): Promise<MemoryDiffResult> {
+    this.assertOpen();
+    const normalizedId = memoryId.trim();
+    if (!normalizedId) throw new Error('Memory diff requires a non-empty memory id.');
+    const principal = 'default';
+    const scope = this.scope.resolve('', { metadata: { principal } });
+    this.requireCapability(principal, 'memory.read', scope);
+    if (!this.backend.listEvents) {
+      throw new Error(`Memory diff is not supported by backend '${this.backend.id}'.`);
+    }
+    const events = await this.backend.listEvents({ recordId: normalizedId, limit: 2 });
+    return buildMemoryDiff(normalizedId, events);
   }
 
   async executeQueryPlan(plan: import('../query').QueryPlan): Promise<QueryExecutionResult> {
@@ -378,6 +407,27 @@ export { loadRuntimeConfig, PRESET_DEFAULTS } from './config';
 export { ScopeManager } from './scope';
 export { PolicyEngine } from './policy';
 export { EventStore } from './event-store';
+export { buildMemoryHistory } from './history';
+export { buildMemoryDiff } from './history';
+export { applyRepairPlan, buildRepairPlan } from './repair';
+export type {
+  RepairApplyFailure,
+  RepairApplyResult,
+  RepairApplyStatus,
+  RepairChange,
+  RepairJsonValue,
+  RepairPlan,
+  RepairPlanMode,
+  RepairPlanOptions,
+} from './repair';
+export { createRollbackCheckpoint, restoreRollbackCheckpoint, validateRollbackCheckpoint } from './rollback';
+export type {
+  RollbackCheckpoint,
+  RollbackCheckpointInput,
+  RollbackRestoreFailure,
+  RollbackRestoreResult,
+  RollbackRestoreStatus,
+} from './rollback';
 export { SqliteMemoryBackend } from '../storage/sqlite';
 export {
   createDefaultRetrieverRegistry,

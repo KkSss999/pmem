@@ -7,6 +7,16 @@ export type ContextPackJsonValue =
   | readonly ContextPackJsonValue[]
   | { readonly [key: string]: ContextPackJsonValue };
 
+/** Stable wire-level contract metadata. Keep schemaVersion at "1" forever. */
+export interface ContextPackContract {
+  id: 'pmem.context-pack';
+  version: '1';
+  compatibility: 'additive';
+  /** Consumers must ignore fields they do not understand. */
+  unknownFields: 'ignore';
+  capabilities: readonly string[];
+}
+
 /** Token counting strategy used by ContextPack budget enforcement. */
 export interface TokenEstimator {
   estimate(text: string): number;
@@ -110,6 +120,8 @@ export interface ContextPackBudget {
 export interface ContextPack {
   /** Version of the wire shape, independent of pmem's release version. */
   schemaVersion: '1';
+  /** Additive protocol metadata; absent on legacy v1 payloads. */
+  contract?: ContextPackContract;
   query: string;
   records: ContextPackRecord[];
   evidence: ContextPackEvidence[];

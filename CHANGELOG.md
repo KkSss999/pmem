@@ -2,6 +2,22 @@
 
 All notable changes to pmem are documented here.
 
+## v1.3.3 — Memory Protocol Stabilization and Health (2026-08-03)
+
+### Added
+
+- **Memory Protocol health**: ContextPack compatibility metadata and machine-readable conflict, stability, and quality dimensions are now part of the Runtime contract.
+- **Configurable repair mode**: `pmem verify` supports scoped, bounded, confirmed, and dry-run repairs with deterministic `RepairPlan` output.
+- **T-1/T change tracking**: Runtime, CLI, SDK, and MCP expose durable history and the latest two-state diff without introducing a Git dependency.
+- **Rollback checkpoints**: repair snapshots can be validated and restored through an injected writer with fail-closed behavior.
+- **Read-only MCP history surface**: `pmem_history` and `pmem_diff` preserve Runtime provenance, schema envelopes, content trust, and write-mode safety.
+
+### Compatibility
+
+- The base CLI and semantic companion advance together to `1.3.3`.
+- Markdown cards remain canonical; SQLite, semantic chunks, vectors, and history indexes remain rebuildable derived data.
+- Memory diffs intentionally cover only the previous durable state (T-1) and current state (T).
+
 ## v1.3.2 — Semantic Quality and Context Packaging (2026-08-03)
 
 ### Added

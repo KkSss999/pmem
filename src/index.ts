@@ -5,7 +5,7 @@ import { PACKAGE_VERSION } from './version';
 import { initCommand } from './commands/init';
 import { rebuildCommand } from './commands/rebuild';
 import { recallCommand } from './commands/recall';
-import { verifyCommand } from './commands/verify';
+import { verifyCommand, type VerifyFixScope } from './commands/verify';
 import { askCommand } from './commands/ask';
 import { relatedCommand, traceCommand } from './commands/graph';
 import { updateCommand, markDirtyCommand } from './commands/update';
@@ -24,6 +24,8 @@ import { milestoneCommand } from './commands/milestone';
 import { mcpCommand } from './commands/mcp';
 import { contextCommand } from './commands/context';
 import { contextPackCommand } from './commands/context-pack';
+import { historyCommand } from './commands/history';
+import { diffCommand } from './commands/diff';
 import { captureCommand } from './commands/capture';
 import { forgetCommand } from './commands/forget';
 import { moduleInferCommand } from './commands/module';
@@ -76,6 +78,31 @@ program
     }
     const format = options.format === 'json' || options.format === 'text' ? options.format : 'compact';
     await contextPackCommand(query, { budget, maxRecords, maxEvidencePerRecord, format });
+  });
+
+program
+  .command('history <memory-id>')
+  .description('Show the durable event timeline for one memory record')
+  .option('--from <timestamp>', 'Include events at or after an ISO timestamp')
+  .option('--to <timestamp>', 'Include events at or before an ISO timestamp')
+  .option('--limit <n>', 'Maximum events to return', '100')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (memoryId: string, options) => {
+    const limit = Number(options.limit);
+    if (!Number.isInteger(limit) || limit < 1) {
+      console.error('Error: history --limit must be a positive integer.');
+      process.exit(2);
+    }
+    const format = options.format === 'json' ? 'json' : 'compact';
+    await historyCommand(memoryId, format, { from: options.from, to: options.to, limit });
+  });
+
+program
+  .command('diff <memory-id>')
+  .description('Show the previous-to-current (T-1 → T) memory change')
+  .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
+  .action(async (memoryId: string, options) => {
+    await diffCommand(memoryId, options.format === 'json' ? 'json' : 'compact');
   });
 
 program
@@ -293,10 +320,16 @@ program
   .option('--fix', 'Auto-fix issues where possible')
   .option('--fix-locks', 'Clean stale lock at .pmem/.lock')
   .option('--fix-stale', 'Auto-fix stale memory warning by updating verification timestamps')
+  .option('--only <scopes>', 'Restrict fixes (comma-separated: stale, metadata, structural, locks)')
+  .option('--dry-run', 'Preview selected fixes without changing files or indexes')
+  .option('--max-changes <n>', 'Limit the number of cards/operations changed')
+  .option('--confirm', 'Confirm metadata-only automatic repairs')
   .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action((options) => {
-    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, relaxed: options.relaxed, format: options.format });
+    const only = options.only ? options.only.split(',').map((scope: string) => scope.trim()).filter(Boolean) as VerifyFixScope[] : undefined;
+    const maxChanges = options.maxChanges === undefined ? undefined : Number(options.maxChanges);
+    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, only, dryRun: options.dryRun, maxChanges, confirm: options.confirm, relaxed: options.relaxed, format: options.format });
   });
 
 const health = program

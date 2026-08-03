@@ -1,8 +1,8 @@
 import * as path from 'path';
 import { statSync } from 'fs';
-import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock, lockOwnedBySelf } from '../core/fs';
+import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock, lockOwnedBySelf, atomicWrite } from '../core/fs';
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
-import { openMaintenanceDatabase, type MaintenanceDatabase } from '../runtime/maintenance';
+import { openMaintenanceDatabase, recordMaintenanceEvent, type MaintenanceDatabase } from '../runtime/maintenance';
 import { computeHash, tokenCount } from '../core/hash';
 import { checkStaleMemory, checkDocSync, verifyMemory, checkModuleContracts } from '../core/consistency';
 import type { VerifyIssue, VerifyResult, CardRow, EdgeRow, SemanticReadinessSummary } from '../types';
@@ -11,6 +11,7 @@ import { parseFrontmatter } from '../core/yaml';
 import { getDistillUrgency } from '../runtime/policy';
 import { buildVerifyResult, healthBaselinePath, inspectSemanticReadiness, readHealthBaseline } from '../core/health';
 import { findProjectPaths } from '../core/projectRoot';
+import { buildRepairPlan, type RepairChange, type RepairPlan } from '../runtime/repair';
 
 const PMEM_DIR = '.pmem';
 
@@ -18,6 +19,14 @@ export interface VerifyCommandOptions {
   fix?: boolean;
   fixLocks?: boolean;
   fixStale?: boolean;
+  /** Restrict automatic repair to one or more safe fix scopes. */
+  only?: VerifyFixScope | readonly VerifyFixScope[];
+  /** Preview selected repairs without changing Markdown, locks, or indexes. */
+  dryRun?: boolean;
+  /** Maximum number of cards/operations changed by the selected repair. */
+  maxChanges?: number;
+  /** Required before applying metadata-only repairs. */
+  confirm?: boolean;
   relaxed?: boolean;
   noExit?: boolean;
   cwd?: string;
@@ -25,9 +34,42 @@ export interface VerifyCommandOptions {
   silent?: boolean;
 }
 
+export type VerifyFixScope = 'stale' | 'metadata' | 'structural' | 'locks';
+
+const VERIFY_FIX_SCOPES = new Set<VerifyFixScope>(['stale', 'metadata', 'structural', 'locks']);
+
+function normalizeFixScopes(only: VerifyCommandOptions['only']): Set<VerifyFixScope> | null {
+  if (only === undefined) return null;
+  const scopes = Array.isArray(only) ? only : [only];
+  if (scopes.length === 0) throw new Error('`verify` fix scope cannot be empty. Choose stale, metadata, structural, or locks.');
+  for (const scope of scopes) {
+    if (!VERIFY_FIX_SCOPES.has(scope)) {
+      throw new Error(`Unknown verify fix scope "${String(scope)}". Choose stale, metadata, structural, or locks.`);
+    }
+  }
+  return new Set(scopes);
+}
+
+function validateMaxChanges(maxChanges: number | undefined): void {
+  if (maxChanges === undefined) return;
+  if (!Number.isInteger(maxChanges) || maxChanges < 0) {
+    throw new Error('`verify` maxChanges must be a non-negative integer.');
+  }
+}
+
 export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult | undefined {
-  if (options.format === 'json' && (options.fix || options.fixStale)) {
-    throw new Error('`pmem verify --format json` cannot be combined with --fix or --fix-stale. Run the repair first, then run JSON verification separately.');
+  validateMaxChanges(options.maxChanges);
+  const fixScopes = normalizeFixScopes(options.only);
+  const allows = (scope: VerifyFixScope): boolean => fixScopes === null || fixScopes.has(scope);
+  const staleRepairRequested = allows('stale') && (!!options.fixStale || (!!options.fix && fixScopes?.has('stale') === true));
+  const metadataRepairRequested = allows('metadata') && !!options.fix && fixScopes?.has('metadata') === true;
+  const structuralRepairRequested = allows('structural') && !!options.fix && (fixScopes === null || fixScopes.has('structural'));
+  const lockRepairRequested = allows('locks') && (!!options.fixLocks || (!!options.fix && fixScopes?.has('locks') === true));
+  if (options.format === 'json' && (options.fix || options.fixStale || options.fixLocks || options.dryRun)) {
+    throw new Error('`pmem verify --format json` cannot be combined with repair or dry-run options. Run the repair first, then run JSON verification separately.');
+  }
+  if (metadataRepairRequested && !options.dryRun && !options.confirm) {
+    throw new Error('Metadata repair requires explicit confirmation. Re-run with --confirm, or use --dry-run to preview safe changes.');
   }
   const cwd = options.cwd ?? process.cwd();
   const project = findProjectPaths(cwd);
@@ -39,6 +81,13 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   }
 
   const issues: VerifyIssue[] = [];
+  let repairPlan: RepairPlan | undefined;
+  let remainingChanges = options.maxChanges ?? Number.POSITIVE_INFINITY;
+  const takeChangeBudget = (): boolean => {
+    if (remainingChanges <= 0) return false;
+    remainingChanges -= 1;
+    return true;
+  };
   const baselineRead = readHealthBaseline(pmemPath);
   if (baselineRead.status === 'invalid') {
     issues.push({
@@ -57,13 +106,17 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     index_compatible: false,
     index_fresh: false,
   };
-  const finish = (): VerifyResult => buildVerifyResult(
-    issues,
-    baselineRead.value,
-    baselineRead.status,
-    healthBaselinePath(pmemPath),
-    semanticReadiness,
-  );
+  const finish = (): VerifyResult => {
+    const result = buildVerifyResult(
+      issues,
+      baselineRead.value,
+      baselineRead.status,
+      healthBaselinePath(pmemPath),
+      semanticReadiness,
+    );
+    if (repairPlan) result.repair_plan = repairPlan;
+    return result;
+  };
 
   // 1. Check manifest exists
   const manifest = loadManifest(pmemPath);
@@ -90,7 +143,7 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   const lockStatus = getLockStatus(lockPath);
   if (lockStatus.exists && lockStatus.stale) {
     const ageSec = lockStatus.age !== null ? Math.round(lockStatus.age / 1000) : '?';
-    if (options.fixLocks) {
+    if (lockRepairRequested && !options.dryRun && takeChangeBudget()) {
       breakLock(lockPath);
       issues.push({
         severity: 'warning',
@@ -549,30 +602,142 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     cleanupTx();
   };
 
+  // Only fill metadata whose value is unambiguous from the card type. Trust
+  // and sensitivity remain operator decisions and are deliberately never
+  // guessed by verify --fix. Frontmatter-only writes preserve card bodies.
+  const safeClassificationByType: Record<string, string> = {
+    decision: 'decision',
+    task: 'plan',
+    feature: 'plan',
+    risk: 'risk',
+    assumption: 'assumption',
+  };
+  const applySafeMetadataFixes = (metadataIssues: VerifyIssue[]): { planned: number; changed: number; skipped: number } => {
+    if (!db) return { planned: 0, changed: 0, skipped: metadataIssues.length };
+    let planned = 0;
+    let changed = 0;
+    let skipped = 0;
+    const ordered = metadataIssues
+      .filter(issue => issue.type === 'unclassified_card' && issue.card_id)
+      .sort((a, b) => (a.card_id! < b.card_id! ? -1 : a.card_id! > b.card_id! ? 1 : 0));
+    for (const issue of ordered) {
+      const card = db.prepare('SELECT file_path, type FROM cards WHERE id = ?').get(issue.card_id) as { file_path: string; type: string } | undefined;
+      const classification = card ? safeClassificationByType[card.type] : undefined;
+      const filePath = card ? path.join(cwd, card.file_path) : null;
+      if (!classification || !filePath || !fileExists(filePath)) {
+        skipped += 1;
+        continue;
+      }
+      const content = readFile(filePath);
+      if (!content || !/^---\n[\s\S]*?\n---/.test(content) || hasFrontmatterField(content, 'classification')) {
+        skipped += 1;
+        continue;
+      }
+      if (!takeChangeBudget()) break;
+      planned += 1;
+      if (options.dryRun) continue;
+      if (updateFrontmatterField(filePath, 'classification', classification)) {
+        changed += 1;
+        recordRepairEvent(db, issue.card_id!, {
+          id: `${issue.card_id}:classification`,
+          action: 'update_frontmatter',
+          reason: 'Infer classification from an unambiguous canonical card type.',
+          before: null,
+          after: { classification },
+        });
+      }
+    }
+    return { planned, changed, skipped };
+  };
+
+  // Build the same stable preview contract used by Runtime consumers. The
+  // actual writer below remains bounded by maxChanges and keeps legacy
+  // repair semantics; this plan makes the proposed before/after explicit.
+  if (staleRepairRequested || metadataRepairRequested) {
+    const candidates: RepairChange[] = [];
+    if (staleRepairRequested) {
+      for (const issue of issues.filter(item => item.type === 'stale_memory' && item.card_id)) {
+        candidates.push({
+          id: `${issue.card_id}:last_verified`,
+          action: 'refresh_last_verified',
+          reason: 'Source files changed after the last memory verification.',
+          before: 'stale',
+          after: 'now',
+        });
+      }
+    }
+    if (metadataRepairRequested) {
+      for (const issue of issues.filter(item => item.type === 'unclassified_card' && item.card_id)) {
+        const card = db?.prepare('SELECT type FROM cards WHERE id = ?').get(issue.card_id) as { type: string } | undefined;
+        const classification = card ? safeClassificationByType[card.type] : undefined;
+        if (classification) {
+          candidates.push({
+            id: `${issue.card_id}:classification`,
+            action: 'update_frontmatter',
+            reason: 'Infer classification from an unambiguous canonical card type.',
+            before: null,
+            after: { classification },
+          });
+        }
+      }
+    }
+    const bounded = options.maxChanges === undefined ? candidates : candidates.slice(0, options.maxChanges);
+    repairPlan = buildRepairPlan(bounded, { apply: !options.dryRun });
+    if (!options.silent && repairPlan.changes.length > 0) {
+      console.log(`${options.dryRun ? 'Repair plan (dry-run)' : 'Repair plan'}: ${repairPlan.changes.length} change(s).`);
+      if (options.dryRun) {
+        for (const change of repairPlan.changes) {
+          console.log(`  - ${change.id}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)} (${change.reason})`);
+        }
+      }
+    }
+  }
+
   // --fix-stale: refresh stale_memory cards by bumping last_verified timestamps.
   // This is separate from --fix so agents can choose between "repair structural
   // index state" and "also acknowledge that source-file changes are reviewed."
-  if (options.fixStale) {
+  if (staleRepairRequested) {
     const staleIssues = issues.filter(i => i.type === 'stale_memory');
 
     if (staleIssues.length > 0 && db) {
-      console.log(`Auto-fixing ${staleIssues.length} stale memory card(s)...`);
+      let staleAffected = false;
+      let stalePlanned = 0;
       for (const issue of staleIssues) {
+        if (remainingChanges <= 0) break;
         if (issue.card_id) {
           const card = db.prepare('SELECT file_path FROM cards WHERE id = ?').get(issue.card_id) as { file_path: string } | undefined;
           if (card) {
             const cardFilePath = path.join(cwd, card.file_path);
             if (fileExists(cardFilePath)) {
-              updateFrontmatterTimestamp(cardFilePath, 'last_verified');
-              console.log(`  Updated last_verified timestamp for card: ${issue.card_id}`);
+              if (takeChangeBudget()) {
+                stalePlanned += 1;
+                if (options.dryRun) console.log(`  Would update last_verified timestamp for card: ${issue.card_id}`);
+                else if (updateFrontmatterTimestamp(cardFilePath, 'last_verified')) {
+                  staleAffected = true;
+                  recordRepairEvent(db, issue.card_id, {
+                    id: `${issue.card_id}:last_verified`,
+                    action: 'refresh_last_verified',
+                    reason: 'Source files changed after the last memory verification.',
+                    before: 'stale',
+                    after: 'now',
+                  });
+                  console.log(`  Updated last_verified timestamp for card: ${issue.card_id}`);
+                }
+              }
             }
           }
         }
       }
+      if (options.dryRun) console.log(`Dry-run: would update ${stalePlanned} of ${staleIssues.length} stale memory card(s).`);
+      else console.log(`Auto-fixing ${staleAffected ? stalePlanned : 0} of ${staleIssues.length} stale memory card(s)...`);
       // Clean up stale DB rows for missing card files before rebuild
-      cleanupMissingCards(db, issues);
-      console.log('Rebuilding indexes for updated cards...');
-      rebuildCommand({ cwd });
+      if (!options.dryRun && staleAffected) cleanupMissingCards(db, issues);
+      if (!options.dryRun && staleAffected) {
+        console.log('Rebuilding indexes for updated cards...');
+        rebuildCommand({ cwd });
+      } else if (options.dryRun) {
+        console.log('Dry-run: index rebuild skipped.');
+      }
     }
 
     // Also fix structural index issues (stale_index, etc.) when --fix-stale is used
@@ -582,16 +747,20 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
       i.type === 'missing_card_file' ||
       i.type === 'orphan_edges'
     );
-    if (fixableIssue && staleIssues.length === 0) {
-      if (db) cleanupMissingCards(db, issues);
-      console.log('Auto-fixing: rebuilding indexes...');
-      rebuildCommand({ cwd });
+    if (fixableIssue && staleIssues.length === 0 && allows('structural')) {
+      if (!options.dryRun && db) cleanupMissingCards(db, issues);
+      if (!options.dryRun && takeChangeBudget()) {
+        console.log('Auto-fixing: rebuilding indexes...');
+        rebuildCommand({ cwd });
+      } else if (options.dryRun) {
+        console.log('Dry-run: would rebuild indexes.');
+      }
     }
   }
 
   // --fix: repair structural index state only (stale_index, missing db, etc.)
   // Does NOT touch stale_memory — use --fix-stale for that.
-  if (options.fix && !options.fixStale) {
+  if (structuralRepairRequested && !options.fixStale) {
     const fixableIssue = issues.find(i =>
       i.type === 'stale_index' ||
       i.type === 'missing_database' ||
@@ -600,9 +769,27 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
     );
 
     if (fixableIssue) {
-      if (db) cleanupMissingCards(db, issues);
-      console.log('Auto-fixing: rebuilding indexes...');
-      rebuildCommand({ cwd });
+      if (!options.dryRun && db) cleanupMissingCards(db, issues);
+      if (!options.dryRun && takeChangeBudget()) {
+        console.log('Auto-fixing: rebuilding indexes...');
+        rebuildCommand({ cwd });
+      } else if (options.dryRun) {
+        console.log('Dry-run: would rebuild indexes.');
+      }
+    }
+  }
+
+  if (metadataRepairRequested) {
+    const metadataIssues = issues.filter(issue => issue.type === 'unclassified_card' || issue.type === 'untrusted_memory' || issue.type === 'unclassified_sensitivity' || issue.type === 'invalid_trust_label');
+    const summary = applySafeMetadataFixes(metadataIssues);
+    if (options.dryRun) {
+      console.log(`Dry-run: ${summary.planned} safe metadata change(s) available; ${summary.skipped} require explicit operator values.`);
+    } else {
+      console.log(`Metadata repair: ${summary.changed} change(s) applied; ${summary.skipped} require explicit operator values.`);
+      if (summary.changed > 0) {
+        console.log('Rebuilding indexes for updated metadata...');
+        rebuildCommand({ cwd });
+      }
     }
   }
 
@@ -731,26 +918,48 @@ function metadataFixFor(issue: { type: string }): string | undefined {
   }
 }
 
-function updateFrontmatterTimestamp(filePath: string, field: 'last_verified' | 'updated'): void {
+function hasFrontmatterField(content: string, field: string): boolean {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  return !!match && new RegExp(`^${field}:\\s*\\S`, 'm').test(match[1]);
+}
+
+function updateFrontmatterField(filePath: string, field: string, value: string): boolean {
   const content = readFile(filePath);
-  if (!content) return;
+  if (!content) return false;
 
   const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return;
+  if (!match) return false;
 
   const frontmatterText = match[1];
-  const nowStr = new Date().toISOString();
-
   let newFmText = frontmatterText;
   const regex = new RegExp(`^${field}:.*$`, 'm');
   if (regex.test(frontmatterText)) {
-    newFmText = frontmatterText.replace(regex, `${field}: "${nowStr}"`);
+    newFmText = frontmatterText.replace(regex, `${field}: ${value}`);
   } else {
     // Trim end and add new field
-    newFmText = frontmatterText.trimEnd() + `\n${field}: "${nowStr}"`;
+    newFmText = frontmatterText.trimEnd() + `\n${field}: ${value}`;
   }
 
   const newContent = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${newFmText}\n---`);
-  const fs = require('fs');
-  fs.writeFileSync(filePath, newContent, 'utf8');
+  if (newContent === content) return false;
+  atomicWrite(filePath, newContent);
+  return true;
+}
+
+function updateFrontmatterTimestamp(filePath: string, field: 'last_verified' | 'updated'): boolean {
+  return updateFrontmatterField(filePath, field, `"${new Date().toISOString()}"`);
+}
+
+function recordRepairEvent(db: MaintenanceDatabase, memoryId: string, change: RepairChange): void {
+  recordMaintenanceEvent(db, {
+    eventType: 'memory.repair.applied',
+    memoryId,
+    payload: {
+      record_id: memoryId,
+      action: change.action,
+      reason: change.reason,
+      changes: [{ path: change.id.split(':').slice(1).join(':'), before: change.before, after: change.after }],
+      actor: 'pmem verify',
+    },
+  });
 }

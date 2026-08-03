@@ -126,6 +126,51 @@ export interface MemoryEvent {
   provenance?: MemoryProvenance;
 }
 
+/** Read-only timeline query for durable memory changes. */
+export interface MemoryHistoryOptions {
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export type MemoryDiffStatus = 'available' | 'unavailable';
+
+export interface MemoryDiffChange {
+  path: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface MemoryHistoryEntry {
+  eventId: string;
+  type: MemoryEventType;
+  recordId: string;
+  occurredAt: string;
+  recordedAt: string;
+  scope: string;
+  actor?: string;
+  reason?: string;
+  source?: string;
+  diffStatus: MemoryDiffStatus;
+  changes?: readonly MemoryDiffChange[];
+}
+
+export interface MemoryHistoryResult {
+  memoryId: string;
+  entries: readonly MemoryHistoryEntry[];
+  warnings?: readonly string[];
+}
+
+/** Two-point diff contract: previous durable state (T-1) versus current (T). */
+export interface MemoryDiffResult {
+  memoryId: string;
+  previous: MemoryHistoryEntry | null;
+  current: MemoryHistoryEntry | null;
+  diffStatus: MemoryDiffStatus;
+  changes?: readonly MemoryDiffChange[];
+  warnings?: readonly string[];
+}
+
 export interface MemoryRelation {
   id?: string;
   from_id: string;
@@ -263,6 +308,8 @@ export interface MemoryBackend {
   getRecord(id: string): MaybePromise<MemoryRecord | null>;
   query(query: BackendQuery): MaybePromise<MemoryQueryResult>;
   search(request: MemorySearchRequest): MaybePromise<MemorySearchResult>;
+  /** Optional durable event reader; absence is an explicit unsupported path. */
+  listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MaybePromise<readonly MemoryEvent[]>;
   beginTransaction(options?: BackendTransactionOptions): MaybePromise<BackendTransaction>;
 }
 
