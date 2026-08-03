@@ -86,4 +86,31 @@ describe('MCP Memory History surface', () => {
       await runtime.close();
     }
   });
+
+  it('filters private and session events by the Runtime principal before MCP serialization', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-mcp-history-scope-'));
+    roots.push(root);
+    const backend = new SqliteMemoryBackend(path.join(root, '.pmem'));
+    const runtime = await Pmem.open({ root, backend });
+    const tx = backend.beginTransaction();
+    for (const [id, scope] of [['project', 'project'], ['private', 'private:agent-a'], ['session', 'session:s1']] as const) {
+      tx.appendEvent({
+        id, type: 'commit', scope, occurred_at: `2026-08-03T${id === 'project' ? '10' : id === 'private' ? '11' : '12'}:00:00.000Z`,
+        recorded_at: `2026-08-03T${id === 'project' ? '10' : id === 'private' ? '11' : '12'}:00:00.000Z`,
+        record_id: 'memory.scoped', payload: { summary: id },
+      });
+    }
+    tx.commit();
+    try {
+      const response = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.scoped' });
+      assert.equal(response.isError, undefined);
+      const body = JSON.parse(response.content[0]?.text ?? '{}');
+      assert.deepEqual(body.entries.map((entry: any) => entry.eventId), ['1']);
+      const ownerResponse = await handleMcpTool(runtime, 'readonly', 'pmem_history', { id: 'memory.scoped', principal: 'agent-a' });
+      const ownerBody = JSON.parse(ownerResponse.content[0]?.text ?? '{}');
+      assert.deepEqual(ownerBody.entries.map((entry: any) => entry.eventId), ['1', '2']);
+    } finally {
+      await runtime.close();
+    }
+  });
 });

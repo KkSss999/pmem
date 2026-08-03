@@ -73,6 +73,32 @@ test('SQLite backend exposes a bounded, deterministic event history port', () =>
   }
 });
 
+test('SQLite record-scoped history filters before the bounded global event window', () => {
+  const { root, backend } = makeBackend();
+  try {
+    const tx = backend.beginTransaction();
+    tx.appendEvent({
+      id: 'target-before', type: 'commit', scope: 'project', occurred_at: '2026-08-03T10:00:00.000Z',
+      recorded_at: '2026-08-03T10:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target' },
+    });
+    for (let index = 0; index < 600; index += 1) {
+      tx.appendEvent({
+        id: `other-${index}`, type: 'commit', scope: 'project', occurred_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`,
+        recorded_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`, record_id: 'memory.other', payload: {},
+      });
+    }
+    tx.appendEvent({
+      id: 'target-after', type: 'commit', scope: 'project', occurred_at: '2026-08-03T23:00:00.000Z',
+      recorded_at: '2026-08-03T23:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target latest' },
+    });
+    tx.commit();
+    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.target', limit: 10 }).map(event => event.record_id), ['memory.target', 'memory.target']);
+  } finally {
+    backend.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('SQLite codec persists arbitrary schema data without creating a Card row', () => {
   const { root, backend } = makeBackend();
   try {

@@ -91,6 +91,7 @@ function issuesForExtendedDimension(
 ): VerifyIssue[] {
   const types = EXTENDED_DIMENSION_TYPES[dimension];
   return issues.filter(issue => {
+    if (issue.dimension === dimension) return true;
     if (types.has(issue.type)) return true;
     // Keep the quality lens extensible for future metadata rules while
     // reserving explicitly classified conflict/stability signals for their

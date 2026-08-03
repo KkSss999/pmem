@@ -2,6 +2,7 @@ import type {
   ContextPack,
   ContextPackContract,
   ContextPackBudget,
+  ContextPackDiagnostics,
   ContextPackEvidence,
   ContextPackEvidenceInput,
   ContextPackInput,
@@ -47,29 +48,125 @@ export const DEFAULT_TOKEN_ESTIMATOR: TokenEstimator = Object.freeze({
 /** Backwards-friendly short alias for callers that already use estimateTokens. */
 export const estimateTokens = estimateContextTokens;
 
+function isJsonValue(value: unknown): value is ContextPackJsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (!value || typeof value !== 'object') return false;
+  return Object.values(value).every(isJsonValue);
+}
+
+function isJsonObject(value: unknown): value is Record<string, ContextPackJsonValue> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.values(value).every(isJsonValue);
+}
+
+function isSource(value: unknown): value is ContextPackSource {
+  if (value === undefined) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  return (source.path === undefined || typeof source.path === 'string')
+    && (source.uri === undefined || typeof source.uri === 'string')
+    && (source.label === undefined || typeof source.label === 'string')
+    && (source.line === undefined || (Number.isInteger(source.line) && (source.line as number) >= 1))
+    && (source.column === undefined || (Number.isInteger(source.column) && (source.column as number) >= 1));
+}
+
+/** Validate the known v1 contract fields while allowing additive fields. */
+export function isContextPackContract(value: unknown): value is ContextPackContract {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const contract = value as Partial<ContextPackContract>;
+  return contract.id === CONTEXT_PACK_PROTOCOL_ID
+    && contract.version === CONTEXT_PACK_PROTOCOL_VERSION
+    && contract.compatibility === 'additive'
+    && contract.unknownFields === CONTEXT_PACK_UNKNOWN_FIELDS
+    && Array.isArray(contract.capabilities)
+    && contract.capabilities.length > 0
+    && contract.capabilities.every(capability => typeof capability === 'string' && capability.length > 0);
+}
+
+function isRecord(value: unknown): value is ContextPackRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Partial<ContextPackRecord>;
+  return typeof record.id === 'string' && record.id.length > 0
+    && typeof record.content === 'string'
+    && (record.title === undefined || typeof record.title === 'string')
+    && (record.type === undefined || typeof record.type === 'string')
+    && (record.score === undefined || (typeof record.score === 'number' && Number.isFinite(record.score)))
+    && isSource(record.source)
+    && (record.metadata === undefined || isJsonObject(record.metadata))
+    && (record.truncated === undefined || typeof record.truncated === 'boolean');
+}
+
+function isEvidence(value: unknown): value is ContextPackEvidence {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const evidence = value as Partial<ContextPackEvidence>;
+  return typeof evidence.id === 'string' && evidence.id.length > 0
+    && typeof evidence.recordId === 'string' && evidence.recordId.length > 0
+    && typeof evidence.content === 'string'
+    && (evidence.kind === undefined || typeof evidence.kind === 'string')
+    && (evidence.score === undefined || (typeof evidence.score === 'number' && Number.isFinite(evidence.score)))
+    && isSource(evidence.source)
+    && (evidence.provenance === undefined || isJsonObject(evidence.provenance))
+    && (evidence.metadata === undefined || isJsonObject(evidence.metadata))
+    && (evidence.truncated === undefined || typeof evidence.truncated === 'boolean');
+}
+
+function isBudget(value: unknown): value is ContextPackBudget {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const budget = value as Partial<ContextPackBudget>;
+  return [budget.requestedTokens, budget.usedTokens, budget.remainingTokens]
+    .every(item => typeof item === 'number' && Number.isFinite(item) && item >= 0);
+}
+
+function isDiagnostics(value: unknown): value is ContextPackDiagnostics {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const diagnostics = value as Partial<ContextPackDiagnostics>;
+  const omissionsValid = Array.isArray(diagnostics.omissions)
+    && diagnostics.omissions.every(omission => {
+      if (!omission || typeof omission !== 'object' || Array.isArray(omission)) return false;
+      const item = omission as unknown as Record<string, unknown>;
+      return typeof item.kind === 'string'
+        && ['record', 'evidence', 'query'].includes(item.kind)
+        && typeof item.id === 'string'
+        && typeof item.reason === 'string'
+        && ['budget', 'duplicate', 'invalid', 'orphaned-record'].includes(item.reason)
+        && typeof item.estimatedTokens === 'number'
+        && Number.isFinite(item.estimatedTokens)
+        && item.estimatedTokens >= 0;
+    });
+  return typeof diagnostics.truncated === 'boolean'
+    && omissionsValid
+    && Array.isArray(diagnostics.omittedRecordIds)
+    && diagnostics.omittedRecordIds.every(id => typeof id === 'string')
+    && Array.isArray(diagnostics.omittedEvidenceIds)
+    && diagnostics.omittedEvidenceIds.every(id => typeof id === 'string')
+    && Number.isInteger(diagnostics.omittedEvidenceCount) && (diagnostics.omittedEvidenceCount as number) >= 0;
+}
+
 /**
- * Tolerant v1 wire guard. Unknown top-level fields are intentionally ignored;
- * older v1 payloads without `contract` remain valid.
+ * Tolerant v1 wire guard. Unknown fields are ignored, but all known fields
+ * and the optional protocol contract are validated before narrowing the type.
  */
 export function isContextPack(value: unknown): value is ContextPack {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const pack = value as Partial<ContextPack>;
   return pack.schemaVersion === CONTEXT_PACK_SCHEMA_VERSION
     && typeof pack.query === 'string'
-    && Array.isArray(pack.records)
-    && Array.isArray(pack.evidence)
-    && typeof pack.provenance === 'object'
-    && pack.provenance !== null
-    && typeof pack.budget === 'object'
-    && pack.budget !== null
-    && typeof pack.diagnostics === 'object'
-    && pack.diagnostics !== null
-    && typeof pack.text === 'string';
+    && Array.isArray(pack.records) && pack.records.every(isRecord)
+    && Array.isArray(pack.evidence) && pack.evidence.every(isEvidence)
+    && isJsonObject(pack.provenance)
+    && isBudget(pack.budget)
+    && isDiagnostics(pack.diagnostics)
+    && typeof pack.text === 'string'
+    && (pack.contract === undefined || isContextPackContract(pack.contract));
 }
 
 /** Return explicit contract metadata, including for legacy v1 payloads. */
 export function contextPackContract(value: Pick<ContextPack, 'contract'>): ContextPackContract {
-  return value.contract ?? DEFAULT_CONTEXT_PACK_CONTRACT;
+  if (value.contract === undefined) return DEFAULT_CONTEXT_PACK_CONTRACT;
+  if (!isContextPackContract(value.contract)) throw new TypeError('Invalid ContextPack contract metadata');
+  return value.contract;
 }
 
 function clampBudget(value: number | undefined): number {

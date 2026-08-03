@@ -113,28 +113,32 @@ export class Pmem implements PmemInstance {
     this.assertOpen();
     const normalizedId = memoryId.trim();
     if (!normalizedId) throw new Error('Memory history requires a non-empty memory id.');
-    const principal = 'default';
-    const scope = this.scope.resolve('', { metadata: { principal } });
-    this.requireCapability(principal, 'memory.read', scope);
+    const principal = options.principal?.trim() || 'default';
     if (!this.backend.listEvents) {
       throw new Error(`Memory history is not supported by backend '${this.backend.id}'.`);
     }
     const events = await this.backend.listEvents({ ...options, recordId: normalizedId });
-    return buildMemoryHistory(normalizedId, events, options);
+    const visible = events.filter(event => this.eventVisibleTo(event, principal));
+    return buildMemoryHistory(normalizedId, visible, options);
   }
 
-  async diff(memoryId: string): Promise<MemoryDiffResult> {
+  async diff(memoryId: string, options: MemoryHistoryOptions = {}): Promise<MemoryDiffResult> {
     this.assertOpen();
     const normalizedId = memoryId.trim();
     if (!normalizedId) throw new Error('Memory diff requires a non-empty memory id.');
-    const principal = 'default';
-    const scope = this.scope.resolve('', { metadata: { principal } });
-    this.requireCapability(principal, 'memory.read', scope);
+    const principal = options.principal?.trim() || 'default';
     if (!this.backend.listEvents) {
       throw new Error(`Memory diff is not supported by backend '${this.backend.id}'.`);
     }
-    const events = await this.backend.listEvents({ recordId: normalizedId, limit: 2 });
-    return buildMemoryDiff(normalizedId, events);
+    const events = await this.backend.listEvents({ ...options, recordId: normalizedId, limit: 500 });
+    const visible = events.filter(event => this.eventVisibleTo(event, principal));
+    return buildMemoryDiff(normalizedId, visible, options);
+  }
+
+  private eventVisibleTo(event: MemoryEvent, principal: string): boolean {
+    const scope = memoryScopeId(event.scope);
+    return this.scope.isVisible(scope, principal)
+      && this.policy.checkCapability(principal, 'memory.read', scope);
   }
 
   async executeQueryPlan(plan: import('../query').QueryPlan): Promise<QueryExecutionResult> {
@@ -415,6 +419,7 @@ export type {
   RepairApplyResult,
   RepairApplyStatus,
   RepairChange,
+  RepairCheckpointReceipt,
   RepairJsonValue,
   RepairPlan,
   RepairPlanMode,

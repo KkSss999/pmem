@@ -196,7 +196,7 @@ export interface PmemInstance {
   executeQueryPlan(plan: QueryPlan): Promise<QueryExecutionResult>;
   packContext(query: string, options?: PackContextOptions): Promise<ContextPack>;
   history(memoryId: string, options?: MemoryHistoryOptions): Promise<MemoryHistoryResult>;
-  diff(memoryId: string): Promise<MemoryDiffResult>;
+  diff(memoryId: string, options?: MemoryHistoryOptions): Promise<MemoryDiffResult>;
   recall(opts?: RecallOptions): Promise<RecallQueryResult>;
   context(task: string, budget?: number): Promise<ContextQueryResult>;
   related(id: string, opts?: RelatedOptions): Promise<RelatedResult>;

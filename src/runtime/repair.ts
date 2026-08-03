@@ -28,6 +28,14 @@ export interface RepairPlan {
   dryRun: boolean;
   apply: boolean;
   changes: readonly RepairChange[];
+  checkpoint?: RepairCheckpointReceipt;
+  apply_result?: RepairApplyResult;
+}
+
+export interface RepairCheckpointReceipt {
+  id: string;
+  path: string;
+  reversible: boolean;
 }
 
 export type RepairApplyStatus = 'dry-run' | 'applied' | 'partial' | 'failed';

@@ -20,7 +20,10 @@ export function buildMemoryHistory(memoryId: string, events: readonly MemoryEven
       return timestamp >= from && timestamp <= to;
     })
     .sort((left, right) => Date.parse(left.recorded_at) - Date.parse(right.recorded_at) || left.id.localeCompare(right.id))
-    .slice(0, limit)
+    // Backends may return a bounded latest window. Keep the same defensive
+    // rule here so a backend that returns a larger history cannot make the
+    // public limit select the oldest entries.
+    .slice(-limit)
     .map(event => historyEntry(memoryId, event));
   return {
     memoryId,

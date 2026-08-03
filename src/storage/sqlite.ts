@@ -360,14 +360,32 @@ export class SqliteMemoryBackend implements MemoryBackend {
     const order = options.recordId
       ? 'ORDER BY created_at DESC, rowid DESC'
       : 'ORDER BY created_at ASC, rowid ASC';
+    const recordClause = options.recordId
+      ? `
+          AND (
+            memory_id = ?
+            OR (
+              json_valid(COALESCE(payload_json, payload))
+              AND (
+                json_extract(COALESCE(payload_json, payload), '$.record_id') = ?
+                OR json_extract(COALESCE(payload_json, payload), '$.memory_id') = ?
+                OR json_extract(COALESCE(payload_json, payload), '$.target_id') = ?
+              )
+            )
+          )`
+      : '';
+    const params = options.recordId
+      ? [options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, options.recordId, options.recordId, options.recordId, options.recordId, 500]
+      : [options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, 500];
     const rows = db.prepare(
       `SELECT id, event_type, type, memory_id, branch, scope, payload, payload_json, created_at
          FROM events
         WHERE (? IS NULL OR created_at >= ?)
           AND (? IS NULL OR created_at <= ?)
+        ${recordClause}
         ${order}
         LIMIT ?`
-    ).all(options.from ?? null, options.from ?? null, options.to ?? null, options.to ?? null, 500) as Array<{
+    ).all(...params) as Array<{
       id: number;
       event_type: string | null;
       type: string | null;

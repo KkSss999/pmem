@@ -14,6 +14,7 @@ export {
   estimateTokens,
   packContext,
   isContextPack,
+  isContextPackContract,
   contextPackContract,
 } from '../context-pack';
 export type {
@@ -46,6 +47,7 @@ export type {
   RepairApplyResult,
   RepairApplyStatus,
   RepairChange,
+  RepairCheckpointReceipt,
   RepairJsonValue,
   RepairPlan,
   RepairPlanMode,

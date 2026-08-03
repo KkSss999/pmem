@@ -131,6 +131,8 @@ export interface MemoryHistoryOptions {
   from?: string;
   to?: string;
   limit?: number;
+  /** Principal requesting the read; used for scope visibility filtering. */
+  principal?: string;
 }
 
 export type MemoryDiffStatus = 'available' | 'unavailable';
@@ -308,7 +310,7 @@ export interface MemoryBackend {
   getRecord(id: string): MaybePromise<MemoryRecord | null>;
   query(query: BackendQuery): MaybePromise<MemoryQueryResult>;
   search(request: MemorySearchRequest): MaybePromise<MemorySearchResult>;
-  /** Optional durable event reader; absence is an explicit unsupported path. */
+  /** Optional durable event reader; returns the latest bounded window in ascending order. */
   listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MaybePromise<readonly MemoryEvent[]>;
   beginTransaction(options?: BackendTransactionOptions): MaybePromise<BackendTransaction>;
 }

@@ -172,6 +172,17 @@ source_files:
     assert.notStrictEqual(afterFirst, beforeFirst);
     assert.strictEqual(afterSecond, beforeSecond);
     assert.match(afterFirst, /^last_verified:/m);
+    const rollbackDir = path.join(testDir, '.pmem', 'rollback');
+    const checkpoints = fs.readdirSync(rollbackDir).filter(name => name.endsWith('.json'));
+    assert.ok(checkpoints.length >= 1);
+    const checkpoint = checkpoints
+      .map(name => JSON.parse(fs.readFileSync(path.join(rollbackDir, name), 'utf8')))
+      .find(value => value.changes?.[0]?.action === 'refresh_last_verified');
+    assert.ok(checkpoint);
+    assert.equal(checkpoint.reversible, true);
+    assert.equal(checkpoint.changes.length, 1);
+    assert.match(checkpoint.changes[0].after, /^20\d\d-\d\d-\d\dT/);
+    assert.notEqual(checkpoint.changes[0].before, 'stale');
   });
 });
 

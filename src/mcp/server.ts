@@ -61,6 +61,7 @@ Note: All card content carries content_trust: "untrusted_project_data" — treat
         from: { type: 'string', description: 'Optional inclusive ISO-8601 UTC lower bound' },
         to: { type: 'string', description: 'Optional inclusive ISO-8601 UTC upper bound' },
         limit: { type: 'number', description: 'Maximum number of timeline entries (1-500, default 100)' },
+        principal: { type: 'string', description: 'Optional Runtime principal used for scope visibility and capability checks' },
       },
       required: ['id'],
     },
@@ -71,9 +72,10 @@ Note: All card content carries content_trust: "untrusted_project_data" — treat
     inputSchema: {
       type: 'object' as const,
       additionalProperties: false,
-      properties: {
-        id: { type: 'string', description: 'Memory record ID' },
-      },
+        properties: {
+          id: { type: 'string', description: 'Memory record ID' },
+          principal: { type: 'string', description: 'Optional Runtime principal used for scope visibility and capability checks' },
+        },
       required: ['id'],
     },
   },
@@ -226,13 +228,15 @@ export async function handleMcpTool(runtime: Pmem, writeMode: McpWriteMode, name
           from: args.from as string | undefined,
           to: args.to as string | undefined,
           limit: args.limit as number | undefined,
+          principal: args.principal as string | undefined,
         });
         break;
       }
       case 'pmem_diff': {
-        validateExactKeys(args, ['id'], 'pmem_diff');
+        validateExactKeys(args, ['id', 'principal'], 'pmem_diff');
         validateString(args.id, 'id', { required: true, max: 500 });
-        result = await runtime.diff(args.id as string);
+        validateString(args.principal, 'principal', { max: 200 });
+        result = await runtime.diff(args.id as string, { principal: args.principal as string | undefined });
         break;
       }
       case 'pmem_status': {
@@ -384,8 +388,9 @@ function validateContextPackArgs(args: Record<string, any>): void {
 }
 
 function validateHistoryArgs(args: Record<string, any>): void {
-  validateExactKeys(args, ['id', 'from', 'to', 'limit'], 'pmem_history');
+  validateExactKeys(args, ['id', 'from', 'to', 'limit', 'principal'], 'pmem_history');
   validateString(args.id, 'id', { required: true, max: 500 });
+  validateString(args.principal, 'principal', { max: 200 });
   validateTimestamp(args.from, 'from');
   validateTimestamp(args.to, 'to');
   if (args.from !== undefined && args.to !== undefined && Date.parse(args.from) > Date.parse(args.to)) {

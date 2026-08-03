@@ -7,7 +7,7 @@ export type ContextPackJsonValue =
   | readonly ContextPackJsonValue[]
   | { readonly [key: string]: ContextPackJsonValue };
 
-/** Stable wire-level contract metadata. Keep schemaVersion at "1" forever. */
+/** Stable wire-level contract metadata. v1 permits additive changes only. */
 export interface ContextPackContract {
   id: 'pmem.context-pack';
   version: '1';

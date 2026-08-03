@@ -9,6 +9,7 @@ import {
   contextPackContract,
   estimateContextTokens,
   isContextPack,
+  isContextPackContract,
   packContext,
 } from './index';
 
@@ -49,6 +50,16 @@ describe('ContextPack', () => {
     delete (legacy as { contract?: unknown }).contract;
     assert.equal(isContextPack(legacy), true);
     assert.deepEqual(contextPackContract(legacy), pack.contract);
+  });
+
+  it('rejects malformed known fields and incompatible contracts while ignoring additive fields', () => {
+    const pack = packContext(base, { budget: 500 });
+    assert.equal(isContextPack({ ...pack, futureField: true }), true);
+    assert.equal(isContextPack({ ...pack, contract: { ...pack.contract, version: '2' } }), false);
+    assert.equal(isContextPack({ ...pack, records: [{ id: 'r', content: 42 }] }), false);
+    assert.equal(isContextPack({ ...pack, evidence: [{ id: 'e', recordId: 'r', content: 'ok', score: 'bad' }] }), false);
+    assert.equal(isContextPackContract({ ...pack.contract, compatibility: 'breaking' }), false);
+    assert.throws(() => contextPackContract({ contract: { ...pack.contract, version: '2' } } as never), /invalid ContextPack contract/i);
   });
 
   it('orders records by score and then id for deterministic ties', () => {

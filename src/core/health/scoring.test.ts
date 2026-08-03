@@ -97,4 +97,12 @@ describe('v1.2 health scoring', () => {
     assert.equal(result.passed, false);
     assert.equal(result.score, 70);
   });
+
+  it('prefers an explicit new dimension over the legacy type mapping', () => {
+    const result = buildVerifyResult([
+      { ...issue('new_conflict_rule', 'warning', 'memory.a'), dimension: 'conflict' },
+    ], null, 'missing', '/tmp/baseline');
+    assert.equal(result.dimensions.conflict.issue_count, 1);
+    assert.equal(result.dimensions.conflict.score, 95);
+  });
 });

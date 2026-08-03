@@ -45,3 +45,15 @@ test('Memory diff is deliberately limited to T-1 and T', () => {
   assert.equal(result.current?.eventId, 'e3');
   assert.deepEqual(result.changes, [{ path: 'database', before: 'postgres', after: 'sqlite' }]);
 });
+
+test('Memory diff defensively selects the latest two states from a long target history', () => {
+  const events = Array.from({ length: 150 }, (_, index) => event(
+    `e${index + 1}`,
+    { changes: [{ path: 'value', before: index, after: index + 1 }] },
+    `2026-08-03T${String(Math.floor(index / 60) + 1).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}:00.000Z`,
+  ));
+  const result = buildMemoryDiff('memory.database', events);
+  assert.equal(result.previous?.eventId, 'e149');
+  assert.equal(result.current?.eventId, 'e150');
+  assert.deepEqual(result.changes, [{ path: 'value', before: 149, after: 150 }]);
+});
