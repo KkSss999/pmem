@@ -133,6 +133,17 @@ describe('ContextPack', () => {
     assert.deepEqual(result.records.map(record => record.id), ['a', 'c', 'b']);
   });
 
+  it('reserves part of a normal budget for provenance-bearing evidence', () => {
+    const result = packContext({
+      query: 'q',
+      records: Array.from({ length: 10 }, (_, index) => ({ id: `r${index}`, content: 'record content '.repeat(8), score: 10 - index })),
+      evidence: [{ id: 'e1', recordId: 'r0', content: 'semantic evidence', provenance: { model: 'test', revision: 'r1' } }],
+    }, { budget: 200 });
+    assert.ok(result.records.length > 0);
+    assert.equal(result.evidence[0]?.id, 'e1');
+    assert.ok(result.budget.usedTokens <= result.budget.requestedTokens);
+  });
+
   it('does not mutate caller input', () => {
     const input = { ...base, records: [...base.records], evidence: [...base.evidence] };
     const before = JSON.stringify(input);

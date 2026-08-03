@@ -119,6 +119,14 @@ function jsonText(value: Readonly<Record<string, ContextPackJsonValue>> | undefi
   return value && Object.keys(value).length > 0 ? ` ${JSON.stringify(value)}` : '';
 }
 
+function evidenceMetadataForText(evidence: ContextPackEvidence): Record<string, ContextPackJsonValue> | undefined {
+  if (!evidence.metadata) return undefined;
+  const metadata = Object.fromEntries(
+    Object.entries(evidence.metadata).filter(([key]) => key !== 'semanticEvidence'),
+  ) as Record<string, ContextPackJsonValue>;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 function renderRecord(record: ContextPackRecord): string {
   const title = record.title ? ` ${record.title}` : '';
   const type = record.type ? ` type=${record.type}` : '';
@@ -129,7 +137,7 @@ function renderRecord(record: ContextPackRecord): string {
 function renderEvidence(evidence: ContextPackEvidence): string {
   const kind = evidence.kind ? ` ${evidence.kind}` : '';
   const score = evidence.score === undefined ? '' : ` score=${evidence.score}`;
-  return `- [${evidence.id}] record=${evidence.recordId}${kind}${score}${sourceText(evidence.source)}${jsonText(evidence.provenance)}${jsonText(evidence.metadata)}\n${evidence.content}`;
+  return `- [${evidence.id}] record=${evidence.recordId}${kind}${score}${sourceText(evidence.source)}${jsonText(evidence.provenance)}${jsonText(evidenceMetadataForText(evidence))}\n${evidence.content}`;
 }
 
 function renderPack(
@@ -361,6 +369,14 @@ export function packContext(input: ContextPackInput, options: PackContextOptions
     addOmission(omissions, 'record', record.id, 'budget', estimateWith(estimator, record.content));
   }
   const allEvidence = normalizeEvidence(input.evidence, records, omissions, maxEvidence, estimator);
+  // Prevent a large deterministic record head from starving provenance-bearing
+  // evidence. Small budgets keep the historical greedy behavior so headers can
+  // still be clipped predictably; normal production budgets reserve one quarter
+  // for evidence whenever the query produced evidence candidates.
+  const evidenceReserve = allEvidence.length > 0 && requestedTokens >= 64
+    ? Math.floor(requestedTokens / 4)
+    : 0;
+  const recordBudget = Math.max(0, requestedTokens - evidenceReserve);
 
   const originalQuery = normalizedText(input.query);
   let query = originalQuery;
@@ -396,21 +412,22 @@ export function packContext(input: ContextPackInput, options: PackContextOptions
   for (const record of records) {
     const full = outputRecord(record, record.content, false);
     const candidateText = renderPack(query, [...outputRecords, full], outputEvidence, provenance);
-    if (canFit(candidateText)) {
+    const canFitRecord = (nextText: string) => estimateWith(estimator, nextText) <= recordBudget;
+    if (canFitRecord(candidateText)) {
       outputRecords.push(full);
       text = candidateText;
       usedTokens = estimateWith(estimator, text);
       continue;
     }
     const currentTokens = estimateWith(estimator, renderPack(query, outputRecords, outputEvidence, provenance));
-    const remaining = Math.max(0, requestedTokens - currentTokens);
+    const remaining = Math.max(0, recordBudget - currentTokens);
     const prefix = outputRecord(record, '', false);
     const prefixTokens = estimateWith(estimator, renderPack(query, [...outputRecords, prefix], outputEvidence, provenance));
     const contentBudget = Math.max(0, remaining - Math.max(0, prefixTokens - currentTokens));
     const clipped = truncateToTokens(record.content, contentBudget, estimator);
     const clippedRecord = outputRecord(record, clipped, clipped !== record.content);
     const clippedText = renderPack(query, [...outputRecords, clippedRecord], outputEvidence, provenance);
-    if (clipped && canFit(clippedText)) {
+    if (clipped && canFitRecord(clippedText)) {
       outputRecords.push(clippedRecord);
       text = clippedText;
       usedTokens = estimateWith(estimator, text);
