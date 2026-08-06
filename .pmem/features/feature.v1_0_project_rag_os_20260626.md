@@ -6,7 +6,7 @@ status: completed
 tags: [v1.0, agentic-memory-runtime, two-layer, sdk, mcp, software-preset, released]
 created: "2026-07-22"
 updated: "2026-07-22T11:30:00.000Z"
-last_verified: "2026-08-02T08:44:58.629Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 source_files:
   - .pmem/manifest.yml
   - src/runtime/index.ts

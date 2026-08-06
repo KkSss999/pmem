@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Verify both v1.3.2 npm packages, packaged skills, and the GitHub release after the main-branch publish Action.
+Await second review of PR #51.
 
 ## Why
 PR #49 is merged; v1.3.x now has one user-facing CLI entry, a separately distributed semantic Runtime component, and a stable ContextPack contract for Agent integrations.

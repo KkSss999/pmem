@@ -61,12 +61,16 @@ cli:
     - pack
   default_budget: 1600
 embedding:
-  enabled: false
-  provider: none
-  model: null
-  dimension: null
+  enabled: true
+  provider: local
+  model: Xenova/multilingual-e5-small
+  revision: 761b726dd34fb83930e26aab4e9ac3899aa1fa78
+  source: modelscope
+  dtype: uint8
+  cache_path: /Users/keyer/.pmem-global/models/Xenova/multilingual-e5-small/761b726dd34fb83930e26aab4e9ac3899aa1fa78
+  dimension: 384
   store: sqlite
-  index: none
+  index: flat
 serve:
   enabled: false
   mode: none

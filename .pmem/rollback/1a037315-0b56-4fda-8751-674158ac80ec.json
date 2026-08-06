@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "id": "1a037315-0b56-4fda-8751-674158ac80ec",
+  "planVersion": 1,
+  "createdAt": "2026-08-03T08:33:45.582Z",
+  "changes": [
+    {
+      "id": "decision.v1_2_0_unified_memory_intelligence_release_20260724:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "decision.v1_2_2_windows_semantic_retrieval_20260729:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "feature.v1_0_1_agent_trust_operations_20260722:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "feature.v1_0_agentic_memory_runtime_20260722:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "feature.v1_1_system_memory_release_20260722:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "module.cli_runtime_20260602:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "module.manifest_runtime_20260602:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "risk.dogfooding_version_skew_20260602:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "task.post_v0_7_optimization_roadmap_20260602:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "task.v0_7_0_phase_2_domain_presets_20260602:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "task.v1_2_0_registry_visibility_recovery_20260724:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "task.v1_2_0_unified_release_20260724:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    },
+    {
+      "id": "task.v1_2_1_deep_usage_reliability_20260724:last_verified",
+      "action": "refresh_last_verified",
+      "reason": "Source files changed after the last memory verification.",
+      "before": "2026-08-03T08:29:59.726Z",
+      "after": "2026-08-03T08:33:45.574Z"
+    }
+  ],
+  "reversible": true,
+  "source": "pmem verify",
+  "state": "applied",
+  "appliedIds": [
+    "decision.v1_2_0_unified_memory_intelligence_release_20260724:last_verified",
+    "decision.v1_2_2_windows_semantic_retrieval_20260729:last_verified",
+    "feature.v1_0_1_agent_trust_operations_20260722:last_verified",
+    "feature.v1_0_agentic_memory_runtime_20260722:last_verified",
+    "feature.v1_1_system_memory_release_20260722:last_verified",
+    "module.cli_runtime_20260602:last_verified",
+    "module.manifest_runtime_20260602:last_verified",
+    "risk.dogfooding_version_skew_20260602:last_verified",
+    "task.post_v0_7_optimization_roadmap_20260602:last_verified",
+    "task.v0_7_0_phase_2_domain_presets_20260602:last_verified",
+    "task.v1_2_0_registry_visibility_recovery_20260724:last_verified",
+    "task.v1_2_0_unified_release_20260724:last_verified",
+    "task.v1_2_1_deep_usage_reliability_20260724:last_verified"
+  ]
+}

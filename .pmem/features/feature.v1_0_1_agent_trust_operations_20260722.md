@@ -6,7 +6,7 @@ status: implemented
 tags: [v1.0.1, agent-trust, verify, confidence, classification, supersede, next, distill, done]
 created: "2026-07-22"
 updated: "2026-07-22T13:00:00.000Z"
-last_verified: "2026-08-02T08:44:58.629Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 source_files:
   - src/types/cards.ts
   - src/core/consistency.ts

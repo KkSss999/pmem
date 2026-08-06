@@ -17,7 +17,7 @@ related_to:
   - decision.v1_1_1_macos_semantic_retrieval_20260724
   - feature.v1_1_1_lightweight_semantic_layer_20260626
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
-last_verified: "2026-08-02T08:44:58.627Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 ---
 # v1.2.0 Unified Memory Intelligence Release
 

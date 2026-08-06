@@ -20,7 +20,7 @@ related_to:
 classification: decision
 trust_label: user_confirmed
 sensitivity: internal
-last_verified: "2026-08-02T08:44:58.629Z"
+last_verified: "2026-08-03T06:00:02.275Z"
 ---
 # v1.1.1 macOS Semantic Retrieval
 

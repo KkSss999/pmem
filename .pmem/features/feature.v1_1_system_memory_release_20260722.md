@@ -23,7 +23,7 @@ related_to:
 classification: plan
 trust_label: user_confirmed
 sensitivity: internal
-last_verified: "2026-08-02T08:44:58.629Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 ---
 # v1.1 System Memory Release
 

@@ -25,7 +25,7 @@ related_to:
   - decision.structure_first_hybrid_recall_20260626
   - feature.v0_8_hybrid_recall_engine_20260626
   - feature.v1_1_2_contextual_rerank_retrieval_20260626
-last_verified: "2026-08-02T08:44:58.628Z"
+last_verified: "2026-08-03T06:00:02.273Z"
 classification: fact
 trust_label: user_confirmed
 sensitivity: internal

@@ -29,7 +29,7 @@ depends_on:
   - task.v1_2_0_unified_release_20260724
 related_to:
   - decision.v1_2_0_unified_memory_intelligence_release_20260724
-last_verified: "2026-08-02T08:44:58.628Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 ---
 # v1.2.1 Deep-Usage Reliability
 

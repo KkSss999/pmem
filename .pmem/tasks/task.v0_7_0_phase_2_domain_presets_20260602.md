@@ -18,7 +18,7 @@ depends_on:
 related_to:
   - module.cli_runtime_20260602
   - module.manifest_runtime_20260602
-last_verified: "2026-08-02T08:44:58.630Z"
+last_verified: "2026-08-03T08:33:45.574Z"
 classification: plan
 trust_label: user_confirmed
 sensitivity: internal
