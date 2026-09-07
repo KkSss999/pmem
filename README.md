@@ -799,7 +799,6 @@ Markdown cards are canonical. `pmem.db` and `indexes/` are generated runtime dat
 - **[Agent workflow](#agent-workflow)** — session start, task work, and closeout
 - **[MCP Runtime](#mcp-runtime-pmem-rt)** — read-only and append-only tool surfaces
 - **[Runtime SDK](#agentic-memory-runtime-sdk-v10)** — embed the memory core in an agent product
-- **[Roadmap](#roadmap)** — shipped capabilities and explicitly deferred scope
 
 ## Exit Codes
 
@@ -871,57 +870,6 @@ pmem update --suggest
 pmem update --confirm -s "<summary>" -n "<next step>"
 pmem verify
 ```
-
-## Roadmap
-
-**v0.5 Productization Beta** — shipped on npm as `pmem-ai`:
-- README, quick start, usage guide
-- E2E suite, CI/CD, error UX, release checklist
-
-**v0.6 Agent-native Workflow Polish** — shipped:
-- Non-interactive init (`--description`/`--stage`/`--next` flags, `--answers` file)
-- Claude Code slash commands (`/pmem-recall`, `/pmem-ask`, `/pmem-update`, `/pmem-distill`)
-- Relationship auto-discovery across 6 languages (`pmem discover`)
-- Inferred edge review and confirmation workflow
-- Session fault tolerance
-
-**v0.7 Domain-Neutral Memory** — shipped:
-- Domain presets (software, novel, research)
-- Custom schema manifest (`card_types`, `type_dirs`, `foundational_types`)
-- `pmem sync` shortcut, `pmem relations` graph inspection
-- Lock protocol for concurrent safety
-
-**v0.8 Hybrid Recall Engine** — shipped:
-- 5-stage deterministic recall pipeline
-- Multi-channel candidate generation (exact ID, aliases, tags, FTS5/BM25, graph expansion)
-- Recency scoring, stale/dirty penalties, explainable output
-- Recall modes: brief, normal, deep
-
-**v1.0 Agentic Memory Runtime** — shipped:
-- Two-layer architecture: Product (CLI + Skills + MCP) + Runtime (SDK)
-- `Pmem.open()` SDK with full query + write API
-- Scope manager, policy engine, append-only event store
-- Branch-aware working memory, durable tombstones (`pmem forget`)
-- Independent SQLite instances, project-root isolation
-- Unified query core: CLI / MCP / SDK share one implementation
-- MCP: 5 read-only tools + 3 append-only write tools (`pmem_observe`, `pmem_forget`, `pmem_capture`)
-
-**v1.1 System Memory** — shipped:
-- 9-level namespace hierarchy with capability ACL (12 capabilities)
-- Agent quotas, memory poisoning defense
-- Trust-aware recall scoring, secret-sensitivity filtering
-
-**v1.3.x Semantic Runtime and ContextPack** — shipped on main:
-- Deterministic retrieval remains authoritative while local semantic retrieval is a standard Runtime capability
-- ContextPack is the shared CLI/SDK/MCP payload with provenance-bearing evidence and budget diagnostics
-- Token-aware packing reserves evidence, caps evidence fan-out, and applies deterministic diversity ordering
-- Golden quality gates include precision, recall, MRR, nDCG, context token efficiency, and noise
-
-Deferred:
-- `pmem serve` / REST API
-- Graph visualization UI
-- Telemetry
-- Multi-user remote service
 
 ## Contributing
 

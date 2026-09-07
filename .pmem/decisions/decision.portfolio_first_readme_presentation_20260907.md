@@ -11,7 +11,7 @@ created: "2026-09-07"
 source_files: [README.md, package.json, assets/pmem-session-demo.gif, assets/pmem-architecture.svg, scripts/generate-readme-demo.sh, scripts/generate-readme-demo.mjs]
 depends_on: [decision.pmem_two_layer_architecture_20260722, decision.structure_first_hybrid_recall_20260626, decision.v1_3_2_semantic_distribution_experience_20260803]
 related: [decision.sqlite_first_semantic_layer_20260626, decision.v1_3_0_runtime_first_schema_driven_backend_pluggable_20260802]
-last_verified: "2026-09-07T13:08:49.603Z"
+last_verified: "2026-09-07T13:15:06.612Z"
 ---
 # Portfolio-first README presentation
 
