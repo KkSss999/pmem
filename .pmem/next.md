@@ -2,7 +2,7 @@
 
 <!-- pmem:next:start -->
 ## Recommended Next Step
-Await second review of PR #51.
+Publish the presentation refresh and gather reader feedback.
 
 ## Why
 PR #49 is merged; v1.3.x now has one user-facing CLI entry, a separately distributed semantic Runtime component, and a stable ContextPack contract for Agent integrations.

@@ -80,6 +80,9 @@
     "!dist/**/*.test.d.ts",
     "!dist/**/*.test.d.ts.map",
     "skills/**/*.md",
+    "assets/**/*.gif",
+    "assets/**/*.svg",
+    "pmem.png",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

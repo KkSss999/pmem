@@ -1,16 +1,88 @@
 <p align="center">
-  <img src="pmem.png" alt="pmem logo" />
+  <img src="pmem.png" width="640" alt="pmem logo" />
 </p>
 
-# pmem — Project Memory for AI Agents
+<h1 align="center">PMEM</h1>
 
-[![npm version](https://img.shields.io/npm/v/pmem-ai)](https://www.npmjs.com/package/pmem-ai)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](https://nodejs.org)
+<p align="center">
+  <strong>Persistent project memory for AI coding agents.</strong><br />
+  Local-first · Git-friendly · CLI · SDK · MCP · Hybrid Recall
+</p>
 
-`pmem` is a local CLI runtime that gives AI coding agents persistent, queryable project memory. It stores memory as Markdown cards under `.pmem/` and rebuilds SQLite indexes for fast, token-efficient recall — so agents remember where the project is, what changed, what matters next, and why.
+<p align="center">
+  <a href="https://www.npmjs.com/package/pmem-ai"><img src="https://img.shields.io/npm/v/pmem-ai" alt="npm version" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0 license" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="Node.js 18 or later" /></a>
+</p>
 
-## Why pmem
+<p align="center">
+  <a href="#quick-start">Get started</a> ·
+  <a href="#how-pmem-works">Architecture</a> ·
+  <a href="#engineering-case-study">Engineering case study</a> ·
+  <a href="#full-reference">Full reference</a>
+</p>
+
+<p align="center">
+  <img src="assets/pmem-session-demo.gif" width="920" alt="A terminal flow: pmem restores context for an authentication task, captures an update, then recalls the context in a new agent session." />
+</p>
+
+<p align="center"><sub>A representative 20-second terminal flow. PMEM restores project context, records a change, and makes it available to the next coding-agent session.</sub></p>
+
+Coding agents can read a repository, but they do not reliably retain its decisions, active work, or the reason a change was made. PMEM gives the project a durable, queryable memory layer so the next session starts with context instead of archaeology.
+
+```bash
+npm install -g pmem-ai@1.3.3
+pmem context "implement auth"
+```
+
+## The context gap
+
+Every agent session must rediscover a project from source files, issue threads, and scattered notes. That makes handoffs slow and makes architectural decisions easy to lose.
+
+PMEM keeps the context that code alone cannot express:
+
+- what the project is and where it currently stands;
+- what changed, why it changed, and which evidence supports it;
+- which decisions, risks, and modules are relevant to the task at hand; and
+- what should happen next.
+
+## How PMEM works
+
+![PMEM architecture: coding agents use one memory runtime; Markdown cards, a rebuildable SQLite and FTS runtime, and optional local semantic retrieval combine into a ContextPack returned to the agent.](assets/pmem-architecture.svg)
+
+The same Runtime powers the CLI, MCP server, and SDK. Project-facing Markdown cards stay inspectable and Git-friendly; SQLite/FTS indexes are derived for fast deterministic recall and can be rebuilt. Optional local semantic retrieval improves vague queries without replacing the explainable retrieval path.
+
+## Engineering case study
+
+PMEM is designed as Agent Infrastructure, not a chat-history store. These are the choices that shape its behavior.
+
+### 1. Inspectable project memory with rebuildable runtime indexes
+
+Markdown cards make project memory reviewable in a pull request and usable in Git workflows. SQLite stores the fast runtime view—FTS5 indexes, relations, metadata, and retrieval state—so it can be regenerated rather than becoming a second opaque knowledge base.
+
+| What this optimizes | Trade-off |
+|---|---|
+| Inspectable, version-controlled project memory | Synchronization and rebuild work must be explicit |
+| Local operation and no hosted-memory dependency | No shared remote workspace by default |
+| Recovery through `pmem rebuild`, health checks, and repair plans | The runtime must carefully report projection/index health |
+
+### 2. Hybrid recall instead of pure vector search
+
+Project questions are unusually rich in exact identifiers: file paths, symbols, card IDs, versions, error text, and decision titles. PMEM fuses exact matches, aliases, metadata, FTS5/BM25, graph expansion, freshness signals, and optional local semantic retrieval. Every result can explain why it was included.
+
+```text
+Exact IDs + aliases + metadata + FTS5/BM25 + graph expansion + semantic retrieval
+```
+
+### 3. One memory core, three integration surfaces
+
+The CLI gives developers a quick workflow. MCP lets compatible agents query and capture memory in their tool loop. The SDK embeds the same Runtime in an agent product. Shared query and ContextPack contracts keep those surfaces semantically aligned instead of maintaining three competing memory implementations.
+
+### 4. Memory must be safe to operate
+
+PMEM treats memory as a lifecycle: it can be checked, updated deliberately, diffed, rolled back, repaired, and traced. Provenance, trust labels, sensitivity filtering, scoped runtime policy, and append-only operations make the system suitable for agent workflows where an unreviewable memory write is a liability.
+
+## What PMEM gives your agent
 
 Coding agents lose project context every session. A repository has source files, docs, decisions, tasks, and traces — but the agent usually re-discovers all of it from scratch.
 
@@ -25,13 +97,13 @@ pmem adds a small, explicit memory layer to the project:
 | Verify memory integrity | `pmem verify` |
 | Install agent rules (AGENTS.md, Cursor, etc.) | `pmem install --agent-rules` |
 
-The design is intentionally **local and Git-friendly**. Markdown cards are the source of truth. SQLite is a rebuildable runtime index — not a separate knowledge base. No cloud services, no vector DBs, no lock-in.
+The design is intentionally **local and Git-friendly**. Markdown cards keep project memory inspectable, while SQLite provides a rebuildable runtime index — not a separate opaque knowledge base. No cloud services or hosted vector database are required.
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
 **v1.3.3 (current)** stabilizes the **Memory Protocol**: deterministic retrieval remains authoritative, while local multilingual semantic retrieval stays a standard, versioned, automatically maintained Runtime capability with safe degradation. It adds protocol health dimensions, configurable repair plans, T-1/T memory diffs, rollback checkpoints, and read-only MCP history surfaces.
 
-## Who It's For
+## Who it is for
 
 - You use AI coding agents (Claude Code, Codex, Cursor, Cline, Aider, Windsurf, Gemini CLI)
 - Your project has decisions and context that should survive across sessions
@@ -522,7 +594,11 @@ When calling `pmem recall --format json` on non-software domains, `active_founda
 
 pmem v0.7.0+ maintains strict zero-migration compatibility with v0.6.x legacy projects. If a project manifest lacks a `schema` block, pmem falls back to the legacy `software` defaults without modifying the manifest file.
 
-## CLI Reference
+## Full reference
+
+Everything below is the operational reference for installing, integrating, and maintaining PMEM. It stays alongside the landing material so the repository has one versioned, reviewable source of documentation.
+
+### CLI reference
 
 ```bash
 pmem init [project-name] [--guided] [--description <text>] [--stage <text>] \
@@ -644,7 +720,7 @@ pmem mcp --write=append-only
 
 All read-only tools are safe to execute with no intentional writes. In `append-only` mode, the agent can call `pmem_capture`, `pmem_observe`, and `pmem_forget` to create traces, record observations, and tombstone memories — while direct modifications to core cards remain blocked. Every card object carries `content_trust: "untrusted_project_data"`; MCP responses include `schema_version` derived from the pmem package version.
 
-→ [Full MCP integration guide](docs/pmem-rt.md)
+→ [MCP setup and tools](#mcp-runtime-pmem-rt)
 
 ## Agentic Memory Runtime SDK (v1.0)
 
@@ -690,7 +766,7 @@ await memory.close();
 
 **Three interfaces, one core**: CLI (`pmem ask`), MCP (`pmem_ask`), and SDK (`memory.ask()`) all call `askQuery()` in the same `src/core/query/` module. Fix a bug once, all three paths benefit.
 
-→ [v1.0 Pre-Design](docs/v1.0%20pre-design.md) | [v1.0 Dev Plan](docs/v1.0%20dev-plan.md)
+→ [Runtime SDK reference](#agentic-memory-runtime-sdk-v10) | [Architecture and design rationale](#engineering-case-study)
 
 ## Project Layout
 
@@ -716,12 +792,14 @@ await memory.close();
 
 Markdown cards are canonical. `pmem.db` and `indexes/` are generated runtime data — rebuildable at any time with `pmem rebuild`.
 
-## Integration Guides
+## Navigate the full reference
 
-- **[Usage Guide](docs/usage.md)** — step-by-step integration with Claude Code, Codex, and Cursor
-- **[MCP Runtime Guide](docs/pmem-rt.md)** — full pmem-rt setup and configuration
-- **[PRD](docs/prd.md)** — product requirements document
-- **[Project Roadmap](docs/project-roadmap.md)** — detailed roadmap and milestones
+- **[Installation and Quick Start](#install)** — start with the CLI and agent skills
+- **[CLI reference](#cli-reference)** — command syntax and supported workflows
+- **[Agent workflow](#agent-workflow)** — session start, task work, and closeout
+- **[MCP Runtime](#mcp-runtime-pmem-rt)** — read-only and append-only tool surfaces
+- **[Runtime SDK](#agentic-memory-runtime-sdk-v10)** — embed the memory core in an agent product
+- **[Roadmap](#roadmap)** — shipped capabilities and explicitly deferred scope
 
 ## Exit Codes
 
