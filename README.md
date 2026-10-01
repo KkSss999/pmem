@@ -31,7 +31,7 @@
 Coding agents can read a repository, but they do not reliably retain its decisions, active work, or the reason a change was made. PMEM gives the project a durable, queryable memory layer so the next session starts with context instead of archaeology.
 
 ```bash
-npm install -g pmem-ai@1.3.3
+npm install -g pmem-ai@latest
 pmem context "implement auth"
 ```
 
@@ -101,7 +101,7 @@ The design is intentionally **local and Git-friendly**. Markdown cards keep proj
 
 It is **not** a vector database, MCP server platform, graph UI, or remote multi-user service. v0.8 added the **Hybrid Recall Engine**: deterministic multi-channel retrieval across exact IDs, aliases, tags, source file paths, always-on FTS5/BM25, and graph expansion — with recency scoring, stale/dirty penalties, and explainable output.
 
-**v1.3.3 (current)** stabilizes the **Memory Protocol**: deterministic retrieval remains authoritative, while local multilingual semantic retrieval stays a standard, versioned, automatically maintained Runtime capability with safe degradation. It adds protocol health dimensions, configurable repair plans, T-1/T memory diffs, rollback checkpoints, and read-only MCP history surfaces.
+**v1.3.5 (current)** keeps deterministic retrieval authoritative and bundles the local semantic inference runtime into `pmem-ai`. Model downloads and per-project vector indexes remain explicit setup steps. It also includes protocol health dimensions, configurable repair plans, T-1/T memory diffs, rollback checkpoints, and read-only MCP history surfaces.
 
 ## Who it is for
 
@@ -115,46 +115,40 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 ### Recommended entry point — one CLI for every user
 
 ```bash
-npm install -g pmem-ai@1.3.3
+npm install -g pmem-ai@latest
 pmem --version
 ```
 
-This is a complete, model-free pmem installation. It includes Markdown memory,
-SQLite/FTS retrieval, graph expansion, health checks, MCP, and the SDK. Most
-users only need this package. It does not install Transformers.js, ONNX Runtime,
-`sharp`, or a semantic model.
+This is the complete pmem installation. It includes Markdown memory,
+SQLite/FTS retrieval, graph expansion, health checks, MCP, the SDK, and the
+local semantic inference runtime. Transformers.js and its runtime dependencies
+are installed with pmem; model assets are downloaded only after you explicitly
+run `pmem semantic setup`.
 
 Requires Node.js ≥ 18. `better-sqlite3` is compiled during install.
 
 Run `pmem doctor` anytime to check the health of your project memory setup.
 
-### Semantic Runtime — guided local setup when needed
+### Local Semantic Retrieval — guided setup when needed
 
-Start from the same `pmem` CLI. The semantic capability is part of the Runtime
-contract, while its native inference dependencies remain a separately shipped
-local component so the base install stays small:
+The local inference implementation is included in `pmem-ai`. Setup asks before
+preparing the pinned model, keeps its verified cache shared across projects,
+and builds the current project's derived vector index:
 
 ```bash
 pmem semantic setup
 ```
 
-`pmem semantic setup` asks before preparing the pinned local model and keeps the
-verified cache shared across projects. If the companion is not installed, the
-command reports the exact compatible install command; then install it and rerun
-setup:
+Setup and index construction are explicit steps:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.3
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
 
-`pmem-ai-semantic` is not a second CLI and is never required for deterministic
-`ask`, `context`, or `recall`. It is the local execution component behind the
-Runtime semantic capability. Keeping it separate avoids forcing the
-Transformers/ONNX/native dependency chain onto every base installation while
-preserving one user-facing `pmem` entry point. Both packages use the same
-release version.
+The model remains optional: ordinary install, `init`, `rebuild`, `ask`, and
+`context` do not download model assets. If the model is not set up or its index
+is unavailable, retrieval continues through the deterministic engine.
 
 ### From Source
 
@@ -212,10 +206,9 @@ pmem capture --auto
 
 Use `pmem sync -s "<what changed>" -n "<next step>"` when you already know the final summary. Use `capture --auto` when pmem should derive the trace from the working tree. The lower-level `status → mark-dirty → update` flow remains available for review-heavy maintenance.
 
-This base journey remains available even when the semantic companion, model
-cache, or project semantic index is absent. Semantic failures degrade to the
-deterministic retrieval engine instead of taking `ask`, `context`, or `recall`
-offline.
+This journey remains available when the model cache or project semantic index
+is absent. Semantic failures degrade to deterministic retrieval instead of
+taking `ask`, `context`, or `recall` offline.
 
 For a richer guided setup:
 
@@ -354,24 +347,14 @@ depends_on: [decision.sqlite_runtime]
 
 ### Semantic Runtime setup (v1.3.x, macOS and Windows)
 
-Semantic retrieval is a standard Runtime capability with a separately shipped
-local inference component. Normal install, `init`, `rebuild`, `ask`, and
-`context` never download a model. The recommended user path starts with the
-base CLI and then enters setup when semantic retrieval is useful:
+Semantic retrieval and its local inference implementation are included in
+`pmem-ai`. Normal install, `init`, `rebuild`, `ask`, and `context` never
+download model assets. Run setup when semantic retrieval is useful:
 
 ```bash
 pmem semantic setup                 # asks before preparing the shared model
 pmem semantic status
 pmem ask "where is login throttling handled?" --explain
-```
-
-If setup reports a missing companion, install the exact compatible runtime and
-rerun setup. The companion is an implementation package, not another CLI:
-
-```bash
-npm install -g pmem-ai-semantic@1.3.3
-pmem semantic setup --yes
-pmem semantic rebuild
 ```
 
 Operators can control the two phases independently when needed:
@@ -381,7 +364,7 @@ pmem semantic setup                 # prepare/reuse the verified global model
 pmem semantic rebuild               # build this project's derived index
 ```
 
-It checks the companion, asks before downloading the pinned model, reuses the one global verified cache when present, and writes only rebuildable project vectors. `setup` prepares and enables the model; `rebuild` builds the current project's derived index. `enable` remains available as a guided one-shot setup plus index operation.
+It checks the bundled runtime, asks before downloading the pinned model, reuses the one global verified cache when present, and writes only rebuildable project vectors. `setup` prepares and enables the model; `rebuild` builds the current project's derived index. `enable` remains available as a guided one-shot setup plus index operation.
 
 The storage boundary is intentional:
 
@@ -396,9 +379,9 @@ data and can always be rebuilt from canonical Markdown cards plus the shared
 model.
 
 Use `pmem semantic setup --source huggingface` to select Hugging Face instead.
-For SDK installations, install `pmem-ai-semantic@1.3.3` in the same project as
-`pmem-ai`. If the companion is absent or incompatible, setup/rebuild and SDK
-semantic queries report the exact install command while deterministic recall remains available.
+SDK installations receive the same bundled semantic runtime through the
+`pmem-ai` package. If the model is absent or invalid, deterministic recall
+remains available.
 The pinned model is stored once for all projects at
 `~/.pmem-global/models/Xenova/multilingual-e5-small/<revision>`; each project
 keeps only its semantic configuration and rebuildable SQLite vectors. Running
@@ -831,19 +814,18 @@ pmem rebuild
 
 Fresh v1.2 projects create this index during `pmem init`. The manual command is primarily a recovery path for deleted indexes and an upgrade path for older projects. If the project has no memory cards yet, add a module, decision, or task card first.
 
-### Semantic Companion Is Missing
+### Semantic Runtime Cannot Load
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.3
+npm install -g pmem-ai@latest
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
 
-Start with `pmem semantic setup`; when the local component is absent, the
-command reports this install command. The base CLI intentionally stays
-lightweight. A missing companion never breaks deterministic `ask`, `context`,
-or `recall`; only semantic setup/rebuild is unavailable until the component is
-installed.
+The inference runtime is bundled with `pmem-ai`; reinstall the package if its
+Transformers dependency cannot load. Model setup remains explicit, and a
+semantic runtime failure falls back to deterministic `ask`, `context`, and
+`recall`.
 
 ### `pmem ask` Returns No Matches
 

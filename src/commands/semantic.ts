@@ -11,8 +11,6 @@ import {
   DEFAULT_SEMANTIC_DTYPE,
   DEFAULT_SEMANTIC_MODEL,
   DEFAULT_SEMANTIC_MODEL_REVISION,
-  SEMANTIC_COMPANION_PACKAGE,
-  SEMANTIC_COMPANION_VERSION,
 } from '../core/semantic/transformers';
 import {
   defaultSemanticCachePath,
@@ -233,22 +231,23 @@ export async function semanticCommand(
     } catch (error: any) {
       if (format === 'json') {
         const message = error?.message ?? String(error);
-        const companionMissing = /companion|ERR_MODULE_NOT_FOUND|not installed/i.test(message);
+        const transformersMissing = error?.code === 'PMEM_TRANSFORMERS_MISSING'
+          || /PMEM_TRANSFORMERS_MISSING|ERR_MODULE_NOT_FOUND/i.test(message);
         deps.log(JSON.stringify({
           ...downloadInfo,
           status: 'setup_failed',
           manifest_changed: false,
           index_ready: false,
           error: message,
-          ...(companionMissing
-            ? { install_command: `npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}` }
+          ...(transformersMissing
+            ? { install_command: 'npm install -g pmem-ai@latest' }
             : {}),
-          recovery_guidance: companionMissing
-            ? `Install the compatible semantic companion, then rerun pmem semantic ${action} --yes --format json.`
+          recovery_guidance: transformersMissing
+            ? `Repair the pmem-ai installation, then rerun pmem semantic ${action} --yes --format json.`
             : `Resolve the setup error, then rerun pmem semantic ${action} --yes --format json.`,
         }, null, 2));
       }
-      // Compact mode deliberately preserves the companion/downloader's original
+      // Compact mode deliberately preserves the runtime/downloader's original
       // actionable error. The manifest has not been touched at this point.
       throw error;
     }

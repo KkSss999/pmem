@@ -21,10 +21,7 @@ import {
 import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
 import {
   createOfflineTransformersProvider,
-  assertSemanticRuntimeAvailable,
-  loadSemanticCompanion,
-  SEMANTIC_COMPANION_PACKAGE,
-  SEMANTIC_COMPANION_VERSION,
+  assertTransformersRuntimeAvailable,
 } from '../core/semantic/transformers';
 import { semanticCacheIdentityMatches, type SemanticModelReceipt } from '../core/semantic/cache';
 
@@ -118,11 +115,11 @@ describe('pmem semantic command', () => {
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
 
-  it('enable companion/model preparation failure does not half-enable the manifest or start indexing', async () => {
+  it('enable model preparation failure does not half-enable the manifest or start indexing', async () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     let rebuilt = false;
-    const setupError = new Error('Semantic runtime companion is not installed');
+    const setupError = new Error('The local Transformers runtime is unavailable');
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
       platform: 'darwin',
@@ -141,11 +138,13 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = `Semantic runtime companion is not installed. npm install -g pmem-ai-semantic@${SEMANTIC_COMPANION_VERSION}`;
+    const actionable = 'The local Transformers runtime is unavailable. '
+      + 'Reinstall pmem with npm install -g pmem-ai@latest, then retry.';
+    const setupError = Object.assign(new Error(actionable), { code: 'PMEM_TRANSFORMERS_MISSING' });
 
     await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
       platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async () => { throw new Error(actionable); } }),
+      operations: fakeOperations({ prepareModel: async () => { throw setupError; } }),
       log: line => output.push(line),
     }), new RegExp(actionable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
@@ -155,12 +154,12 @@ describe('pmem semantic command', () => {
     assert.strictEqual(result.manifest_changed, false);
     assert.strictEqual(result.index_ready, false);
     assert.strictEqual(result.error, actionable);
-    assert.strictEqual(result.install_command, `npm install -g pmem-ai-semantic@${SEMANTIC_COMPANION_VERSION}`);
-    assert.match(result.recovery_guidance, /Install.*companion.*rerun/i);
+    assert.strictEqual(result.install_command, 'npm install -g pmem-ai@latest');
+    assert.match(result.recovery_guidance, /Repair.*pmem-ai.*rerun/i);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
   });
 
-  it('enable rejects non-macOS before companion/model preparation', async () => {
+  it('enable rejects non-macOS before model preparation', async () => {
     const { cwd } = project();
     let prepared = false;
     await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
@@ -544,25 +543,19 @@ describe('pmem semantic command', () => {
     assert.doesNotMatch(source, /require\(specifier\)/);
   });
 
-  it('gives an actionable error when the opt-in semantic companion is absent', async () => {
+  it('gives an actionable error when the bundled Transformers runtime cannot load', async () => {
     await assert.rejects(
-      loadSemanticCompanion(async () => {
+      assertTransformersRuntimeAvailable(async specifier => {
+        assert.strictEqual(specifier, '@huggingface/transformers');
         const error = new Error('not found') as NodeJS.ErrnoException;
         error.code = 'ERR_MODULE_NOT_FOUND';
         throw error;
       }),
-      new RegExp(`npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`),
+      /Reinstall pmem with npm install -g pmem-ai@latest/,
     );
   });
 
-  it('rejects an incompatible semantic companion API', async () => {
-    await assert.rejects(
-      loadSemanticCompanion(async () => ({ apiVersion: 2 })),
-      new RegExp(`incompatible.*${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`, 'i'),
-    );
-  });
-
-  it('checks for the companion before semantic setup downloads model files', async () => {
+  it('checks the bundled Transformers runtime before semantic setup downloads model files', async () => {
     const operations = createDefaultSemanticOperations(async () => { throw new Error('missing'); });
     await assert.rejects(
       operations.prepareModel({
@@ -573,7 +566,7 @@ describe('pmem semantic command', () => {
         source: 'modelscope',
         cachePath: '/tmp/shared-model',
       }),
-      new RegExp(`Semantic runtime companion is not installed.*npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}`),
+      /The local Transformers runtime is unavailable/,
     );
   });
 
@@ -614,14 +607,13 @@ describe('pmem semantic command', () => {
 
   it('loads the absolute model directory offline and never enables remote models', async () => {
     const calls: any[] = [];
+    const extractionCalls: any[] = [];
     const env = { allowRemoteModels: true, allowLocalModels: false, cacheDir: 'before' };
-    const extractor = Object.assign(async () => ({ tolist: () => [[1, 0]] }), { dispose: async () => {} });
-    const companion = require('../../packages/semantic-runtime') as {
-      apiVersion: number;
-      createOfflineTransformersProvider(spec: SemanticModelSpec, importer: (specifier: string) => Promise<any>): Promise<any>;
-    };
-    assert.strictEqual(companion.apiVersion, 1);
-    const provider = await companion.createOfflineTransformersProvider({
+    const extractor = Object.assign(async (input: unknown, options: unknown) => {
+      extractionCalls.push({ input, options });
+      return { tolist: () => [[1, 0]] };
+    }, { dispose: async () => {} });
+    const provider = await createOfflineTransformersProvider({
       model: SEMANTIC_MODEL,
       revision: SEMANTIC_MODEL_REVISION,
       dtype: SEMANTIC_DTYPE,
@@ -631,69 +623,45 @@ describe('pmem semantic command', () => {
     }, async (specifier: string) => {
       assert.strictEqual(specifier, '@huggingface/transformers');
       return {
-      env,
-      pipeline: async (...args: any[]) => {
-        calls.push({ args, remote: env.allowRemoteModels, local: env.allowLocalModels });
-        return extractor;
-      },
+        env,
+        pipeline: async (...args: any[]) => {
+          calls.push({ args, remote: env.allowRemoteModels, local: env.allowLocalModels });
+          return extractor;
+        },
       };
     });
+    assert.deepStrictEqual(await provider.embedPassages(['memory text']), [[1, 0]]);
+    assert.deepStrictEqual(await provider.embedQuery('question text'), [1, 0]);
     assert.strictEqual(calls[0].args[1], '/tmp/shared-model');
     assert.strictEqual(calls[0].args[2].local_files_only, true);
     assert.strictEqual(calls[0].remote, false);
     assert.strictEqual(calls[0].local, true);
+    assert.deepStrictEqual(extractionCalls[0], {
+      input: ['passage: memory text'],
+      options: { pooling: 'mean', normalize: true },
+    });
+    assert.deepStrictEqual(extractionCalls[1], {
+      input: 'query: question text',
+      options: { pooling: 'mean', normalize: true },
+    });
     assert.strictEqual(env.allowRemoteModels, true);
     await provider.dispose();
   });
 
-  it('keeps the companion package metadata, dependency, and remediation version aligned', () => {
-    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../packages/semantic-runtime/package.json'), 'utf8')) as any;
-    assert.strictEqual(packageJson.version, SEMANTIC_COMPANION_VERSION);
-    assert.strictEqual(packageJson.dependencies['@huggingface/transformers'], '4.2.0');
-    assert.strictEqual(packageJson.exports, './index.js');
+  it('keeps the local inference runtime dependency inside the base package', () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')) as any;
+    assert.strictEqual(packageJson.dependencies['@huggingface/transformers'], '4.3.0');
+    assert.strictEqual(fs.existsSync(path.join(__dirname, '../../packages/semantic-runtime')), false);
   });
 
-  it('probes the companion Transformers runtime before a cached setup is accepted', async () => {
+  it('probes the bundled Transformers runtime before a cached setup is accepted', async () => {
     let probed = false;
-    await assertSemanticRuntimeAvailable(async specifier => {
-      assert.strictEqual(specifier, SEMANTIC_COMPANION_PACKAGE);
-      return {
-        apiVersion: 1,
-        assertTransformersRuntimeAvailable: async () => { probed = true; },
-        createOfflineTransformersProvider: async () => ({
-          modelId: SEMANTIC_MODEL,
-          revision: SEMANTIC_MODEL_REVISION,
-          dimension: SEMANTIC_DIMENSION,
-          embedPassages: async () => [],
-          embedQuery: async () => [],
-          dispose: async () => {},
-        }),
-      };
+    await assertTransformersRuntimeAvailable(async specifier => {
+      assert.strictEqual(specifier, '@huggingface/transformers');
+      probed = true;
+      return { env: {} };
     });
     assert.strictEqual(probed, true);
-  });
-
-  it('loads a compatible injected companion without resolving a root dependency', async () => {
-    const expected = { modelId: SEMANTIC_MODEL, revision: SEMANTIC_MODEL_REVISION, dimension: 384 };
-    const provider = await createOfflineTransformersProvider({
-      model: SEMANTIC_MODEL,
-      revision: SEMANTIC_MODEL_REVISION,
-      dtype: SEMANTIC_DTYPE,
-      dimension: SEMANTIC_DIMENSION,
-      cachePath: '/tmp/shared-model',
-    }, async specifier => {
-      assert.strictEqual(specifier, SEMANTIC_COMPANION_PACKAGE);
-      return {
-        apiVersion: 1,
-        createOfflineTransformersProvider: async () => ({
-          ...expected,
-          embedPassages: async () => [],
-          embedQuery: async () => [],
-          dispose: async () => {},
-        }),
-      };
-    });
-    assert.strictEqual(provider.modelId, expected.modelId);
   });
 
   it('rejects a forged receipt and requires the pinned ModelScope snapshot coordinates', async () => {

@@ -33,14 +33,13 @@ pmem rebuild
 
 Fresh v1.2 projects create the first index during `pmem init`; use this command to recover a deleted index or upgrade an older project.
 
-## Semantic companion is missing
+## Bundled semantic runtime cannot load
 
-The base CLI remains healthy; only optional semantic commands need the
-companion. On macOS, install the matching release and enable it for the current
-project:
+The local inference runtime ships inside `pmem-ai`. Reinstall the matching
+package, then enable semantic retrieval for the current project:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.3
+npm install -g pmem-ai@latest
 pmem semantic enable
 pmem semantic status
 ```

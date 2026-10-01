@@ -1,6 +1,6 @@
 {
   "name": "pmem-ai",
-  "version": "1.3.3",
+  "version": "1.3.5",
   "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
   "main": "dist/sdk/index.js",
   "exports": {
@@ -95,6 +95,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@huggingface/transformers": "4.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.10.0",
     "commander": "^14.0.3",

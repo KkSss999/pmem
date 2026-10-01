@@ -3,12 +3,12 @@
 ## Step 1: Install pmem globally
 
 ```bash
-npm install -g pmem-ai@1.2.1
+npm install -g pmem-ai@latest
 pmem --version
 ```
 
-This is the complete model-free base installation. Do not install the semantic
-companion unless the user wants local semantic recall.
+This includes the local semantic inference runtime. The model remains optional
+and is downloaded only after `pmem semantic setup` or `pmem semantic enable`.
 
 ## Step 2: Install agent skills
 
@@ -113,14 +113,12 @@ pmem recall --format compact --budget 2000
 pmem verify
 ```
 
-Optional semantic enhancement on macOS is a separate, explicit journey:
+Optional semantic enhancement on macOS and Windows is an explicit setup step:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.3
 pmem semantic enable
 ```
 
-The companion is a runtime used by the existing `pmem` CLI, not a second CLI.
 The verified model is shared from `~/.pmem-global/models`; this project stores
 only semantic configuration and rebuildable vectors in `.pmem/pmem.db`.
 

@@ -11,8 +11,8 @@ allowed-tools: Bash(pmem:*)
 ## Quick start
 
 ```bash
-# Install the complete model-free base CLI
-npm install -g pmem-ai@1.3.3
+# Install the complete pmem CLI and local semantic runtime
+npm install -g pmem-ai@latest
 
 # First time in a project: init also builds the first local index
 pmem init my-project
@@ -27,12 +27,11 @@ pmem sync -s "implemented login throttling" -n "add integration tests"
 pmem verify
 ```
 
-The base `pmem-ai` package is the default and complete product experience. It
-does not install or download Transformers, ONNX Runtime, `sharp`, or a semantic
-model. Lead users through the base CLI first; when semantic retrieval is useful,
-start with `pmem semantic setup`. If the local companion is missing, the CLI
-reports the exact compatible install command. Never make the companion a
-prerequisite for deterministic `ask`, `context`, or `recall`.
+The `pmem-ai` package includes the complete product and local semantic inference
+runtime, including Transformers.js and its runtime dependencies. It does not
+download model assets during installation. When semantic retrieval is useful,
+start with `pmem semantic setup`. The shared model cache remains optional;
+deterministic `ask`, `context`, and `recall` remain available without it.
 
 ## Core Workflow
 
@@ -52,14 +51,13 @@ review-heavy maintenance.
 
 ## Installation Modes
 
-| Mode | Install | User outcome |
-|---|---|---|
-| Base CLI entry point | `npm install -g pmem-ai@1.3.3` | Complete deterministic Markdown, SQLite/FTS, graph recall, health, MCP, and SDK |
-| Semantic Runtime component | Installed when setup reports it is missing: `npm install -g pmem-ai-semantic@1.3.3` | Local multilingual embeddings and contextual reranking; not a second CLI |
+| Install | User outcome |
+|---|---|
+| `npm install -g pmem-ai@latest` | Markdown, SQLite/FTS, graph and semantic retrieval, health, MCP, and SDK |
 
-`pmem-ai-semantic` is a separately distributed Runtime component, not another
-CLI. If the component, shared model, or semantic index is unavailable, `ask`,
-`context`, and `recall` must remain usable through deterministic retrieval.
+The local model and per-project semantic index are prepared only through
+`pmem semantic setup` / `pmem semantic rebuild`. If either is unavailable,
+`ask`, `context`, and `recall` remain usable through deterministic retrieval.
 
 ## Commands
 
@@ -102,13 +100,12 @@ pmem semantic setup
 pmem semantic status
 ```
 
-The base CLI is the user-facing entry point. `semantic setup` asks before
+The bundled runtime is used by the existing CLI. `semantic setup` asks before
 preparing or reusing the one verified global model cache under
-`~/.pmem-global/models`. If setup reports a missing companion, install the exact
-compatible component and rerun:
+`~/.pmem-global/models`; package installation itself never downloads model
+assets:
 
 ```bash
-npm install -g pmem-ai-semantic@1.3.3
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
@@ -122,7 +119,7 @@ When guiding a user:
 
 1. Start with the base CLI and confirm `pmem init`, `context`, and `ask` work.
 2. When semantic retrieval is useful, start with `pmem semantic setup`.
-3. If the companion is missing, show the CLI's exact install command, then rerun
+3. If Transformers.js cannot load, repair the `pmem-ai` installation; then rerun
    setup and `pmem semantic rebuild`.
 4. Use `pmem semantic status` for readiness and `pmem semantic clear` to disable
    the project index without deleting the global model.

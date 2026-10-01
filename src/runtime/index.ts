@@ -338,8 +338,8 @@ export class Pmem implements PmemInstance {
         const semantic = await this.legacy.refreshSemanticIndex('incremental');
         return { ...committed, semantic };
       } catch (error: any) {
-        // Semantic indexing is a derived perception channel. A missing model,
-        // companion, or transient inference failure must never roll back the
+        // Semantic indexing is a derived perception channel. A missing model
+        // cache or transient inference failure must never roll back the
         // canonical capture that already committed.
         return { ...committed, semantic: { status: 'degraded', reason: error?.message ?? String(error) } };
       }

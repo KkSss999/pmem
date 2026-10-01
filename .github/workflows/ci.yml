@@ -46,7 +46,7 @@ jobs:
       - run: npm run test:e2e:v075-next-dedup
 
   pack:
-    name: Pack and audit release packages
+    name: Pack and audit release package
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -59,43 +59,18 @@ jobs:
       - run: npm run build
       - run: npm run test:release-registry
       - run: npm run test:e2e:semantic-runtime
-      - name: Audit root production dependencies
+      - name: Audit production dependencies
         run: |
-          set +e
-          npm audit --omit=dev --json > root-audit.json
-          ROOT_AUDIT_STATUS=$?
-          set -e
-          if [ "$ROOT_AUDIT_STATUS" -ne 0 ] && [ "$ROOT_AUDIT_STATUS" -ne 1 ]; then
-            echo "Root production audit exited unexpectedly with status $ROOT_AUDIT_STATUS" >&2
-            exit "$ROOT_AUDIT_STATUS"
-          fi
-          node <<'NODE'
-          const report = require('./root-audit.json');
-          if (report.error) {
-            throw new Error(`Root production audit failed: ${report.error.summary ?? report.error.message}`);
-          }
-          const counts = report.metadata?.vulnerabilities;
-          if (!counts) throw new Error('Root production audit did not return vulnerability metadata');
-          if (counts.high !== 0 || counts.critical !== 0) {
-            throw new Error(`Root production audit has ${counts.high} high and ${counts.critical} critical vulnerabilities`);
-          }
-          if (counts.low || counts.moderate) {
-            console.log(`::warning title=Root production audit::${counts.low} low and ${counts.moderate} moderate vulnerabilities remain; high/critical gate passed.`);
-          }
-          console.log('Root production audit gate passed: 0 high, 0 critical.');
-          NODE
-      - name: Pack, install, and smoke test both packages
+          npm audit --registry=https://registry.npmjs.org/ --omit=dev --audit-level=high
+      - name: Pack and install the unified package
         run: |
           set -euo pipefail
           PACK_DIR="$RUNNER_TEMP/pmem-packages"
           ROOT_INSTALL_DIR="$RUNNER_TEMP/pmem-root-install"
-          COMPANION_AUDIT_DIR="$RUNNER_TEMP/pmem-companion-audit"
-          mkdir -p "$PACK_DIR" "$ROOT_INSTALL_DIR" "$COMPANION_AUDIT_DIR"
+          mkdir -p "$PACK_DIR" "$ROOT_INSTALL_DIR"
 
           npm pack --dry-run
-          npm pack ./packages/semantic-runtime --dry-run
           ROOT_TARBALL="$PACK_DIR/$(npm pack --silent --pack-destination "$PACK_DIR")"
-          COMPANION_TARBALL="$PACK_DIR/$(npm pack ./packages/semantic-runtime --silent --pack-destination "$PACK_DIR")"
 
           tar -tzf "$ROOT_TARBALL" > root-tarball-contents.txt
           ! grep -qE '(^|/)src/' root-tarball-contents.txt || { echo "FAIL: root tarball contains src/"; exit 1; }
@@ -103,102 +78,27 @@ jobs:
           ! grep -qE '(^|/)temp/' root-tarball-contents.txt || { echo "FAIL: root tarball contains temp/"; exit 1; }
           ! grep -qE '(^|/)node_modules/' root-tarball-contents.txt || { echo "FAIL: root tarball contains node_modules/"; exit 1; }
           grep -q 'dist/index\.js' root-tarball-contents.txt || { echo "FAIL: root tarball missing dist/index.js"; exit 1; }
+          grep -q 'dist/core/semantic/transformers\.js' root-tarball-contents.txt || { echo "FAIL: root tarball missing bundled semantic runtime"; exit 1; }
           grep -q 'README\.md' root-tarball-contents.txt || { echo "FAIL: root tarball missing README.md"; exit 1; }
-
-          tar -tzf "$COMPANION_TARBALL" > companion-tarball-contents.txt
-          grep -q 'package/index\.js' companion-tarball-contents.txt || { echo "FAIL: companion tarball missing index.js"; exit 1; }
-          grep -q 'package/README\.md' companion-tarball-contents.txt || { echo "FAIL: companion tarball missing README.md"; exit 1; }
-          ! grep -qE '(^|/)node_modules/' companion-tarball-contents.txt || { echo "FAIL: companion tarball contains node_modules/"; exit 1; }
 
           npm install --prefix "$ROOT_INSTALL_DIR" "$ROOT_TARBALL"
           ROOT_INSTALL_DIR="$ROOT_INSTALL_DIR" node <<'NODE'
           const { createRequire } = require('node:module');
           const path = require('node:path');
           const requireFromInstall = createRequire(path.join(process.env.ROOT_INSTALL_DIR, 'package.json'));
-          for (const dependency of ['@huggingface/transformers', 'onnxruntime-node', 'sharp', 'adm-zip']) {
-            try {
-              requireFromInstall.resolve(dependency);
-              throw new Error(`Root tarball unexpectedly installs ${dependency}`);
-            } catch (error) {
-              if (!String(error?.message).includes('Cannot find module')) throw error;
-            }
+          const packageRoot = path.dirname(requireFromInstall.resolve('pmem-ai/package.json'));
+          requireFromInstall.resolve('@huggingface/transformers');
+          const runtime = require(path.join(packageRoot, 'dist/core/semantic/transformers.js'));
+          if (typeof runtime.createOfflineTransformersProvider !== 'function') {
+            throw new Error('Installed pmem-ai package is missing the semantic provider');
           }
-          console.log('Root tarball excludes the isolated semantic dependency chain.');
-          NODE
-
-          npm install --prefix "$ROOT_INSTALL_DIR" "$COMPANION_TARBALL"
-          ROOT_INSTALL_DIR="$ROOT_INSTALL_DIR" node <<'NODE'
-          const { createRequire } = require('node:module');
-          const path = require('node:path');
-          const requireFromInstall = createRequire(path.join(process.env.ROOT_INSTALL_DIR, 'package.json'));
-          const companion = requireFromInstall('pmem-ai-semantic');
-          if (companion.apiVersion !== 1) throw new Error(`Expected companion API v1, received ${companion.apiVersion}`);
-          if (typeof companion.createOfflineTransformersProvider !== 'function') {
-            throw new Error('Companion is missing createOfflineTransformersProvider');
-          }
-          console.log('Companion tarball API v1 smoke test passed.');
-          NODE
-
-          cd "$COMPANION_AUDIT_DIR"
-          npm init -y >/dev/null
-          npm install --ignore-scripts --package-lock-only "$COMPANION_TARBALL"
-          set +e
-          npm audit --omit=dev --json > companion-audit.json
-          COMPANION_AUDIT_STATUS=$?
-          set -e
-          if [ "$COMPANION_AUDIT_STATUS" -ne 0 ] && [ "$COMPANION_AUDIT_STATUS" -ne 1 ]; then
-            echo "Companion production audit exited unexpectedly with status $COMPANION_AUDIT_STATUS" >&2
-            exit "$COMPANION_AUDIT_STATUS"
-          fi
-          node <<'NODE'
-          const report = require('./companion-audit.json');
-          if (report.error) {
-            throw new Error(`Companion production audit failed: ${report.error.summary ?? report.error.message}`);
-          }
-          const counts = report.metadata?.vulnerabilities;
-          if (!counts) throw new Error('Companion production audit did not return vulnerability metadata');
-          const acceptedPackages = new Set([
-            'pmem-ai-semantic',
-            '@huggingface/transformers',
-            'onnxruntime-node',
-            'adm-zip',
-            'sharp',
-          ]);
-          const acceptedAdvisories = new Set([1123686, 1124066]);
-          const unexpectedPackages = Object.keys(report.vulnerabilities ?? {})
-            .filter(name => !acceptedPackages.has(name));
-          const observedAdvisories = Object.values(report.vulnerabilities ?? {})
-            .flatMap(vulnerability => vulnerability.via ?? [])
-            .filter(via => typeof via === 'object')
-            .map(via => via.source);
-          const unexpectedAdvisories = observedAdvisories
-            .filter(source => !acceptedAdvisories.has(source));
-          const nowFixable = Object.entries(report.vulnerabilities ?? {})
-            .filter(([, vulnerability]) => Boolean(vulnerability.fixAvailable))
-            .map(([name]) => name);
-          if (
-            counts.critical !== 0 ||
-            counts.high > 5 ||
-            unexpectedPackages.length ||
-            unexpectedAdvisories.length ||
-            nowFixable.length
-          ) {
-            throw new Error(
-              `Companion audit exceeded the accepted upstream baseline: ` +
-              `${counts.high} high, ${counts.critical} critical; ` +
-              `unexpected packages=${unexpectedPackages.join(',') || 'none'}; ` +
-              `unexpected advisories=${unexpectedAdvisories.join(',') || 'none'}; ` +
-              `fixes now available for=${nowFixable.join(',') || 'none'}`,
-            );
-          }
-          if (counts.high > 0) {
-            console.log(
-              `::warning title=Accepted isolated companion risk::${counts.high} high vulnerabilities remain in the opt-in ` +
-              `Transformers/ONNX/sharp chain (advisories 1123686 and 1124066). Any new advisory or critical finding fails this gate.`,
-            );
-          } else {
-            console.log('Companion upstream audit baseline is now clear; remove the temporary exception gate.');
-          }
+          (async () => {
+            await runtime.assertTransformersRuntimeAvailable();
+            console.log('Installed pmem-ai package resolves its bundled Transformers runtime.');
+          })().catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
           NODE
 
   publish:
@@ -221,50 +121,27 @@ jobs:
         run: |
           set -euo pipefail
           ROOT_VERSION="$(node -p "require('./package.json').version")"
-          COMPANION_VERSION="$(node -p "require('./packages/semantic-runtime/package.json').version")"
-          if [ "$ROOT_VERSION" != "$COMPANION_VERSION" ]; then
-            echo "Root ($ROOT_VERSION) and companion ($COMPANION_VERSION) versions must match" >&2
-            exit 1
-          fi
-
-          for spec in "root:pmem-ai:$ROOT_VERSION" "companion:pmem-ai-semantic:$COMPANION_VERSION"; do
-            IFS=: read -r output_name package_name package_version <<< "$spec"
-            registry_state="$(node scripts/npm-release-state.js "$package_name" "$package_version")"
-            echo "${output_name}_state=$registry_state" >> "$GITHUB_OUTPUT"
-            case "$registry_state" in
-              public)
-                echo "${output_name}_changed=false" >> "$GITHUB_OUTPUT"
-                echo "$package_name@$package_version is publicly available"
-                ;;
-              accepted_pending)
-                echo "${output_name}_changed=false" >> "$GITHUB_OUTPUT"
-                echo "$package_name@$package_version was accepted by npm and is awaiting public replication"
-                ;;
-              missing)
-                echo "${output_name}_changed=true" >> "$GITHUB_OUTPUT"
-                echo "$package_name@$package_version is not published yet"
-                ;;
-              *)
-                echo "Unknown registry state for $package_name@$package_version: $registry_state" >&2
-                exit 2
-                ;;
-            esac
-          done
+          registry_state="$(node scripts/npm-release-state.js pmem-ai "$ROOT_VERSION")"
+          echo "root_state=$registry_state" >> "$GITHUB_OUTPUT"
+          case "$registry_state" in
+            public)
+              echo "root_changed=false" >> "$GITHUB_OUTPUT"
+              echo "pmem-ai@$ROOT_VERSION is publicly available"
+              ;;
+            accepted_pending)
+              echo "root_changed=false" >> "$GITHUB_OUTPUT"
+              echo "pmem-ai@$ROOT_VERSION was accepted by npm and is awaiting public replication"
+              ;;
+            missing)
+              echo "root_changed=true" >> "$GITHUB_OUTPUT"
+              echo "pmem-ai@$ROOT_VERSION is not published yet"
+              ;;
+            *)
+              echo "Unknown registry state for pmem-ai@$ROOT_VERSION: $registry_state" >&2
+              exit 2
+              ;;
+          esac
           echo "version=$ROOT_VERSION" >> "$GITHUB_OUTPUT"
-      - name: Publish semantic companion first
-        if: steps.version-check.outputs.companion_changed == 'true'
-        working-directory: packages/semantic-runtime
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Confirm semantic companion is visible in registry
-        env:
-          NPM_VISIBILITY_ATTEMPTS: 90
-          NPM_VISIBILITY_INTERVAL_SECONDS: 10
-        run: |
-          bash scripts/wait-for-npm-package.sh \
-            pmem-ai-semantic \
-            "${{ steps.version-check.outputs.version }}"
       - name: Publish root package
         if: steps.version-check.outputs.root_changed == 'true'
         run: npm publish --access public

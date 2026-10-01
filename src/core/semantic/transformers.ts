@@ -1,12 +1,12 @@
+import { createRequire } from 'node:module';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { EmbeddingProvider } from './types';
-import packageJson from '../../../package.json';
 
 export const DEFAULT_SEMANTIC_MODEL = 'Xenova/multilingual-e5-small';
 export const DEFAULT_SEMANTIC_MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac3899aa1fa78';
 export const DEFAULT_SEMANTIC_DTYPE = 'uint8' as const;
 export const DEFAULT_SEMANTIC_DIMENSION = 384;
-export const SEMANTIC_COMPANION_PACKAGE = 'pmem-ai-semantic';
-export const SEMANTIC_COMPANION_VERSION = packageJson.version;
 
 export interface TransformersModelSpec {
   model: string;
@@ -21,13 +21,10 @@ export interface DisposableEmbeddingProvider extends EmbeddingProvider {
   dispose(): Promise<void>;
 }
 
-export interface SemanticCompanion {
-  apiVersion: 1;
-  assertTransformersRuntimeAvailable?: () => Promise<void>;
-  createOfflineTransformersProvider(spec: TransformersModelSpec): Promise<DisposableEmbeddingProvider>;
-}
+export type TransformersRuntimeLoader = (specifier: string) => Promise<unknown>;
 
-export type SemanticCompanionLoader = (specifier: string) => Promise<unknown>;
+const TRANSFORMERS_PACKAGE = '@huggingface/transformers';
+const packageRequire = createRequire(__filename);
 
 /** Preserve native import() in the CommonJS build for ESM-only Transformers.js. */
 export async function nativeDynamicImport(specifier: string): Promise<any> {
@@ -35,55 +32,95 @@ export async function nativeDynamicImport(specifier: string): Promise<any> {
   return importer(specifier);
 }
 
-function companionInstallError(cause?: unknown): Error {
+function transformersRuntimeError(cause: unknown): Error {
   const error = new Error(
-    `Semantic runtime companion is not installed. Install it explicitly with `
-    + `\`npm install -g ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}\` `
-    + `(global pmem CLI) or \`npm install ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}\` `
-    + `(project SDK), then retry.`,
-  );
-  if (cause !== undefined) (error as Error & { cause?: unknown }).cause = cause;
+    'The local Transformers runtime is unavailable. '
+    + 'Reinstall pmem with npm install -g pmem-ai@latest, then retry.',
+    { cause },
+  ) as Error & { code?: string };
+  error.code = 'PMEM_TRANSFORMERS_MISSING';
   return error;
 }
 
-export async function loadSemanticCompanion(
-  load: SemanticCompanionLoader = nativeDynamicImport,
-): Promise<SemanticCompanion> {
-  let loaded: any;
+async function loadTransformers(
+  load: TransformersRuntimeLoader = nativeDynamicImport,
+): Promise<any> {
+  let specifier = TRANSFORMERS_PACKAGE;
   try {
-    loaded = await load(SEMANTIC_COMPANION_PACKAGE);
+    if (load === nativeDynamicImport) {
+      specifier = pathToFileURL(packageRequire.resolve(TRANSFORMERS_PACKAGE)).href;
+    }
+    const loaded = await load(specifier) as any;
+    return loaded?.default ?? loaded;
   } catch (error) {
-    throw companionInstallError(error);
+    throw transformersRuntimeError(error);
   }
-  const companion = loaded?.default ?? loaded;
-  if (companion?.apiVersion !== 1 || typeof companion?.createOfflineTransformersProvider !== 'function') {
-    throw new Error(
-      `Installed ${SEMANTIC_COMPANION_PACKAGE} is incompatible with pmem-ai@${SEMANTIC_COMPANION_VERSION}. `
-      + `Install ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}.`,
-    );
-  }
-  return companion as SemanticCompanion;
 }
 
-/** Verify the companion's private Transformers dependency without loading a model. */
-export async function assertSemanticRuntimeAvailable(
-  load: SemanticCompanionLoader = nativeDynamicImport,
+async function withTransformersEnvironment<T>(
+  transformers: any,
+  spec: TransformersModelSpec,
+  allowRemoteModels: boolean,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = {
+    allowRemoteModels: transformers.env.allowRemoteModels,
+    allowLocalModels: transformers.env.allowLocalModels,
+    cacheDir: transformers.env.cacheDir,
+  };
+  transformers.env.allowRemoteModels = allowRemoteModels;
+  transformers.env.allowLocalModels = true;
+  transformers.env.cacheDir = spec.cachePath;
+  try {
+    return await operation();
+  } finally {
+    transformers.env.allowRemoteModels = previous.allowRemoteModels;
+    transformers.env.allowLocalModels = previous.allowLocalModels;
+    transformers.env.cacheDir = previous.cacheDir;
+  }
+}
+
+/** Import the bundled Transformers.js runtime without loading a model. */
+export async function assertTransformersRuntimeAvailable(
+  load: TransformersRuntimeLoader = nativeDynamicImport,
 ): Promise<void> {
-  const companion = await loadSemanticCompanion(load);
-  if (typeof companion.assertTransformersRuntimeAvailable !== 'function') {
-    throw new Error(
-      `Installed ${SEMANTIC_COMPANION_PACKAGE} is missing its Transformers runtime probe. `
-      + `Install ${SEMANTIC_COMPANION_PACKAGE}@${SEMANTIC_COMPANION_VERSION}.`,
-    );
-  }
-  await companion.assertTransformersRuntimeAvailable();
+  await loadTransformers(load);
 }
 
-/** Create an offline-only E5 provider through the explicitly installed companion. */
+/** Create an offline-only provider for the pinned local E5 model. */
 export async function createOfflineTransformersProvider(
   spec: TransformersModelSpec,
-  load: SemanticCompanionLoader = nativeDynamicImport,
+  load: TransformersRuntimeLoader = nativeDynamicImport,
 ): Promise<DisposableEmbeddingProvider> {
-  const companion = await loadSemanticCompanion(load);
-  return companion.createOfflineTransformersProvider(spec);
+  if (!spec.cachePath || !path.isAbsolute(spec.cachePath)) {
+    throw new Error(`Semantic model path must be absolute: ${spec.cachePath}`);
+  }
+  const transformers = await loadTransformers(load);
+  const extractor: any = await withTransformersEnvironment(transformers, spec, false, () =>
+    transformers.pipeline('feature-extraction', spec.cachePath, {
+      dtype: spec.dtype,
+      local_files_only: true,
+    }),
+  );
+  return {
+    modelId: spec.model,
+    revision: spec.revision,
+    dimension: spec.dimension,
+    async embedPassages(texts) {
+      const result: any = await withTransformersEnvironment(transformers, spec, false, () =>
+        extractor(texts.map(text => `passage: ${text}`), { pooling: 'mean', normalize: true }),
+      );
+      return result.tolist();
+    },
+    async embedQuery(text) {
+      const result: any = await withTransformersEnvironment(transformers, spec, false, () =>
+        extractor(`query: ${text}`, { pooling: 'mean', normalize: true }),
+      );
+      const values = result.tolist();
+      return Array.isArray(values[0]) ? values[0] : values;
+    },
+    async dispose() {
+      await extractor.dispose?.();
+    },
+  };
 }

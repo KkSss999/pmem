@@ -2,6 +2,13 @@
 
 All notable changes to pmem are documented here.
 
+## v1.3.5 — Unified Semantic Runtime (2026-10-01)
+
+### Changed
+
+- Merge local semantic inference into the `pmem-ai` package and stop publishing the separate `pmem-ai-semantic` companion. The base install now includes Transformers.js and its runtime dependency chain; the pinned model download and per-project vector index remain explicit setup steps.
+- Keep deterministic retrieval available when the model cache or semantic index is absent or unavailable.
+
 ## v1.3.3 — Memory Protocol Stabilization and Health (2026-08-03)
 
 ### Added
