@@ -720,3 +720,148 @@ test('L2 supersede replaces contradicted evidence without deleting the old L1', 
   assert.deepEqual(after.sourceIds, [current.source.id]);
   assert.ok(f.l1.getMemory(old.memory.id, personal));
 });
+
+test('a replacement judgment creates current L2 and supersedes the old one', async (t) => {
+  const f = fixture(t);
+  const old = await makeL1(f, 'jev-old', 'personal', [], personal, '我的 5K 最好成绩是 27:12。');
+  f.l2.recordChange({ l1Id: old.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'jev-l2-old', ownerSpaceId: 'personal' }, personal);
+  await f.l2.run(
+    'jev-l2-old',
+    {
+      generate: async () => ({
+        results: [
+          {
+            action: 'create',
+            title: '5K 个人最好成绩',
+            summary: '跑步记录',
+            body: '我的 5K 最好成绩是 27:12。',
+            l1Ids: [old.memory.id],
+          },
+        ],
+        uncoveredL1Ids: [],
+      }),
+    },
+    personal
+  );
+  const [before] = f.l2.listMemories({ ownerSpaceId: 'personal' }, personal);
+
+  const current = await makeL1(
+    f,
+    'jev-current',
+    'personal',
+    [],
+    personal,
+    '我的 5K 最好成绩更新为 25:50。'
+  );
+  f.l2.recordChange({ l1Id: current.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'jev-l2-current', ownerSpaceId: 'personal' }, personal);
+
+  const l2 = f.assembleL2(f.db, {
+    judge: {
+      model: 'test-jev',
+      judge: async (input) => {
+        assert.match(input.current.body, /27:12/);
+        assert.deepEqual(
+          input.changes.map((change) => change.id),
+          [current.memory.id]
+        );
+        return input.changes.map((change) => ({
+          changedL1Id: change.id,
+          type: 'replacement',
+          confidence: 0.98,
+        }));
+      },
+    },
+  });
+  await l2.run(
+    'jev-l2-current',
+    {
+      generate: async ({ changes, candidates }) => {
+        assert.equal(changes.length, 1);
+        assert.equal(candidates.length, 0);
+        return {
+          results: [
+            {
+              action: 'create',
+              title: '5K 个人最好成绩',
+              summary: '当前跑步记录',
+              body: '我的 5K 最好成绩是 25:50。',
+              l1Ids: [current.memory.id],
+            },
+          ],
+          uncoveredL1Ids: [],
+        };
+      },
+    },
+    personal
+  );
+
+  const memories = l2.listMemories({ ownerSpaceId: 'personal' }, personal);
+  assert.equal(memories.length, 1);
+  assert.equal(memories[0].body, '我的 5K 最好成绩是 25:50。');
+  assert.deepEqual(memories[0].l1Ids, [current.memory.id]);
+  const superseded = l2.getMemory(before.id, personal);
+  assert.equal(superseded.visible, false);
+  assert.equal(superseded.supersededBy, memories[0].id);
+  assert.equal(l2.getJob('jev-l2-current', personal).state, 'succeeded');
+});
+
+test('a failed change judgment fails the L2 job instead of silently merging', async (t) => {
+  const f = fixture(t);
+  const old = await makeL1(f, 'judge-fail-old', 'personal', [], personal, '旧事实。');
+  f.l2.recordChange({ l1Id: old.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'judge-fail-old-job', ownerSpaceId: 'personal' }, personal);
+  await f.l2.run(
+    'judge-fail-old-job',
+    {
+      generate: async () => ({
+        results: [
+          {
+            action: 'create',
+            title: '旧事实',
+            summary: '摘要',
+            body: '旧事实。',
+            l1Ids: [old.memory.id],
+          },
+        ],
+        uncoveredL1Ids: [],
+      }),
+    },
+    personal
+  );
+
+  const current = await makeL1(f, 'judge-fail-current', 'personal', [], personal, '新事实。');
+  f.l2.recordChange({ l1Id: current.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'judge-fail-current-job', ownerSpaceId: 'personal' }, personal);
+  let called = false;
+  const l2 = f.assembleL2(f.db, {
+    judge: {
+      model: 'test-jev',
+      judge: async () => {
+        throw new Error('decision unavailable');
+      },
+    },
+  });
+  await assert.rejects(
+    l2.run(
+      'judge-fail-current-job',
+      {
+        generate: async () => {
+          called = true;
+          throw new Error('must not run');
+        },
+      },
+      personal
+    ),
+    code('L2_DECISION_FAILED')
+  );
+  assert.equal(called, false);
+  assert.equal(l2.getJob('judge-fail-current-job', personal).state, 'unknown');
+  assert.equal(
+    l2
+      .listChanges({ ownerSpaceId: 'personal' }, personal)
+      .find((change) => change.l1Id === current.memory.id).state,
+    'failed'
+  );
+});

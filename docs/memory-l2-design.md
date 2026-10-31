@@ -15,7 +15,7 @@
 
 **不包含**
 
-- L2 合并、删除和历史版本
+- L2 合并、删除和完整历史浏览；首版只保留被替代 L2 的 `superseded_by` 指针
 - 人工编辑 L2
 - 累计热度或使用次数
 - Embedding 召回和 L1/L2 组合排序
@@ -49,12 +49,13 @@ Service 不直接访问 SQL，领域不依赖 ORM 行类型。L1 变更与受影
 | `summary`                  | 摘要                                   |
 | `body`                     | 灵活正文                               |
 | `content_hash`             | 标题、摘要、正文的指纹，用于提交前检查 |
+| `superseded_by`            | 被哪条当前 L2 替代；非空时不可召回     |
 | `needs_update`             | 是否需要重新生成                       |
-| `visible`                  | 无法确定安全范围时置为不可召回         |
+| `visible`                  | 无法确定安全范围或已被替代时不可召回   |
 | `generation_id`            | 当前内容的生成标识                     |
 | `created_at`、`updated_at` | 时间                                   |
 
-索引：`owner_space_id + updated_at`，`needs_update`，`visible`。
+索引：`owner_space_id + updated_at`，`needs_update`，`visible`，`superseded_by`。
 
 ### `memory_l2_space_links`
 
@@ -100,6 +101,34 @@ Service 不直接访问 SQL，领域不依赖 ORM 行类型。L1 变更与受影
 ### 检索索引
 
 `memory_l2_fts` 使用 FTS5 trigram 保存 `title`、`summary`、`body`，通过触发器在同一事务同步。状态检查、失败码和重建流程与 L1 索引一致：`L2_INDEX_MISSING`、`L2_INDEX_STALE`、`L2_INDEX_CORRUPT`、`L2_INDEX_UNAVAILABLE`。索引是派生数据，重建不修改 L2、L1 或来源。
+
+## 事实替代门控
+
+L2 更新前可以接入一个结构化的 `MemoryChangeJudge`。当前适配器是 TypeSafe Jev 1.14，通过 OpenRouter Decisions API 调用：
+
+```text
+POST https://openrouter.ai/api/alpha/decisions
+model: typesafe/jev-1.14
+```
+
+API key 由调用方提供，默认读取 `OPENROUTER_API_KEY`，也兼容 `TYPESAFE_API_KEY`；不写入仓库、数据库或日志。未配置 key 时不装配 judge，原有 L2 流程不变。
+
+对每个候选 L2，把它作为 `current`，把本批变化的 L1 作为 `changes`，逐个判断：
+
+```text
+replacement / addition / reinforcement / conflict / none
+```
+
+规则：
+
+- `replacement`：该候选 L2 不再作为模型上下文；模型从变化 L1 生成新的当前 L2，提交后旧 L2 写入 `superseded_by = 新 L2`、`visible = 0`，并刷新 L3 关联。
+- `addition`、`reinforcement`、`none`、`conflict`：继续走普通 L2 更新流程；`conflict` 不自动覆盖。
+- 判断失败：L2 任务进入 `failed` 或 `unknown`，不把失败当成 `none`，不静默合并。
+- Jev 只提供判断，动作、覆盖、链接迁移和可见性都由代码执行。
+- Jev 输入只发送当前 L2 和变化 L1 的必要文本；不发送 API key，不记录正文日志。
+- 未配置 judge 时保持原有 L2 行为。
+
+门控发生在模型调用之前；旧 L2 被排除后，模型不会同时看到新旧事实，也就不会把两个值合并进同一个当前 L2。
 
 ## 批次、作用域与调度
 
@@ -219,6 +248,7 @@ Service 不直接访问 SQL，领域不依赖 ORM 行类型。L1 变更与受影
 - `L2_MODEL_FAILED`
 - `L2_MODEL_OUTPUT_INVALID`
 - `L2_MODEL_OUTCOME_UNKNOWN`
+- `L2_DECISION_FAILED`
 - `L2_STALE_INPUT`
 - `L2_SCOPE_EMPTY`
 - `L2_PERMISSION_DENIED`
@@ -237,6 +267,8 @@ Service 不直接访问 SQL，领域不依赖 ORM 行类型。L1 变更与受影
 - 输入超限明确失败，不截断原文
 - 范围收窄后 L2 只在新范围内可见，无法确定范围时不召回
 - L1 合并后 L2 关联迁移并标记 `needs_update`
+- 结构化判断为 `replacement` 时创建当前 L2，旧 L2 保留 `superseded_by` 且不再召回
+- 结构化判断失败时 L2 任务失败，不进入模型合并
 - 只读数据库拒绝生成和重建，但仍可召回
 - 空间隔离：不可读来源 ID 不返回，关联不扩大其他记忆的读取权限
 - FTS 索引缺失、过期、损坏、触发器变化和重建回滚

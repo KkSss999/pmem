@@ -225,6 +225,7 @@ export class SqliteL2Repository implements L2Repository {
       summary: row.summary,
       body: row.body,
       contentHash: row.contentHash,
+      ...(row.supersededBy === null ? {} : { supersededBy: row.supersededBy }),
       needsUpdate: row.needsUpdate === 1,
       visible: row.visible === 1,
       generationId: row.generationId,
@@ -355,6 +356,24 @@ export class SqliteL2Repository implements L2Repository {
       { behavior: 'immediate' }
     );
     return this.loadMemory(id, [job.ownerSpaceId, ...input.relatedSpaceIds])!;
+  }
+
+  applySupersede(oldL2Id: string, newL2Id: string, expectedHash: string, now: string): void {
+    this.db.transaction(
+      (tx) => {
+        const current = tx.select().from(l2Memories).where(eq(l2Memories.id, oldL2Id)).get();
+        if (!current || current.contentHash !== expectedHash)
+          throw new MemoryError('L2_STALE_INPUT', 'The L2 memory changed before supersede.');
+        const next = tx.select().from(l2Memories).where(eq(l2Memories.id, newL2Id)).get();
+        if (!next) throw new MemoryError('L2_STALE_INPUT', 'The replacement L2 is unavailable.');
+        tx.update(l2Memories)
+          .set({ visible: 0, supersededBy: newL2Id, needsUpdate: 0, updatedAt: now })
+          .where(eq(l2Memories.id, oldL2Id))
+          .run();
+        invalidateL3ForL2Change(tx, oldL2Id, now);
+      },
+      { behavior: 'immediate' }
+    );
   }
 
   applyUpdate(

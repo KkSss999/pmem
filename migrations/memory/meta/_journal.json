@@ -64,6 +64,13 @@
       "when": 1793439249382,
       "tag": "0008_l3_changes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793439500000,
+      "tag": "0009_l2_supersede",
+      "breakpoints": true
     }
   ]
 }

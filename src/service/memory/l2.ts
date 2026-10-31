@@ -1,4 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  MEMORY_CHANGE_TYPES,
+  MemoryDecisionError,
+  type MemoryChangeJudge,
+} from '../../domain/memory/decision';
 import type { L1Memory } from '../../domain/memory/l1';
 import {
   L2ModelError,
@@ -181,12 +186,17 @@ export interface QueueL2Input {
   ownerSpaceId: string;
 }
 
+export interface L2ServiceOptions {
+  judge?: MemoryChangeJudge;
+}
+
 export class L2Service {
   constructor(
     private readonly repository: L2Repository,
     private readonly l1: L1Repository,
     private readonly memory: MemoryRepository,
-    private readonly readOnly: boolean
+    private readonly readOnly: boolean,
+    private readonly options: L2ServiceOptions = {}
   ) {}
 
   recordChange(input: { l1Id: string; kind: L2ChangeKind }, access: MemoryAccess): L2Change {
@@ -350,16 +360,86 @@ export class L2Service {
       candidates.push({ memory, evidence });
     }
 
+    const replacementByCandidate = new Map<string, ReadonlySet<string>>();
+    let candidatesForModel = candidates;
+    if (this.options.judge && candidates.length) {
+      const judged: L2Candidate[] = [];
+      try {
+        for (const candidate of candidates) {
+          const judgments = await this.options.judge.judge({
+            current: {
+              title: candidate.memory.title,
+              summary: candidate.memory.summary,
+              body: candidate.memory.body,
+              updatedAt: candidate.memory.updatedAt,
+            },
+            changes: loaded.map((item) => ({
+              id: item.change.l1Id,
+              content: item.memory.content,
+              createdAt: item.memory.createdAt,
+            })),
+          });
+          if (!Array.isArray(judgments) || judgments.length !== loaded.length)
+            throw new MemoryDecisionError(
+              'JEV_OUTPUT_INVALID',
+              'failed',
+              'The memory change judge returned incomplete judgments.'
+            );
+          const expected = new Set(loaded.map((item) => item.change.l1Id));
+          const seen = new Set<string>();
+          const replaced = new Set<string>();
+          for (const judgment of judgments) {
+            if (
+              !judgment ||
+              typeof judgment.changedL1Id !== 'string' ||
+              !expected.has(judgment.changedL1Id) ||
+              seen.has(judgment.changedL1Id) ||
+              !MEMORY_CHANGE_TYPES.includes(judgment.type)
+            )
+              throw new MemoryDecisionError(
+                'JEV_OUTPUT_INVALID',
+                'failed',
+                'The memory change judge returned an invalid judgment.'
+              );
+            seen.add(judgment.changedL1Id);
+            if (judgment.type === 'replacement') replaced.add(judgment.changedL1Id);
+          }
+          if (replaced.size) replacementByCandidate.set(candidate.memory.id, replaced);
+          else judged.push(candidate);
+        }
+        candidatesForModel = judged;
+      } catch (cause) {
+        const outcome = cause instanceof MemoryDecisionError ? cause.outcome : 'unknown';
+        const failure = cause instanceof MemoryDecisionError ? cause.code : 'L2_DECISION_FAILED';
+        try {
+          this.repository.finishChanges(changeIds, 'failed', id, failure, now);
+          this.repository.finishJob(
+            id,
+            claimed.job.claimToken!,
+            outcome === 'unknown' ? 'unknown' : 'failed',
+            failure,
+            now
+          );
+        } catch (statusError) {
+          throw new AggregateError(
+            [cause, statusError],
+            'The memory change judge failed and status could not be persisted.'
+          );
+        }
+        throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment failed.', { cause });
+      }
+    }
+
     let proposal: Proposal;
     let raw: unknown;
     try {
       raw = await model.generate({
         ownerSpaceId: job.ownerSpaceId,
         changes: loaded,
-        candidates,
+        candidates: candidatesForModel,
         now,
       });
-      proposal = validateProposal(raw, loaded, candidates);
+      proposal = validateProposal(raw, loaded, candidatesForModel);
     } catch (cause) {
       const state =
         cause instanceof L2ModelError
@@ -389,7 +469,8 @@ export class L2Service {
     for (const item of loaded) known.set(item.memory.id, item.memory);
     for (const candidate of candidates)
       for (const evidence of candidate.evidence) known.set(evidence.id, evidence);
-    const candidateById = new Map(candidates.map((item) => [item.memory.id, item]));
+    const candidateById = new Map(candidatesForModel.map((item) => [item.memory.id, item]));
+    const replacementTarget = new Map<string, string>();
 
     const covered = new Set<string>();
     const failed = new Map<string, string>();
@@ -451,8 +532,11 @@ export class L2Service {
               now
             );
             skipped++;
+            for (const [oldId, triggerIds] of replacementByCandidate)
+              if (!replacementTarget.has(oldId) && draft.l1Ids.some((l1Id) => triggerIds.has(l1Id)))
+                replacementTarget.set(oldId, current.id);
           } else {
-            this.repository.applyUpdate(job, {
+            const applied = this.repository.applyUpdate(job, {
               l2Id: current.id,
               expectedHash: candidate.memory.contentHash,
               expectedL1Ids: candidate.memory.l1Ids,
@@ -476,6 +560,9 @@ export class L2Service {
               now
             );
             committed++;
+            for (const [oldId, triggerIds] of replacementByCandidate)
+              if (!replacementTarget.has(oldId) && draft.l1Ids.some((l1Id) => triggerIds.has(l1Id)))
+                replacementTarget.set(oldId, applied.id);
           }
         } else {
           const created = this.repository.applyCreate(job, {
@@ -499,6 +586,9 @@ export class L2Service {
             now
           );
           committed++;
+          for (const [oldId, triggerIds] of replacementByCandidate)
+            if (!replacementTarget.has(oldId) && draft.l1Ids.some((l1Id) => triggerIds.has(l1Id)))
+              replacementTarget.set(oldId, created.id);
         }
         for (const l1Id of draft.l1Ids) covered.add(l1Id);
       } catch (cause) {
@@ -509,6 +599,23 @@ export class L2Service {
         firstFailure ??= code;
       }
     }
+
+    for (const [oldId, newId] of replacementTarget) {
+      const candidate = candidates.find((item) => item.memory.id === oldId);
+      if (!candidate || candidate.memory.id === newId) continue;
+      try {
+        this.repository.applySupersede(oldId, newId, candidate.memory.contentHash, now);
+      } catch (cause) {
+        const code = cause instanceof MemoryError ? cause.code : 'L2_SUPERSEDE_FAILED';
+        failedCount++;
+        firstFailure ??= code;
+      }
+    }
+    for (const oldId of replacementByCandidate.keys())
+      if (!replacementTarget.has(oldId)) {
+        failedCount++;
+        firstFailure ??= 'L2_SUPERSEDE_UNRESOLVED';
+      }
 
     const uncovered = new Map(proposal.uncovered.map((item) => [item.l1Id, item.reason]));
     const processedIds = changes.map((change) => change.l1Id).filter((l1Id) => covered.has(l1Id));

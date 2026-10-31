@@ -241,6 +241,7 @@ export const l2Memories = sqliteTable(
     summary: text('summary').notNull(),
     body: text('body').notNull(),
     contentHash: text('content_hash').notNull(),
+    supersededBy: text('superseded_by'),
     needsUpdate: integer('needs_update').notNull().default(0),
     visible: integer('visible').notNull().default(1),
     generationId: text('generation_id').notNull(),
@@ -251,6 +252,7 @@ export const l2Memories = sqliteTable(
     index('memory_l2_owner_updated').on(table.ownerSpaceId, table.updatedAt),
     index('memory_l2_needs_update').on(table.needsUpdate),
     index('memory_l2_visible').on(table.visible),
+    index('memory_l2_superseded_by').on(table.supersededBy),
     check(
       'memory_l2_flags_check',
       sql`${table.needsUpdate} IN (0, 1) AND ${table.visible} IN (0, 1)`

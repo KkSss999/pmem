@@ -507,7 +507,7 @@ test('maintenance migration backfills tasks and job results and rolls back safel
   before.close();
   fs.writeFileSync(migrationPath, valid);
   const backupPath = path.join(f.root, 'before-maintenance.sqlite');
-  assert.equal((await f.OwnedDatabase.migrate(previousPath, backupPath)).migrationsApplied, 4);
+  assert.equal((await f.OwnedDatabase.migrate(previousPath, backupPath)).migrationsApplied, 5);
   const backup = new Database(backupPath, { readonly: true });
   assert.equal(backup.prepare('SELECT content FROM memory_l0_messages').get().content, '原始内容');
   backup.close();

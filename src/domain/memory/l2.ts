@@ -39,6 +39,7 @@ export interface L2Memory {
   summary: string;
   body: string;
   contentHash: string;
+  supersededBy?: string;
   needsUpdate: boolean;
   visible: boolean;
   generationId: string;

@@ -263,7 +263,7 @@ test('foundation migration requires explicit backup and rolls back on failure', 
   assert.ok(fs.existsSync(failedBackup));
   fs.writeFileSync(migration, originalSql);
   const backupPath = path.join(root, 'backup.sqlite');
-  assert.equal((await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied, 9);
+  assert.equal((await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied, 10);
   const backup = new Database(backupPath, { readonly: true });
   assert.equal(
     backup.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'memory_spaces'").get().n,

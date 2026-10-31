@@ -51,6 +51,7 @@ export interface L2Repository {
       now: string;
     }
   ): L2Memory;
+  applySupersede(oldL2Id: string, newL2Id: string, expectedHash: string, now: string): void;
   applyUpdate(
     job: L2Job,
     input: {

@@ -162,7 +162,7 @@ test('search migration backfills memories, preserves backups and rolls back on e
   check.close();
   fs.writeFileSync(migrationPath, migration);
   const backupPath = path.join(root, 'before-search-backup.sqlite');
-  assert.equal((await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied, 6);
+  assert.equal((await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied, 7);
   const backup = new Database(backupPath, { readonly: true });
   assert.equal(backup.prepare('SELECT count(*) n FROM memory_l1').get().n, 1);
   backup.close();
@@ -871,7 +871,7 @@ test('L1 migrations preserve existing L0 data and create a pre-upgrade backup', 
   fs.writeFileSync(journalPath, originalJournal);
   assert.throws(() => OwnedDatabase.open(oldDbPath, false), code('MIGRATION_REQUIRED'));
   const backupPath = path.join(root, 'before-l1.sqlite');
-  assert.equal((await OwnedDatabase.migrate(oldDbPath, backupPath)).migrationsApplied, 8);
+  assert.equal((await OwnedDatabase.migrate(oldDbPath, backupPath)).migrationsApplied, 9);
   const upgraded = OwnedDatabase.open(oldDbPath, false);
   assert.equal(assembleMemory(upgraded).getL0(source.id, personal).content, source.content);
   assert.deepEqual(assembleL1(upgraded).listJobs({ spaceId: 'personal' }, personal).jobs, []);
@@ -1070,7 +1070,7 @@ test('failed L1 upgrade rolls back without losing existing L0 and can be retried
   assert.equal(
     (await OwnedDatabase.migrate(oldDbPath, path.join(root, 'retry-backup.sqlite')))
       .migrationsApplied,
-    8
+    9
   );
   const upgraded = OwnedDatabase.open(oldDbPath, false);
   assert.equal(assembleMemory(upgraded).getL0(source.id, personal).content, original);

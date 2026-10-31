@@ -50,7 +50,7 @@
 
 ### 1. 知识更新没有收敛，旧事实仍会进入回答
 
-**状态：未解决。**
+**状态：L2 已接入替代门控，未做 LongMemEval 复测。**
 
 典型题目：
 
@@ -107,9 +107,9 @@ update / supersede / skip
 
 ### 3. L2 只有 create/update，没有“当前状态/历史状态”分离
 
-**状态：部分尝试，未解决。**
+**状态：已接入 Jev 门控，未做 LongMemEval 复测。**
 
-当前 L2 可以 create 和 update，但没有稳定的：
+在接入 Jev 门控前，L2 只有 create/update，没有稳定的：
 
 - `supersededBy`
 - 当前有效版本与历史版本分离
@@ -131,6 +131,16 @@ update / supersede / skip
 - 回答仍然选到旧值。
 
 结论：**只加 L2 标志和 prompt 约束不够。**
+
+后续已补 L2 事实替代门控：
+
+- TypeSafe Jev 1.14，经 OpenRouter Decisions API 调用。
+- `replacement` 时把旧 L2 排除出模型上下文，生成新的当前 L2。
+- 旧 L2 写入 `superseded_by`，`visible = 0`，默认列表、召回和 L3 解析都不再返回它。
+- 判断失败时 L2 任务失败或未知，不把失败当成“没有替代”。
+- 已用假 judge 验证 L2 集成，并用真实 Jev 1.14 验证 `27:12 → 25:50` 分类为 `replacement`。
+
+仍未做完整 LongMemEval 复测，因此还不能把当前结果写成“知识更新已解决”。L1 旧记录仍保留，回答路径目前依赖当前 L2 不再关联它。
 
 ### 4. L3 是关键词缓存，不是事实权威
 
@@ -316,7 +326,7 @@ PMEM 目前只有：
 按优先级：
 
 1. L1 增加 `update` / `supersede`，带 `targetIds` 和来源时间。
-2. L2 增加当前/历史分离，旧 L2 标记 `supersededBy`，默认召回排除。
+2. L2 事实替代门控已接入；仍需用同一批 10 题复测，确认模型不会把旧事实重新引入新 L2。
 3. L3 只指向当前有效 L2；旧关键词刷新或过期。
 4. 回答上下文默认排除 `superseded` 的 L1/L2/L0。
 5. 用同一批 10 题复测，对比 40% 基线和修复后的结果。
