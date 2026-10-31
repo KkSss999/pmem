@@ -14,6 +14,11 @@
       "types": "./dist/sdk/index.d.ts",
       "require": "./dist/sdk/index.js",
       "default": "./dist/sdk/index.js"
+    },
+    "./agent": {
+      "types": "./dist/server/agent.d.ts",
+      "require": "./dist/server/agent.js",
+      "default": "./dist/server/agent.js"
     }
   },
   "scripts": {
@@ -47,7 +52,14 @@
     "dist/db/schema.d.ts",
     "migrations/**",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "dist/agent/**",
+    "dist/server/**",
+    "dist/service/**",
+    "dist/domain/**",
+    "dist/other/**",
+    "dist/db/**",
+    "vendor/**"
   ],
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

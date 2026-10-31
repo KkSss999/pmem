@@ -1,19 +1,17 @@
-import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import type { AgentApplicationOptions } from '@miao/agent';
 import type { HarnessStore } from '@miao/agent/harness';
-import type {
-  AgentSessionStore,
-  CreateMiaoRunInput,
-  InputJournal,
-  MiaoRunCompletion,
-  MiaoRunFailure,
-  MiaoRunListFilter,
-  MiaoRunReport,
-  MiaoRunReportStore,
-} from '@miao/agent/testing';
+import type { SqliteAgentSessionStore } from '@miao/agent/testing';
 import { loadMiao } from './miao';
 
 type Persistence = AgentApplicationOptions['persistence'];
@@ -23,10 +21,7 @@ type HarnessFilter = Exclude<Parameters<Persistence['harness']['list']>[1], unde
 type RequestStore = Persistence['requests'];
 type RequestRecord = Parameters<RequestStore['begin']>[0];
 type ServiceResponse = Parameters<RequestStore['settle']>[1];
-
-function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
+type MiaoSqliteDatabase = ConstructorParameters<typeof SqliteAgentSessionStore>[0];
 
 class SqliteRequestStore implements RequestStore {
   readonly durable = true;
@@ -190,239 +185,48 @@ function matches(record: HarnessRecord, filter: HarnessFilter): boolean {
   return true;
 }
 
-/**
- * Phase 1: transcript/projection storage is still MiaoTs' in-memory store, but
- * the input journal is durable so `input.send` receives a real receipt. This is
- * the smallest adapter that avoids claiming durable transcripts we do not have.
- */
-class JournalSessionStore implements AgentSessionStore {
-  readonly durableTranscripts = false;
-  readonly durableInputJournal = true;
-
-  constructor(
-    private readonly inner: AgentSessionStore,
-    private readonly db: Database.Database
-  ) {
-    db.exec(
-      'CREATE TABLE IF NOT EXISTS agent_input_journals (session_id TEXT PRIMARY KEY, record TEXT NOT NULL)'
-    );
-  }
-
-  saveInlineResult(...args: Parameters<AgentSessionStore['saveInlineResult']>) {
-    return this.inner.saveInlineResult(...args);
-  }
-
-  listInlineResults(...args: Parameters<AgentSessionStore['listInlineResults']>) {
-    return this.inner.listInlineResults(...args);
-  }
-
-  saveInputJournal(sessionId: string, journal: InputJournal): Promise<void> {
-    this.db
-      .prepare(
-        'INSERT INTO agent_input_journals (session_id, record) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET record = excluded.record'
-      )
-      .run(sessionId, JSON.stringify(journal));
-    return Promise.resolve();
-  }
-
-  loadInputJournal(sessionId: string): Promise<InputJournal | undefined> {
-    const row = this.db
-      .prepare('SELECT record FROM agent_input_journals WHERE session_id = ?')
-      .get(sessionId) as { record: string } | undefined;
-    return Promise.resolve(row ? (JSON.parse(row.record) as InputJournal) : undefined);
-  }
-
-  load(...args: Parameters<AgentSessionStore['load']>) {
-    return this.inner.load(...args);
-  }
-
-  save(...args: Parameters<AgentSessionStore['save']>) {
-    return this.inner.save(...args);
-  }
-
-  renameSession(...args: Parameters<AgentSessionStore['renameSession']>) {
-    return this.inner.renameSession(...args);
-  }
-
-  delete(...args: Parameters<AgentSessionStore['delete']>) {
-    return this.inner.delete(...args);
-  }
-
-  list(...args: Parameters<AgentSessionStore['list']>) {
-    return this.inner.list(...args);
-  }
-
-  listByAgent(...args: Parameters<AgentSessionStore['listByAgent']>) {
-    return this.inner.listByAgent(...args);
-  }
-
-  deleteByAgentSync(agentId: string): string[] {
-    const ids = this.inner.deleteByAgentSync?.(agentId) ?? [];
-    const remove = this.db.prepare('DELETE FROM agent_input_journals WHERE session_id = ?');
-    for (const id of ids) remove.run(id);
-    return ids;
-  }
-
-  saveTranscript(...args: Parameters<AgentSessionStore['saveTranscript']>) {
-    return this.inner.saveTranscript(...args);
-  }
-
-  loadTranscript(...args: Parameters<AgentSessionStore['loadTranscript']>) {
-    return this.inner.loadTranscript(...args);
-  }
-
-  revision(...args: Parameters<NonNullable<AgentSessionStore['revision']>>) {
-    if (!this.inner.revision) return Promise.resolve(0);
-    return this.inner.revision(...args);
-  }
-
-  listTranscripts(...args: Parameters<AgentSessionStore['listTranscripts']>) {
-    return this.inner.listTranscripts(...args);
-  }
-}
-
-function progress(status: MiaoRunReport['status']): MiaoRunReport['progress'] {
-  if (status === 'queued') return { stage: 'queued' };
-  if (status === 'running') return { stage: 'running' };
-  if (status === 'waiting_for_user') return { stage: 'waiting_for_user' };
-  return undefined;
-}
-
-/** Ephemeral report rows; reports are not part of the first prompt path. */
-class MemoryReports implements MiaoRunReportStore {
-  private readonly rows = new Map<string, MiaoRunReport>();
-
-  create(input: CreateMiaoRunInput): MiaoRunReport {
-    const now = Date.now();
-    const row: MiaoRunReport = {
-      runId: randomUUID(),
-      agentId: input.agentId,
-      workspaceId: input.workspaceId,
-      requestedByAgentId: input.requestedByAgentId,
-      sessionId: input.sessionId,
-      task: input.task,
-      status: 'queued',
-      progress: progress('queued'),
-      createdAt: now,
-      updatedAt: now,
-      evidenceRefs: [],
-      needsReview: false,
-    };
-    this.rows.set(row.runId, row);
-    return clone(row);
-  }
-
-  get(runId: string): MiaoRunReport | undefined {
-    const row = this.rows.get(runId);
-    return row ? clone(row) : undefined;
-  }
-
-  list(filter: MiaoRunListFilter = {}): MiaoRunReport[] {
-    const statuses =
-      filter.status === undefined
-        ? null
-        : new Set(Array.isArray(filter.status) ? filter.status : [filter.status]);
-    return [...this.rows.values()]
-      .filter(
-        (row) =>
-          (filter.workspaceId === undefined || row.workspaceId === filter.workspaceId) &&
-          (filter.agentId === undefined || row.agentId === filter.agentId) &&
-          (statuses === null || statuses.has(row.status))
-      )
-      .sort((a, b) => b.createdAt - a.createdAt || b.runId.localeCompare(a.runId))
-      .slice(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 100))
-      .map(clone);
-  }
-
-  setProgress(runId: string, value?: MiaoRunReport['progress']): MiaoRunReport | undefined {
-    const row = this.rows.get(runId);
-    if (!row || row.status !== 'running') return row ? clone(row) : undefined;
-    return this.transition(runId, ['running'], { progress: value ?? progress(row.status) });
-  }
-
-  start(runId: string): MiaoRunReport | undefined {
-    return this.transition(runId, ['queued'], { status: 'running', startedAt: Date.now() });
-  }
-
-  waitForUser(runId: string): MiaoRunReport | undefined {
-    return this.transition(runId, ['queued', 'running'], { status: 'waiting_for_user' });
-  }
-
-  resume(runId: string): MiaoRunReport | undefined {
-    return this.transition(runId, ['waiting_for_user'], { status: 'running' });
-  }
-
-  complete(runId: string, completion: MiaoRunCompletion): MiaoRunReport | undefined {
-    return this.transition(runId, ['queued', 'running', 'waiting_for_user'], {
-      status: 'succeeded',
-      completedAt: Date.now(),
-      summary: completion.summary,
-      detailedReport: completion.detailedReport,
-      reportContent: completion.reportContent,
-      evidenceRefs: completion.evidenceRefs ?? [],
-      needsReview: false,
-    });
-  }
-
-  fail(runId: string, failure: MiaoRunFailure): MiaoRunReport | undefined {
-    return this.transition(runId, ['queued', 'running', 'waiting_for_user'], {
-      status: 'failed',
-      completedAt: Date.now(),
-      summary: failure.summary,
-      detailedReport: failure.detailedReport,
-      reportContent: failure.reportContent,
-      evidenceRefs: failure.evidenceRefs ?? [],
-      needsReview: failure.needsReview ?? false,
-      failureCode: failure.failureCode,
-      failureMessage: failure.failureMessage,
-    });
-  }
-
-  cancel(runId: string): MiaoRunReport | undefined {
-    return this.transition(runId, ['queued', 'running', 'waiting_for_user'], {
-      status: 'cancelled',
-      completedAt: Date.now(),
-      summary: 'Run cancelled',
-      detailedReport: 'Run cancelled before completion could be confirmed.',
-      needsReview: true,
-      failureCode: 'cancelled',
-    });
-  }
-
-  purgeSessions(sessionIds: readonly string[]): void {
-    const doomed = new Set(sessionIds);
-    for (const [id, row] of this.rows) {
-      if (row.sessionId && doomed.has(row.sessionId)) this.rows.delete(id);
-    }
-  }
-
-  private transition(
-    runId: string,
-    from: readonly MiaoRunReport['status'][],
-    patch: Partial<MiaoRunReport>
-  ): MiaoRunReport | undefined {
-    const current = this.rows.get(runId);
-    if (!current || !from.includes(current.status)) return current ? clone(current) : undefined;
-    const next: MiaoRunReport = {
-      ...current,
-      ...patch,
-      progress: progress(patch.status ?? current.status),
-      updatedAt: Date.now(),
-    };
-    this.rows.set(runId, next);
-    return clone(next);
-  }
-}
-
 export interface LocalAgentPersistence {
   persistence: Persistence;
   close(): void;
 }
 
+function loadOrCreateKey(path: string): Uint8Array {
+  if (existsSync(path)) {
+    const key = readFileSync(path);
+    if (key.length !== 32) throw new Error('The Agent storage key must be 32 bytes.');
+    return key;
+  }
+  const key = randomBytes(32);
+  writeFileSync(path, key, { mode: 0o600, flag: 'wx' });
+  chmodSync(path, 0o600);
+  return key;
+}
+
 /**
- * Phase 1 local persistence. Receipts, harness records and the input journal
- * are durable; transcripts/identities remain in memory until PMEM owns the
- * full session store.
+ * The MiaoTs store asks the database driver whether it is file-backed before
+ * running its own migration. PMEM already made the pre-migration copy, so the
+ * adapter reports an in-memory handle to avoid a second, unbound backup port.
+ */
+function sqliteAdapter(db: Database.Database): MiaoSqliteDatabase {
+  return {
+    exec: (sql: string) => db.exec(sql),
+    prepare: (sql: string) => {
+      if (sql.trim() === 'PRAGMA database_list')
+        return {
+          run: () => ({ changes: 0 }),
+          get: () => undefined,
+          all: () => [{ file: '' }],
+        } as never;
+      return db.prepare(sql) as never;
+    },
+    close: () => db.close(),
+  };
+}
+
+/**
+ * Local Agent persistence: receipts, harness records, sessions, identities,
+ * reports and encrypted transcripts live in one file. PMEM makes a pre-migration
+ * copy before MiaoTs opens its schemas.
  */
 export async function createLocalAgentPersistence(
   databasePath: string
@@ -432,14 +236,21 @@ export async function createLocalAgentPersistence(
   mkdirSync(dirname(databasePath), { recursive: true });
   const db = new Database(databasePath);
   db.pragma('journal_mode = WAL');
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  const backup = `${databasePath}.backup`;
+  if (!existsSync(backup)) {
+    copyFileSync(databasePath, backup);
+    chmodSync(backup, 0o600);
+  }
+  const key = loadOrCreateKey(`${databasePath}.key`);
+  const sqlite = sqliteAdapter(db);
   const { testing } = await loadMiao();
-  const sessions = new testing.MemoryAgentSessionStore();
   return {
     persistence: {
-      identities: new testing.MemoryAgentRegistry(sessions),
+      identities: new testing.AgentRegistry(sqlite),
       requests: new SqliteRequestStore(db),
-      sessions: new JournalSessionStore(sessions, db),
-      reports: new MemoryReports(),
+      sessions: new testing.SqliteAgentSessionStore(sqlite, key),
+      reports: new testing.SqliteRunReportStore(sqlite, { storageKey: key }),
       harness: new SqliteHarnessStore(db),
     },
     close: () => db.close(),

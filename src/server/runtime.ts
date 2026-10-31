@@ -1,3 +1,4 @@
+import { PmemAgentRuntime, type PmemAgentRuntimeOptions } from '../agent/runtime';
 import {
   OwnedDatabase,
   PmemError,
@@ -33,6 +34,13 @@ export class Pmem {
 
   static migrate(options: MigrateOptions): Promise<MigrationResult> {
     return OwnedDatabase.migrate(options.databasePath, options.backupPath);
+  }
+
+  /** Create an Agent runtime over this PMEM database. The caller still owns `close()`. */
+  async agent(options: Omit<PmemAgentRuntimeOptions, 'database'>): Promise<PmemAgentRuntime> {
+    if (this.database.readOnly)
+      throw new PmemError('INVALID_OPTIONS', 'An Agent runtime requires a writable PMEM database.');
+    return PmemAgentRuntime.create({ ...options, database: this.database });
   }
 
   status(): DatabaseStatus {

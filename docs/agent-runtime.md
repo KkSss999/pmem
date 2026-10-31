@@ -2,7 +2,7 @@
 
 本文记录 PMEM 作为消费者接入 MiaoTs Agentic Runtime 的边界和首版实现。总体架构仍以 [基础架构](architecture.md) 为准。
 
-当前状态：Phase 1 已落地，使用 MiaoTs artifact `0.1.289`。
+当前状态：Phase 1 已落地，使用 MiaoTs artifact `0.1.289`。本地 SQLite 已覆盖 sessions、identities、reports、输入 journal、receipts 和 Harness records；自动 recall 与 provider 报告的 cache 指标已接入。
 
 ## 结论
 
@@ -269,22 +269,15 @@ replay: safe
 
 ## 自动 recall
 
-首版先用工具调用，不自动注入。
+自动 recall 与工具调用并存：
 
-理由：
+- 工具调用由模型决定，适合深入查询。
+- 自动 recall 是 plugin context provider，在每轮 prompt 前按当前用户文本检索。
+- 自动 recall 只返回 `messages` contribution，由 MiaoTs 追加到请求上下文，不重写 system prompt 或 transcript 前缀。
+- 结果为空时不产生 contribution。
+- 查询文本由 Host 在 `prompt()` 中设置，不来自模型参数。
 
-- 行为可观察。
-- 不修改 system prompt。
-- 工具结果只追加到对话末尾。
-- 不破坏 prompt cache。
-- 容易做单元和 faux model 验证。
-
-自动 recall 作为后续能力，必须满足：
-
-- 只追加 context snapshot，不重写历史前缀。
-- 不把变化内容插到 transcript 头部。
-- 不把动态记忆放进 system prompt。
-- 记录 cache metrics 和 first changed message。
+这样既保留可观察的工具路径，也能在模型没有主动调用工具时注入必要记忆。
 
 ## Agent 持久化
 
@@ -318,14 +311,18 @@ MiaoTs artifact 当前没有公开的 SQLite persistence factory。PMEM 有三�
 - 最干净。
 - 当前阶段不修改 MiaoTs。
 
-Phase 1 实际采用混合方案：
+当前实现使用独立的 `agentDatabasePath` SQLite 文件：
 
-- receipt、Harness record、input journal 存在独立的 `agentDatabasePath` SQLite 文件，是真实持久化。
-- transcript / identity 仍使用 MiaoTs 的内存实现，因此重启后不能恢复会话。
-- reports 也是进程内实现，不参与首版 prompt 路径。
-- PMEM Memory 继续使用自己的 SQLite，不受 Agent 存储影响。
+- identities：MiaoTs SQLite `AgentRegistry`
+- sessions 和加密 transcript：MiaoTs SQLite session store
+- reports：MiaoTs SQLite run report store
+- receipts：PMEM SQLite receipt store
+- input journal：MiaoTs SQLite session store
+- Harness records：PMEM SQLite harness store
 
-这样既满足 MiaoTs service 对 durable receipt / harness / input journal 的检查，也不假装 transcript 已经持久化。第二版再把 transcript、identity 和 report 迁到 PMEM 自己的 SQLite schema。
+MiaoTs 的持久化迁移要求宿主先提供备份。PMEM 在打开 Agent 数据库前做一次 `agent.sqlite.backup`，再通过本地 SQLite adapter 运行 MiaoTs 的 schema migration。key 保存在独立的 `agent.sqlite.key`（0600），不写入数据库。
+
+PMEM Memory 继续使用自己的 SQLite，不受 Agent 存储影响。
 
 ## L0 捕获
 
@@ -365,7 +362,9 @@ PMEM 能做的是：
 - 不把动态 Memory 正文写进 system prompt。
 - 工具结果只追加，不改写历史。
 - 自动 recall 只追加 context snapshot。
-- 记录 MiaoTs 的 `cacheRead`、`hitRate`、`prefixHitRate`、`firstChangedMessageIndex` 和 `cause`。
+- 通过 MiaoTs `modelCallSink` 记录 provider 报告的 `input`、`cacheRead`、`cacheWrite`，并提供 `runtime.cacheMetrics()` 计算单次调用的 provider cache 命中比例。
+
+尚未直接暴露 MiaoTs 内部的 `prefixHitRate` / `firstChangedMessageIndex`；当前公开指标是 provider usage 级别的 cache 数据。
 
 PMEM 不应：
 
@@ -392,6 +391,24 @@ PMEM 不应：
 - MiaoTs `createAgentApplication` + in-process service client。
 - user/assistant L0 捕获。
 - faux model 集成测试。
+
+Phase 2：AgentApplication（已完成）
+
+- `PmemAgentRuntime.create()` 装配 identity / session / service client。
+- `Pmem.agent()` SDK 入口。
+- sessions、identities、reports、transcripts 持久化到独立 SQLite。
+- `agentDatabasePath` 是必需参数；key 文件与数据库分开保存。
+
+Phase 3：L0 捕获（已完成）
+
+- user / assistant 消息写入 L0。
+- `source = 'pmem.agent'`，`sourceEventId` 幂等。
+
+Phase 4：自动 recall（已完成首版）
+
+- plugin context provider 在每轮 prompt 前读取当前查询。
+- 只以 appended `messages` contribution 注入，不重写 system prompt。
+- 固定 `topK = 3`，动态内容不进入 Harness prefix。
 
 ### Phase 2：最小 AgentApplication
 
@@ -449,13 +466,14 @@ Phase 1 的持久化边界：
 运行方式：
 
 ```ts
-const runtime = await PmemAgentRuntime.create({
-  database: ownedDatabase,
+const runtime = await pmem.agent({
   agentDatabasePath: path.join(root, 'agent.sqlite'),
   faux: true,
 });
 const answer = await runtime.prompt('...');
 await runtime.flushCapture();
+const calls = runtime.modelCalls();
+const cache = runtime.cacheMetrics();
 await runtime.close();
 ```
 
@@ -463,7 +481,7 @@ await runtime.close();
 
 ```text
 bun run check
-95 tests, 95 pass
+98 tests, 98 pass
 ```
 
 ## 首版验收

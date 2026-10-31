@@ -210,3 +210,94 @@ test('PmemAgentRuntime uses MiaoTs and captures the conversation into L0', async
     await runtime.close();
   }
 });
+
+test('PmemAgentRuntime persists Sessions across process-local runtimes', async (t) => {
+  const f = fixture(t);
+  const agentDatabasePath = path.join(f.root, 'agent.sqlite');
+  const first = await f.PmemAgentRuntime.create({
+    database: f.db,
+    agentDatabasePath,
+    faux: true,
+  });
+  const sessionId = first.sessionId;
+  try {
+    await first.prompt('remember this');
+    await first.flushCapture();
+  } finally {
+    await first.close();
+  }
+
+  const second = await f.PmemAgentRuntime.create({
+    database: f.db,
+    agentDatabasePath,
+    faux: true,
+  });
+  try {
+    const sessions = await second.listSessions();
+    const persisted = sessions.find((session) => session.sessionId === sessionId);
+    assert.ok(persisted);
+    const transcript = await second.sessionTranscript(persisted.sessionId, persisted.agentId);
+    assert.ok(transcript.messages.length >= 2);
+  } finally {
+    await second.close();
+  }
+});
+
+test('PmemAgentRuntime auto-recalls memory into appended context and records model usage', async (t) => {
+  const f = fixture(t);
+  const l1 = await makeL1(f, 'l1-auto-recall', '阿岚喜欢拿铁。');
+  const l2 = await makeL2(f, l1);
+  const runtime = await f.PmemAgentRuntime.create({
+    database: f.db,
+    agentDatabasePath: path.join(f.root, 'agent.sqlite'),
+    faux: true,
+  });
+  try {
+    const plugin = await f.createPmemMemoryPlugin(runtime.memory, f.createSingleUserAgentHost(), {
+      queryFor: () => '拿铁',
+    });
+    const read = plugin.bindings.contexts?.['pmem-recall'];
+    assert.equal(typeof read, 'function');
+    const contributions = await read(pluginContext);
+    assert.equal(contributions.length, 1);
+    assert.equal(contributions[0].kind, 'messages');
+    assert.match(contributions[0].messages[0].content, /阿岚喜欢拿铁/);
+
+    await runtime.prompt('拿铁');
+    const context = await runtime.contextSnapshot();
+    assert.ok(context);
+    assert.ok(
+      context.manifest.some((entry) => entry.providerId.includes('pmem.memory')),
+      'plugin recall should appear in the prepared context'
+    );
+    const calls = runtime.modelCalls();
+    assert.ok(calls.length > 0);
+    assert.equal(calls[0].sessionId, runtime.sessionId);
+    assert.ok(calls[0].usage);
+    assert.ok(calls[0].usage.tokens.total > 0);
+    assert.ok(calls[0].usage.tokens.cacheWrite > 0);
+    const cache = runtime.cacheMetrics();
+    assert.equal(cache.length, calls.length);
+    assert.ok(cache[0].hitRate >= 0 && cache[0].hitRate <= 1);
+    assert.equal(cache[0].cacheWrite, calls[0].usage.tokens.cacheWrite);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test('Pmem SDK exposes the Agent runtime over its own database', async (t) => {
+  const f = fixture(t);
+  const { Pmem } = require(path.join(f.root, 'dist/sdk/index'));
+  const pmem = Pmem.create({ databasePath: path.join(f.root, 'sdk-memory.sqlite') });
+  const runtime = await pmem.agent({
+    agentDatabasePath: path.join(f.root, 'sdk-agent.sqlite'),
+    faux: true,
+  });
+  try {
+    const result = await runtime.prompt('sdk hello');
+    assert.equal(result.text, 'The task is complete.');
+  } finally {
+    await runtime.close();
+    pmem.close();
+  }
+});

@@ -11,11 +11,7 @@ function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-foundation-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'dist'));
-  for (const dir of ['sdk', 'server', 'db']) {
-    fs.cpSync(path.join(__dirname, '..', 'dist', dir), path.join(root, 'dist', dir), {
-      recursive: true,
-    });
-  }
+  fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(root, 'dist'), { recursive: true });
   fs.mkdirSync(path.join(root, 'migrations'));
   fs.copyFileSync(
     path.join(__dirname, '..', 'migrations/0000_foundation.sql'),

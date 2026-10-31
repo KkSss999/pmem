@@ -1,11 +1,16 @@
-import type { PluginCallContext } from '@miao/agent/contracts';
+import type { ContextContribution, PluginCallContext } from '@miao/agent/contracts';
 import type { CompiledExtension } from '@miao/agent/plugins';
 import type { PmemAgentBinding, PmemAgentHost, PmemMemory } from './contracts';
 import { formatL1, formatL2, formatRecall } from './memory';
 import { loadMiao, loadTypebox } from './miao';
 
 export const PMEM_PLUGIN_ID = 'pmem.memory';
-export const PMEM_PLUGIN_VERSION = '1.0.0';
+export const PMEM_PLUGIN_VERSION = '1.1.0';
+
+export interface PmemMemoryPluginOptions {
+  /** Set by the host before a turn; never read from model arguments. */
+  queryFor?: (binding: PmemAgentBinding) => string | undefined;
+}
 
 function bindingOf(context: PluginCallContext): PmemAgentBinding {
   return {
@@ -18,7 +23,8 @@ function bindingOf(context: PluginCallContext): PmemAgentBinding {
 /** Read-only Memory tools. Writes remain a host decision, not a model side effect. */
 export async function createPmemMemoryPlugin(
   memory: PmemMemory,
-  host: PmemAgentHost
+  host: PmemAgentHost,
+  options: PmemMemoryPluginOptions = {}
 ): Promise<CompiledExtension> {
   const [{ createExtension }, { Type }] = await Promise.all([loadMiao(), loadTypebox()]).then(
     ([miao, typebox]) => [miao.plugins, typebox] as const
@@ -43,6 +49,27 @@ export async function createPmemMemoryPlugin(
           })
         );
         return { content: [{ type: 'text', text: result.text }], details: result.details };
+      },
+    });
+
+    api.registerContext({
+      id: 'pmem-recall',
+      read: async (context): Promise<readonly ContextContribution[]> => {
+        const binding = bindingOf(context);
+        const query = options.queryFor?.(binding)?.trim();
+        if (!query) return [];
+        const scope = host.scope(binding);
+        const result = formatRecall(
+          memory.resolve(query, scope.anchoredSpaceIds, scope.access, { topK: 3 })
+        );
+        if (!result.details.l2.length && !result.details.l1.length) return [];
+        return [
+          {
+            id: 'pmem-recall',
+            kind: 'messages',
+            messages: [{ role: 'user', content: result.text, timestamp: 0 }],
+          },
+        ];
       },
     });
 

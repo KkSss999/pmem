@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentApplication } from '@miao/agent';
+import type { AgentApplication, AgentApplicationOptions } from '@miao/agent';
 import type { AgentServiceClient, AgentServiceEvent } from '@miao/agent/client';
 import type { OwnedDatabase } from '../db/database';
 import type { ConversationRole } from '../domain/memory/types';
@@ -12,6 +12,9 @@ import { createLocalAgentPersistence } from './persistence';
 import { createPmemMemoryPlugin } from './plugin';
 
 const PROMPT_TIMEOUT_MS = 120_000;
+
+type MiaoProviders = NonNullable<AgentApplicationOptions['providers']>;
+type MiaoModelCatalog = NonNullable<AgentApplicationOptions['runtime']['modelCatalog']>;
 
 export interface PmemModelSelection {
   providerId: string;
@@ -33,12 +36,68 @@ export interface PmemAgentRuntimeOptions {
   /** Deterministic local provider for tests. */
   faux?: boolean;
   model?: PmemModelSelection;
+  providers?: MiaoProviders;
+  modelCatalog?: MiaoModelCatalog;
   captureL0?: boolean;
 }
 
 export interface PmemPromptResult {
   text: string;
   sessionId: string;
+}
+
+export interface PmemTokenUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+  total: number;
+}
+
+export interface PmemCostUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+export interface PmemCacheMetrics {
+  requestId: string;
+  providerId: string;
+  modelId: string;
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** Provider-reported cache read share of the prompt tokens for this call. */
+  hitRate: number;
+}
+
+export interface PmemModelCall {
+  requestId: string;
+  sessionId: string;
+  providerId: string;
+  modelId: string;
+  status: 'started' | 'succeeded' | 'failed' | 'cancelled';
+  startedAt: number;
+  endedAt?: number;
+  usage?: { tokens: PmemTokenUsage; cost: PmemCostUsage };
+}
+
+class ModelCallCollector {
+  private readonly rows = new Map<string, PmemModelCall>();
+
+  write(entry: { record: PmemModelCall }): Promise<void> {
+    this.rows.set(entry.record.requestId, structuredClone(entry.record));
+    return Promise.resolve();
+  }
+
+  list(): readonly PmemModelCall[] {
+    return [...this.rows.values()]
+      .sort((a, b) => a.startedAt - b.startedAt)
+      .map((record) => structuredClone(record));
+  }
 }
 
 function eventOf(event: AgentServiceEvent) {
@@ -85,6 +144,8 @@ export class PmemAgentRuntime {
     private readonly closePersistence: () => void,
     readonly memory: AgentMemory,
     private readonly host: PmemAgentHost,
+    private readonly modelCallsStore: ModelCallCollector,
+    private readonly recallQueries: Map<string, string>,
     readonly workspaceId: string,
     readonly agentId: string,
     readonly sessionId: string,
@@ -105,7 +166,11 @@ export class PmemAgentRuntime {
     const memory = new AgentMemory(options.database);
     const local = await createLocalAgentPersistence(options.agentDatabasePath);
     const persistence = local.persistence;
-    const plugin = await createPmemMemoryPlugin(memory, host);
+    const recallQueries = new Map<string, string>();
+    const modelCalls = new ModelCallCollector();
+    const plugin = await createPmemMemoryPlugin(memory, host, {
+      queryFor: (binding) => recallQueries.get(binding.sessionId),
+    });
     const { agent: miao, client: miaoClient } = await loadMiao();
     const application = miao.createAgentApplication({
       persistence,
@@ -113,8 +178,11 @@ export class PmemAgentRuntime {
         harnessContent: pmemHarnessContent,
         harnessAssembly: pmemHarnessAssembly,
         faux: options.faux ?? false,
+        modelCallSink: modelCalls,
         ...(options.model ? { defaultModel: options.model } : {}),
+        ...(options.modelCatalog ? { modelCatalog: options.modelCatalog } : {}),
       },
+      ...(options.providers ? { providers: options.providers } : {}),
       plugins: [plugin],
     });
     const endpoint = application.bindAuthenticatedCaller({
@@ -146,6 +214,8 @@ export class PmemAgentRuntime {
         local.close,
         memory,
         host,
+        modelCalls,
+        recallQueries,
         workspaceId,
         identity.identity.agentId,
         session.session.sessionId,
@@ -163,8 +233,10 @@ export class PmemAgentRuntime {
   async prompt(text: string): Promise<PmemPromptResult> {
     if (!text.trim()) throw new Error('A prompt is required.');
     const waiter = this.waitForAssistant();
+    this.recallQueries.set(this.sessionId, text);
+    if (this.captureL0) this.enqueueCapture('user', text, `user:${randomUUID()}`, Date.now());
     try {
-      const receipt = await this.client.command(
+      await this.client.command(
         'input.send',
         {
           target: {
@@ -177,12 +249,76 @@ export class PmemAgentRuntime {
         },
         randomUUID()
       );
-      if (this.captureL0) this.enqueueCapture('user', text, `user:${receipt.inputId}`, Date.now());
       return { text: await waiter.promise, sessionId: this.sessionId };
     } catch (error) {
       waiter.cancel();
       throw error;
+    } finally {
+      this.recallQueries.delete(this.sessionId);
     }
+  }
+
+  /** Model-call accounting exposed by MiaoTs; cacheRead is provider-reported. */
+  modelCalls(): readonly PmemModelCall[] {
+    return this.modelCallsStore.list();
+  }
+
+  cacheMetrics(): readonly PmemCacheMetrics[] {
+    return this.modelCallsStore.list().map((call) => {
+      const tokens = call.usage?.tokens;
+      const input = tokens?.input ?? 0;
+      const cacheRead = tokens?.cacheRead ?? 0;
+      const cacheWrite = tokens?.cacheWrite ?? 0;
+      const prompt = input + cacheRead + cacheWrite;
+      return {
+        requestId: call.requestId,
+        providerId: call.providerId,
+        modelId: call.modelId,
+        input,
+        cacheRead,
+        cacheWrite,
+        hitRate: prompt ? cacheRead / prompt : 0,
+      };
+    });
+  }
+
+  /** Read a persisted transcript; defaults to this runtime's current Session. */
+  sessionTranscript(sessionId = this.sessionId, agentId: string | null = this.agentId) {
+    return this.client.query(
+      'session.transcript',
+      {
+        target: { workspaceId: this.workspaceId, agentId, sessionId },
+      },
+      randomUUID()
+    );
+  }
+
+  /** Read the latest prepared context manifest, including auto-recall provenance. */
+  contextSnapshot() {
+    return this.client.inspectContext(
+      {
+        workspaceId: this.workspaceId,
+        agentId: this.agentId,
+        sessionId: this.sessionId,
+      },
+      randomUUID()
+    );
+  }
+
+  /** List durable Sessions in this Agent workspace. */
+  async listSessions(): Promise<
+    readonly { sessionId: string; agentId: string | null; title: string | null }[]
+  > {
+    const page = await this.client.query(
+      'session.list',
+      { workspaceId: this.workspaceId },
+      randomUUID()
+    );
+    return page.items.map((session) => ({
+      sessionId: session.sessionId,
+      agentId: session.agentId,
+      title: session.title,
+    }));
   }
 
   /** Wait for pending L0 captures; useful before asserting or closing. */
