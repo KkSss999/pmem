@@ -31,6 +31,7 @@ import {
 } from './schema';
 import { SqliteMemoryRepository } from './repository';
 import { assertIndexHealthy, indexStatus, rebuildIndex } from './l1-search-index';
+import { invalidateL2ForScopeChange, l1SnapshotHash, recordL2Change } from './l2-invalidation';
 
 export class SqliteL1Repository implements L1Repository {
   private readonly l0: SqliteMemoryRepository;
@@ -337,6 +338,61 @@ export class SqliteL1Repository implements L1Repository {
       .get();
     if (!row) return undefined;
     return this.loadMemory(id, readableSpaceIds);
+  }
+
+  updateSpaceLinks(
+    id: string,
+    relatedSpaceIds: readonly string[],
+    readableSpaceIds: readonly string[],
+    writableSpaceIds: readonly string[],
+    now: string
+  ): L1Memory {
+    return this.db.transaction(
+      (tx) => {
+        const row = tx.select().from(l1Memories).where(eq(l1Memories.id, id)).get();
+        if (!row) throw new MemoryError('JOB_NOT_FOUND', 'L1 memory not found.');
+        if (!writableSpaceIds.includes(row.spaceId))
+          throw new MemoryError('ACCESS_DENIED', 'The L1 owner space is not writable.');
+        const next = [...new Set(relatedSpaceIds)]
+          .filter((spaceId) => spaceId !== row.spaceId)
+          .sort();
+        for (const spaceId of next) {
+          if (
+            !readableSpaceIds.includes(spaceId) ||
+            !tx.select({ id: spaces.id }).from(spaces).where(eq(spaces.id, spaceId)).get()
+          )
+            throw new MemoryError('ACCESS_DENIED', 'A related space is not readable.');
+        }
+        const current = tx
+          .select({ spaceId: l1SpaceLinks.spaceId })
+          .from(l1SpaceLinks)
+          .where(eq(l1SpaceLinks.memoryId, id))
+          .orderBy(asc(l1SpaceLinks.spaceId))
+          .all()
+          .map((item) => item.spaceId);
+        if (JSON.stringify(current) === JSON.stringify(next))
+          return this.loadMemory(id, readableSpaceIds)!;
+        tx.delete(l1SpaceLinks).where(eq(l1SpaceLinks.memoryId, id)).run();
+        if (next.length)
+          tx.insert(l1SpaceLinks)
+            .values(next.map((spaceId) => ({ memoryId: id, spaceId })))
+            .run();
+        if (row.maintenanceStatus === 'complete') {
+          invalidateL2ForScopeChange(tx, id, now);
+          const hash = l1SnapshotHash(tx, id);
+          if (hash)
+            recordL2Change(tx, {
+              l1Id: id,
+              ownerSpaceId: row.spaceId,
+              kind: 'scope_changed',
+              l1Hash: hash,
+              now,
+            });
+        }
+        return this.loadMemory(id, readableSpaceIds)!;
+      },
+      { behavior: 'immediate' }
+    );
   }
 
   private loadMemory(id: string, readableSpaceIds: readonly string[]): L1Memory | undefined {

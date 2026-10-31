@@ -248,7 +248,7 @@ test('scheduler migration backfills eligible L0 without repeating a previously a
   before.close();
   fs.writeFileSync(migrationPath, valid);
   const backupPath = path.join(f.root, 'backup.sqlite');
-  assert.equal((await f.OwnedDatabase.migrate(oldPath, backupPath)).migrationsApplied, 2);
+  assert.equal((await f.OwnedDatabase.migrate(oldPath, backupPath)).migrationsApplied, 3);
   const backup = new Database(backupPath, { readonly: true });
   assert.equal(backup.prepare('SELECT count(*) n FROM memory_l0_messages').get().n, 2);
   backup.close();

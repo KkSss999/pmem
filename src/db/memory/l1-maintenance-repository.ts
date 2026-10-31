@@ -16,6 +16,12 @@ import {
   l1SpaceLinks,
 } from './schema';
 import { assertIndexHealthy } from './l1-search-index';
+import {
+  hashMaintenanceSnapshot,
+  l1SnapshotHash,
+  migrateL2LinksForMerge,
+  recordL2Change,
+} from './l2-invalidation';
 
 export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
   constructor(private readonly db: BetterSQLite3Database) {}
@@ -209,6 +215,12 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
           const current = this.snapshot(id);
           if (!current || JSON.stringify(current) !== JSON.stringify(item.memory))
             throw new MemoryError('SOURCE_CONFLICT', 'Maintenance memory changed.');
+          const wasComplete =
+            tx
+              .select({ status: l1Memories.maintenanceStatus })
+              .from(l1Memories)
+              .where(eq(l1Memories.id, id))
+              .get()?.status === 'complete';
           const changed = item.candidates.some((candidate) => {
             const latest = this.snapshot(candidate.id);
             const task = tx
@@ -277,6 +289,25 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
               })
               .where(eq(l1MaintenanceTasks.memoryId, id))
               .run();
+            migrateL2LinksForMerge(tx, id, target.id, now);
+            recordL2Change(tx, {
+              l1Id: id,
+              ownerSpaceId: current.spaceId,
+              kind: 'merged',
+              l1Hash: hashMaintenanceSnapshot(current),
+              state: 'processed',
+              survivorL1Id: target.id,
+              now,
+            });
+            const targetHash = l1SnapshotHash(tx, target.id);
+            if (targetHash)
+              recordL2Change(tx, {
+                l1Id: target.id,
+                ownerSpaceId: target.spaceId,
+                kind: 'content_changed',
+                l1Hash: targetHash,
+                now,
+              });
           } else {
             tx.update(l1Memories)
               .set({ maintenanceStatus: 'complete' })
@@ -292,6 +323,15 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
               })
               .where(eq(l1MaintenanceTasks.memoryId, id))
               .run();
+            const changedHash = l1SnapshotHash(tx, id);
+            if (changedHash)
+              recordL2Change(tx, {
+                l1Id: id,
+                ownerSpaceId: item.memory.spaceId,
+                kind: wasComplete ? 'content_changed' : 'created',
+                l1Hash: changedHash,
+                now,
+              });
           }
         }
       },

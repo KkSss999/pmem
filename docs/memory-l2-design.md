@@ -1,6 +1,6 @@
 # L2 代码设计
 
-本文把 [Memory System](memory.md) 的 L2 决策落到领域、服务、数据库适配器和任务边界。L2 尚未实现；本文是首版代码设计基线，未决项列在末尾。总体依赖方向见 [Memory 代码设计基线](memory-design.md)。
+本文把 [Memory System](memory.md) 的 L2 决策落到领域、服务、数据库适配器和任务边界。L2 核心服务、SQLite 适配器、自动变更登记、调度、L1 合并失效、FTS 候选和提示词适配器已实现并有针对性验证；L1 关联空间更新已接入；真实模型评估见 [L2 生成质量评估](l2-quality-evaluation.md)。本文是首版代码设计基线，未决项列在末尾。总体依赖方向见 [Memory 代码设计基线](memory-design.md)。
 
 ## 首版范围
 
@@ -74,6 +74,7 @@ Service 不直接访问 SQL，领域不依赖 ORM 行类型。L1 变更与受影
 | ---------------------------- | ------------------------------------------------------------------ |
 | `id`                         | 变更标识                                                           |
 | `l1_id`                      | 发生变化的 L1                                                      |
+| `owner_space_id`             | L1 的归属空间；批次按此列领取                                      |
 | `kind`                       | `created`、`content_changed`、`scope_changed`、`merged`、`removed` |
 | `l1_hash`                    | 变化时的内容与范围指纹                                             |
 | `survivor_l1_id`             | `merged` 时保留的 L1                                               |

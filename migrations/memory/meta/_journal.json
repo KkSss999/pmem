@@ -43,6 +43,13 @@
       "when": 1793359427601,
       "tag": "0005_l1_maintenance",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793438050502,
+      "tag": "0006_l2",
+      "breakpoints": true
     }
   ]
 }

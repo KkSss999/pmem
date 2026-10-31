@@ -278,6 +278,32 @@ export class L1Service {
     return this.repository.getMemory(id, access.readableSpaceIds);
   }
 
+  updateSpaceLinks(id: string, relatedSpaceIds: readonly string[], access: MemoryAccess): L1Memory {
+    identifier(id, 'memory ID');
+    validateAccess(access);
+    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
+    if (!Array.isArray(relatedSpaceIds))
+      throw new MemoryError('INVALID_INPUT', 'relatedSpaceIds must be an array.');
+    const memory = this.repository.getMemory(id, access.readableSpaceIds);
+    if (!memory) throw new MemoryError('JOB_NOT_FOUND', 'L1 memory not found.');
+    requireRead(access, memory.spaceId);
+    requireWrite(access, memory.spaceId);
+    const next = [...new Set(relatedSpaceIds)].filter((spaceId) => spaceId !== memory.spaceId);
+    for (const spaceId of next) {
+      identifier(spaceId, 'related space ID');
+      requireRead(access, spaceId);
+      if (!this.l0.getSpace(spaceId))
+        throw new MemoryError('SPACE_NOT_FOUND', 'A related space does not exist.');
+    }
+    return this.repository.updateSpaceLinks(
+      id,
+      next,
+      access.readableSpaceIds,
+      access.writableSpaceIds,
+      new Date().toISOString()
+    );
+  }
+
   getJobMemories(jobId: string, access: MemoryAccess): L1Memory[] {
     identifier(jobId, 'job ID');
     validateAccess(access);

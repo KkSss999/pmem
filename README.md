@@ -2,7 +2,7 @@
 
 PMEM is a local Memory & Knowledge system for individuals to manage and use information across their lives and work. Personal describes who the system serves; its content can cover software projects, creative writing, research, daily life, and other contexts.
 
-The current development version provides database infrastructure, an embedded SDK lifecycle, and internal L0 and L1 Memory services. L1 extraction has an explicit task interface and OpenAI and DeepSeek API adapters; automatic extraction scheduling, keyword recall, and similar-memory maintenance are implemented internally. L2, L3, Knowledge, Memory SDK, host integration, CLI, and MCP are not implemented yet.
+The current development version provides database infrastructure, an embedded SDK lifecycle, and internal L0, L1, and L2 Memory services. L1 extraction has an explicit task interface and OpenAI and DeepSeek API adapters; automatic extraction scheduling, keyword recall, and similar-memory maintenance are implemented internally. L2 core storage, generation service, automatic change registration, scheduling, merge invalidation, FTS recall, FTS-based candidate selection, and the OpenAI/DeepSeek L2 prompt adapter are implemented internally. L3, Knowledge, Memory SDK, host integration, CLI, and MCP are not implemented yet.
 
 ## Requirements
 

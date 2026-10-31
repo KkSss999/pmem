@@ -63,7 +63,17 @@ export type MemoryErrorCode =
   | 'INDEX_STALE'
   | 'INDEX_CORRUPT'
   | 'INDEX_UNAVAILABLE'
-  | 'READ_ONLY';
+  | 'READ_ONLY'
+  | 'L2_INPUT_TOO_LARGE'
+  | 'L2_MODEL_FAILED'
+  | 'L2_MODEL_OUTPUT_INVALID'
+  | 'L2_MODEL_OUTCOME_UNKNOWN'
+  | 'L2_STALE_INPUT'
+  | 'L2_SCOPE_EMPTY'
+  | 'L2_INDEX_MISSING'
+  | 'L2_INDEX_STALE'
+  | 'L2_INDEX_CORRUPT'
+  | 'L2_INDEX_UNAVAILABLE';
 
 export class MemoryError extends Error {
   constructor(

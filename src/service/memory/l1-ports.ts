@@ -34,6 +34,13 @@ export interface L1Repository {
   failJob(id: string, token: string, state: 'failed' | 'unknown', code: string, now: string): void;
   retryJob(id: string, state: 'failed' | 'unknown', now: string): L1Job | undefined;
   getMemory(id: string, readableSpaceIds: readonly string[]): L1Memory | undefined;
+  updateSpaceLinks(
+    id: string,
+    relatedSpaceIds: readonly string[],
+    readableSpaceIds: readonly string[],
+    writableSpaceIds: readonly string[],
+    now: string
+  ): L1Memory;
   listJobMemories(jobId: string, readableSpaceIds: readonly string[]): L1Memory[];
   checkSearchIndex(): L1IndexStatus;
   rebuildSearchIndex(): void;

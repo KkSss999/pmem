@@ -1,5 +1,7 @@
 import { L1ModelError, type L1ExtractionModel } from '../../domain/memory/l1';
 import type { L1MaintenanceModel } from '../../domain/memory/l1-maintenance';
+import { L2ModelError, type L2GenerationModel } from '../../domain/memory/l2';
+import { buildL2Input, l2OutputSchema, l2SystemPrompt, L2_PROMPT_VERSION } from './l2-prompt';
 
 interface BaseModelOptions {
   api: 'chat' | 'responses';
@@ -67,7 +69,10 @@ const maintenanceSchema = {
   },
 } as const;
 
-export class OpenAIExtractionModel implements L1ExtractionModel, L1MaintenanceModel {
+export class OpenAIExtractionModel
+  implements L1ExtractionModel, L1MaintenanceModel, L2GenerationModel
+{
+  readonly promptVersion = L2_PROMPT_VERSION;
   private readonly endpoint: string;
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
@@ -142,6 +147,22 @@ export class OpenAIExtractionModel implements L1ExtractionModel, L1MaintenanceMo
       maintenanceSchema,
       'pmem_l1_maintenance'
     );
+  }
+
+  async generate(inputData: Parameters<L2GenerationModel['generate']>[0]): Promise<unknown> {
+    try {
+      return await this.request(
+        buildL2Input(inputData),
+        l2SystemPrompt,
+        l2OutputSchema,
+        'pmem_l2_memories'
+      );
+    } catch (cause) {
+      if (cause instanceof L1ModelError)
+        throw new L2ModelError(cause.code, cause.outcome, cause.message, { cause });
+      if (cause instanceof L2ModelError) throw cause;
+      throw new L2ModelError('L2_MODEL_UNKNOWN', 'unknown', 'L2 generation failed.', { cause });
+    }
   }
 
   private async request(
