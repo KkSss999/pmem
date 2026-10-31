@@ -15,6 +15,8 @@ PMEM   = Memory provider + PMEM host adapter
 
 PMEM 不修改 MiaoTs 源码。需要的能力从 MiaoTs 的公开入口获取；缺少的公开能力先通过 PMEM 侧适配解决，不能通过 fork 或深拷贝框架内部实现绕过。
 
+Agent、Jev 与内部生成模型的职责划分见 [Agent 与 Jev 的职责边界](agent-jev-boundary.md)。
+
 ## 当前 PMEM 能力
 
 已有：
