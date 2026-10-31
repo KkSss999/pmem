@@ -1,0 +1,1 @@
+ALTER TABLE `memory_l1_jobs` ADD `claim_token` text;

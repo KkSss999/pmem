@@ -1,115 +1,62 @@
 {
   "name": "pmem-ai",
-  "version": "1.3.6",
-  "description": "Project Memory for AI Agents: a local CLI runtime for project context, recall, and memory updates",
+  "version": "1.3.5",
+  "private": true,
+  "packageManager": "bun@1.4.4",
+  "trustedDependencies": [
+    "better-sqlite3"
+  ],
+  "description": "Local infrastructure for a personal Memory and Knowledge SDK",
   "main": "dist/sdk/index.js",
+  "types": "dist/sdk/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/sdk/index.d.ts",
-      "import": "./dist/sdk/index.js",
-      "require": "./dist/sdk/index.js"
-    },
-    "./runtime": {
-      "types": "./dist/runtime/index.d.ts",
-      "import": "./dist/runtime/index.js",
-      "require": "./dist/runtime/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "bin": {
-    "pmem": "dist/index.js"
+      "require": "./dist/sdk/index.js",
+      "default": "./dist/sdk/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
-    "prepack": "bun run build",
-    "prepublishOnly": "bun run check && bun run build",
-    "pretest": "bun run build",
-    "dev": "bun src/index.ts",
-    "start": "node dist/index.js",
-    "test": "node --require ts-node/register --test src/core/*.test.ts src/core/health/*.test.ts src/core/query/*.test.ts src/core/query/engine/*.test.ts src/core/semantic/*.test.ts src/context-pack/*.test.ts src/commands/*.test.ts src/mcp/*.test.ts src/runtime/*.test.ts src/schema/*.test.ts src/extensions/*.test.ts src/storage/*.test.ts src/query/*.test.ts src/sdk/*.test.ts && node --test scripts/version-consistency.test.js",
-    "test:e2e:install": "bash scripts/e2e-install-smoke.sh",
-    "test:e2e:workflow": "bash scripts/e2e-real-workflow.sh",
-    "test:e2e:non-git": "bash scripts/e2e-non-git-fallback.sh",
-    "test:e2e:v06-init": "bash scripts/e2e-v06-non-interactive-init.sh",
-    "test:e2e:v06-answers": "bash scripts/e2e-v06-answers-file.sh",
-    "test:e2e:v06-claude": "bash scripts/e2e-v06-claude-integration.sh",
-    "test:e2e:v06-empty": "bash scripts/e2e-v06-empty-guidance.sh",
-    "test:e2e:v06-nongit": "bash scripts/e2e-v06-non-git-ux.sh",
-    "test:e2e:v06-skills": "bash scripts/e2e-v06-skills.sh",
-    "test:e2e:v061-suggest": "bash scripts/e2e-v061-suggest.sh",
-    "test:e2e:v063-discover": "bash scripts/e2e-v063-discover.sh",
-    "test:e2e:v07-novel": "bash scripts/e2e-v07-novel.sh",
-    "test:e2e:v07-research": "bash scripts/e2e-v07-research.sh",
-    "test:e2e:v07-sync-flow": "bash scripts/e2e-v07-sync-flow.sh",
-    "test:e2e:v074-agent-ux": "bash scripts/e2e-v074-agent-ux.sh",
-    "test:e2e:v075-context-restoration": "bash scripts/e2e-v075-context-restoration.sh",
-    "test:e2e:v075-next-dedup": "bash scripts/e2e-v075-next-dedup.sh",
-    "test:e2e:semantic-runtime": "bash scripts/e2e-semantic-runtime-smoke.sh",
-    "test:release-registry": "node --test scripts/npm-release-state.test.js",
-    "lint": "oxlint",
-    "format": "oxfmt src scripts",
-    "format:check": "oxfmt --check src scripts",
-    "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run lint && bun run format:check"
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint .",
+    "test": "node --test tests/*.test.cjs"
   },
-  "keywords": [
-    "agent",
-    "memory",
-    "project-memory",
-    "cli",
-    "ai",
-    "codex",
-    "claude",
-    "sqlite"
-  ],
-  "author": "",
   "license": "Apache-2.0",
   "type": "commonjs",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/KkSss999/pmem.git"
   },
-  "bugs": {
-    "url": "https://github.com/KkSss999/pmem/issues"
-  },
-  "homepage": "https://github.com/KkSss999/pmem#readme",
   "engines": {
-    "node": ">=18"
+    "node": ">=22 <27"
   },
   "files": [
-    "dist/**/*.js",
-    "dist/**/*.d.ts",
-    "dist/**/*.map",
-    "!dist/**/*.test.js",
-    "!dist/**/*.test.js.map",
-    "!dist/**/*.test.d.ts",
-    "!dist/**/*.test.d.ts.map",
-    "skills/**/*.md",
-    "assets/**/*.gif",
-    "assets/**/*.svg",
-    "pmem.png",
+    "dist/sdk/index.js",
+    "dist/sdk/index.d.ts",
+    "dist/server/runtime.js",
+    "dist/server/runtime.d.ts",
+    "dist/db/database.js",
+    "dist/db/database.d.ts",
+    "dist/db/migrations.js",
+    "dist/db/migrations.d.ts",
+    "dist/db/schema.js",
+    "dist/db/schema.d.ts",
+    "migrations/**",
     "README.md",
-    "CHANGELOG.md",
     "LICENSE"
   ],
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.9.1",
-    "oxfmt": "^0.75.0",
-    "oxlint": "^1.90.0",
-    "ts-node": "^10.9.2",
+    "drizzle-kit": "0.31.8",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@huggingface/transformers": "4.3.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.10.0",
-    "commander": "^14.0.3",
-    "js-yaml": "^4.1.1"
-  },
-  "packageManager": "bun@1.4.4",
-  "trustedDependencies": [
-    "better-sqlite3"
-  ]
+    "drizzle-orm": "0.45.4"
+  }
 }

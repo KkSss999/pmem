@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "preference",
+      "split": "development",
+      "messages": [{ "role": "user", "content": "我喜欢安静的咖啡馆，周末经常在那里读科幻小说。" }],
+      "expectMemory": true,
+      "checks": ["咖啡", "科幻"],
+      "review": "保留个人偏好，不把一次经历夸大成其他习惯。"
+    },
+    {
+      "id": "fictional_prefix",
+      "split": "development",
+      "messages": [
+        {
+          "role": "user",
+          "content": "虚构测试：小说角色小周喜欢拿铁，她在北城经营花店；这些都是小说设定。"
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["小周", "拿铁", "花店"],
+      "review": "记住小说设定，不将角色设定当作现实用户事实。"
+    },
+    {
+      "id": "accepted_design",
+      "split": "development",
+      "messages": [
+        { "role": "user", "content": "PMEM 的数据库准备使用 SQLite。" },
+        { "role": "assistant", "content": "普通表可以用 Drizzle 定义。" },
+        { "role": "user", "content": "可以，普通表就用 Drizzle。" }
+      ],
+      "expectMemory": true,
+      "checks": ["SQLite", "Drizzle"],
+      "review": "区分用户确认和助手建议，来源指向支持结论的消息。"
+    },
+    {
+      "id": "tentative",
+      "split": "development",
+      "messages": [
+        {
+          "role": "user",
+          "content": "项目现在用 SQLite。我在考虑换成 PostgreSQL，但目前还没有决定。"
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["SQLite", "PostgreSQL"],
+      "review": "保留当前使用 SQLite 和 PostgreSQL 仍未决定的区别。"
+    },
+    {
+      "id": "fiction",
+      "split": "development",
+      "messages": [
+        {
+          "role": "user",
+          "content": "在小说《纸舟》中，角色阿岚的家乡是北城，她在第一章还不知道父亲的身份。"
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["阿岚", "北城", "父亲"],
+      "review": "保留作品与角色语境，不当作现实人物事实。"
+    },
+    {
+      "id": "research",
+      "split": "development",
+      "messages": [
+        {
+          "role": "user",
+          "content": "这次实验共 12 组，方案 A 平均延迟 42ms，方案 B 为 63ms；样本有限，不能证明长期优势。"
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["12", "42", "63"],
+      "review": "数字正确且保留一次实验的限制。"
+    },
+    {
+      "id": "greeting",
+      "split": "development",
+      "messages": [
+        { "role": "user", "content": "你好，谢谢！" },
+        { "role": "assistant", "content": "你好，不客气。" }
+      ],
+      "expectMemory": false,
+      "checks": [],
+      "review": "普通寒暄不应变成事实。"
+    },
+    {
+      "id": "suggestion_not_accepted",
+      "split": "development",
+      "messages": [
+        { "role": "user", "content": "数据库用什么方案？" },
+        { "role": "assistant", "content": "建议使用 PostgreSQL。" },
+        { "role": "user", "content": "我还没决定，先不要实施。" }
+      ],
+      "expectMemory": true,
+      "checks": ["PostgreSQL"],
+      "review": "若记录该提案，必须表明未决定，不能称已采用。"
+    },
+    {
+      "id": "third_party",
+      "split": "development",
+      "messages": [{ "role": "user", "content": "我妹妹喜欢拿铁，我自己更喜欢美式。" }],
+      "expectMemory": true,
+      "checks": ["妹妹", "拿铁", "美式"],
+      "review": "不能把妹妹的偏好归到用户本人。"
+    },
+    {
+      "id": "multi_source",
+      "split": "development",
+      "messages": [
+        { "role": "user", "content": "项目海棠的服务监听 8080 端口。" },
+        { "role": "user", "content": "另一个决定：部署前必须跑数据库迁移。" }
+      ],
+      "expectMemory": true,
+      "checks": ["8080", "迁移"],
+      "review": "分别覆盖两个事实，关联对应来源 ID。"
+    },
+    {
+      "id": "holdout_prohibition",
+      "split": "holdout",
+      "messages": [{ "role": "user", "content": "这个项目的提交要先由我确认，绝对不要自动推送。" }],
+      "expectMemory": true,
+      "checks": ["推送", "确认"],
+      "review": "保留用户要求和禁止自动推送。"
+    },
+    {
+      "id": "holdout_timezone",
+      "split": "holdout",
+      "messages": [
+        {
+          "role": "user",
+          "content": "去年我去了成都参加摄影展。",
+          "occurredAt": "2026-02-05T10:00:00+08:00"
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["成都", "摄影"],
+      "review": "时间可从消息时间推得为 2025，不得编造日期。"
+    },
+    {
+      "id": "holdout_greeting",
+      "split": "holdout",
+      "messages": [
+        { "role": "user", "content": "晚安！" },
+        { "role": "assistant", "content": "晚安。" }
+      ],
+      "expectMemory": false,
+      "checks": [],
+      "review": "普通寒暄不应被记录成事实。"
+    },
+    {
+      "id": "holdout_english",
+      "split": "holdout",
+      "messages": [
+        {
+          "role": "user",
+          "content": "I prefer TypeScript for this project, but we have not decided on the database yet."
+        }
+      ],
+      "expectMemory": true,
+      "checks": ["TypeScript"],
+      "review": "保留语言和未决定的状态，不编造数据库。"
+    }
+  ]
+}

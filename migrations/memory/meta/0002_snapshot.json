@@ -1,0 +1,603 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "45e8eab7-2666-429e-8601-2837a40607b0",
+  "prevId": "8f04a55a-68ce-4724-b02c-b1bfc21f49bd",
+  "tables": {
+    "memory_l0_messages": {
+      "name": "memory_l0_messages",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_event_id": {
+          "name": "source_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l0_id": {
+          "name": "memory_l0_id",
+          "columns": ["id"],
+          "isUnique": true
+        },
+        "memory_l0_source_event": {
+          "name": "memory_l0_source_event",
+          "columns": ["space_id", "source", "source_event_id"],
+          "isUnique": true
+        },
+        "memory_l0_space_sequence": {
+          "name": "memory_l0_space_sequence",
+          "columns": ["space_id", "sequence"],
+          "isUnique": false
+        },
+        "memory_l0_session_sequence": {
+          "name": "memory_l0_session_sequence",
+          "columns": ["space_id", "session_id", "sequence"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "memory_l0_messages_space_id_memory_spaces_id_fk": {
+          "name": "memory_l0_messages_space_id_memory_spaces_id_fk",
+          "tableFrom": "memory_l0_messages",
+          "tableTo": "memory_spaces",
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "memory_l0_role_check": {
+          "name": "memory_l0_role_check",
+          "value": "\"memory_l0_messages\".\"role\" IN ('user', 'assistant')"
+        },
+        "memory_l0_source_check": {
+          "name": "memory_l0_source_check",
+          "value": "\"memory_l0_messages\".\"source_event_id\" IS NULL OR \"memory_l0_messages\".\"source\" IS NOT NULL"
+        }
+      }
+    },
+    "memory_l1_cues": {
+      "name": "memory_l1_cues",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cue": {
+          "name": "cue",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_cue_unique": {
+          "name": "memory_l1_cue_unique",
+          "columns": ["memory_id", "cue"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_cues_memory_id_memory_l1_id_fk": {
+          "name": "memory_l1_cues_memory_id_memory_l1_id_fk",
+          "tableFrom": "memory_l1_cues",
+          "tableTo": "memory_l1",
+          "columnsFrom": ["memory_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "memory_l1_job_sources": {
+      "name": "memory_l1_job_sources",
+      "columns": {
+        "job_id": {
+          "name": "job_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "l0_id": {
+          "name": "l0_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_job_source_unique": {
+          "name": "memory_l1_job_source_unique",
+          "columns": ["job_id", "l0_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_job_sources_job_id_memory_l1_jobs_id_fk": {
+          "name": "memory_l1_job_sources_job_id_memory_l1_jobs_id_fk",
+          "tableFrom": "memory_l1_job_sources",
+          "tableTo": "memory_l1_jobs",
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memory_l1_job_sources_l0_id_memory_l0_messages_id_fk": {
+          "name": "memory_l1_job_sources_l0_id_memory_l0_messages_id_fk",
+          "tableFrom": "memory_l1_job_sources",
+          "tableTo": "memory_l0_messages",
+          "columnsFrom": ["l0_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "memory_l1_job_spaces": {
+      "name": "memory_l1_job_spaces",
+      "columns": {
+        "job_id": {
+          "name": "job_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_job_space_unique": {
+          "name": "memory_l1_job_space_unique",
+          "columns": ["job_id", "space_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_job_spaces_job_id_memory_l1_jobs_id_fk": {
+          "name": "memory_l1_job_spaces_job_id_memory_l1_jobs_id_fk",
+          "tableFrom": "memory_l1_job_spaces",
+          "tableTo": "memory_l1_jobs",
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memory_l1_job_spaces_space_id_memory_spaces_id_fk": {
+          "name": "memory_l1_job_spaces_space_id_memory_spaces_id_fk",
+          "tableFrom": "memory_l1_job_spaces",
+          "tableTo": "memory_spaces",
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "memory_l1_jobs": {
+      "name": "memory_l1_jobs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_job_state": {
+          "name": "memory_l1_job_state",
+          "columns": ["space_id", "state"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_jobs_space_id_memory_spaces_id_fk": {
+          "name": "memory_l1_jobs_space_id_memory_spaces_id_fk",
+          "tableFrom": "memory_l1_jobs",
+          "tableTo": "memory_spaces",
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "memory_l1_job_state_check": {
+          "name": "memory_l1_job_state_check",
+          "value": "\"memory_l1_jobs\".\"state\" IN ('pending', 'running', 'succeeded', 'failed', 'unknown')"
+        }
+      }
+    },
+    "memory_l1": {
+      "name": "memory_l1",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "job_id": {
+          "name": "job_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "abstraction": {
+          "name": "abstraction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "maintenance_status": {
+          "name": "maintenance_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_space": {
+          "name": "memory_l1_space",
+          "columns": ["space_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_job_id_memory_l1_jobs_id_fk": {
+          "name": "memory_l1_job_id_memory_l1_jobs_id_fk",
+          "tableFrom": "memory_l1",
+          "tableTo": "memory_l1_jobs",
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memory_l1_space_id_memory_spaces_id_fk": {
+          "name": "memory_l1_space_id_memory_spaces_id_fk",
+          "tableFrom": "memory_l1",
+          "tableTo": "memory_spaces",
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "memory_l1_maintenance_check": {
+          "name": "memory_l1_maintenance_check",
+          "value": "\"memory_l1\".\"maintenance_status\" IN ('pending', 'complete', 'failed')"
+        }
+      }
+    },
+    "memory_l1_sources": {
+      "name": "memory_l1_sources",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "l0_id": {
+          "name": "l0_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_source_unique": {
+          "name": "memory_l1_source_unique",
+          "columns": ["memory_id", "l0_id"],
+          "isUnique": true
+        },
+        "memory_l1_source_reverse": {
+          "name": "memory_l1_source_reverse",
+          "columns": ["l0_id", "memory_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_sources_memory_id_memory_l1_id_fk": {
+          "name": "memory_l1_sources_memory_id_memory_l1_id_fk",
+          "tableFrom": "memory_l1_sources",
+          "tableTo": "memory_l1",
+          "columnsFrom": ["memory_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memory_l1_sources_l0_id_memory_l0_messages_id_fk": {
+          "name": "memory_l1_sources_l0_id_memory_l0_messages_id_fk",
+          "tableFrom": "memory_l1_sources",
+          "tableTo": "memory_l0_messages",
+          "columnsFrom": ["l0_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "memory_l1_space_links": {
+      "name": "memory_l1_space_links",
+      "columns": {
+        "memory_id": {
+          "name": "memory_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "space_id": {
+          "name": "space_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_l1_space_link_unique": {
+          "name": "memory_l1_space_link_unique",
+          "columns": ["memory_id", "space_id"],
+          "isUnique": true
+        },
+        "memory_l1_space_link_reverse": {
+          "name": "memory_l1_space_link_reverse",
+          "columns": ["space_id", "memory_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "memory_l1_space_links_memory_id_memory_l1_id_fk": {
+          "name": "memory_l1_space_links_memory_id_memory_l1_id_fk",
+          "tableFrom": "memory_l1_space_links",
+          "tableTo": "memory_l1",
+          "columnsFrom": ["memory_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "memory_l1_space_links_space_id_memory_spaces_id_fk": {
+          "name": "memory_l1_space_links_space_id_memory_spaces_id_fk",
+          "tableFrom": "memory_l1_space_links",
+          "tableTo": "memory_spaces",
+          "columnsFrom": ["space_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "memory_spaces": {
+      "name": "memory_spaces",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "memory_one_personal_space": {
+          "name": "memory_one_personal_space",
+          "columns": ["kind"],
+          "isUnique": true,
+          "where": "\"memory_spaces\".\"kind\" = 'personal'"
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "memory_space_kind_check": {
+          "name": "memory_space_kind_check",
+          "value": "\"memory_spaces\".\"kind\" IN ('personal', 'custom')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
