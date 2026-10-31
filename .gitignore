@@ -18,3 +18,7 @@ dist/
 # Local registry credentials (never commit npm tokens)
 .npmrc
 .npmrc.*
+
+# Local agent instructions (not tracked in this repository)
+AGENTS.md
+CLAUDE.md

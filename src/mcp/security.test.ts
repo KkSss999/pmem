@@ -233,9 +233,17 @@ status: active
     });
 
     it('accepts valid .pmem under CWD', () => {
-      const cwd = process.cwd();
-      const validPath = path.join(cwd, '.pmem');
-      assert.doesNotThrow(() => validatePathScope(validPath));
+      // Own fixture: the repository itself no longer keeps a .pmem directory.
+      const previous = process.cwd();
+      fs.mkdirSync(TEMP_ROOT, { recursive: true });
+      const cwd = fs.mkdtempSync(path.join(TEMP_ROOT, 'cwd-root-'));
+      fs.mkdirSync(path.join(cwd, '.pmem'), { recursive: true });
+      try {
+        process.chdir(cwd);
+        assert.doesNotThrow(() => validatePathScope(path.join(cwd, '.pmem')));
+      } finally {
+        process.chdir(previous);
+      }
     });
 
     it('accepts a valid .pmem under an explicit runtime root even when process.cwd differs', () => {
