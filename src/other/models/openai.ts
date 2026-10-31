@@ -1,7 +1,9 @@
 import { L1ModelError, type L1ExtractionModel } from '../../domain/memory/l1';
 import type { L1MaintenanceModel } from '../../domain/memory/l1-maintenance';
 import { L2ModelError, type L2GenerationModel } from '../../domain/memory/l2';
+import { L3ModelError, type L3GenerationModel } from '../../domain/memory/l3';
 import { buildL2Input, l2OutputSchema, l2SystemPrompt, L2_PROMPT_VERSION } from './l2-prompt';
+import { buildL3Input, l3OutputSchema, l3SystemPrompt, L3_PROMPT_VERSION } from './l3-prompt';
 
 interface BaseModelOptions {
   api: 'chat' | 'responses';
@@ -70,9 +72,10 @@ const maintenanceSchema = {
 } as const;
 
 export class OpenAIExtractionModel
-  implements L1ExtractionModel, L1MaintenanceModel, L2GenerationModel
+  implements L1ExtractionModel, L1MaintenanceModel, L2GenerationModel, L3GenerationModel
 {
   readonly promptVersion = L2_PROMPT_VERSION;
+  readonly l3PromptVersion = L3_PROMPT_VERSION;
   private readonly endpoint: string;
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
@@ -162,6 +165,24 @@ export class OpenAIExtractionModel
         throw new L2ModelError(cause.code, cause.outcome, cause.message, { cause });
       if (cause instanceof L2ModelError) throw cause;
       throw new L2ModelError('L2_MODEL_UNKNOWN', 'unknown', 'L2 generation failed.', { cause });
+    }
+  }
+
+  async generateKeywords(
+    inputData: Parameters<L3GenerationModel['generateKeywords']>[0]
+  ): Promise<unknown> {
+    try {
+      return await this.request(
+        buildL3Input(inputData),
+        l3SystemPrompt,
+        l3OutputSchema,
+        'pmem_l3_keywords'
+      );
+    } catch (cause) {
+      if (cause instanceof L1ModelError)
+        throw new L3ModelError(cause.code, cause.outcome, cause.message, { cause });
+      if (cause instanceof L3ModelError) throw cause;
+      throw new L3ModelError('L3_MODEL_UNKNOWN', 'unknown', 'L3 generation failed.', { cause });
     }
   }
 

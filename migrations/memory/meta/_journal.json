@@ -50,6 +50,20 @@
       "when": 1793438050502,
       "tag": "0006_l2",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793438995873,
+      "tag": "0007_l3",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793439249382,
+      "tag": "0008_l3_changes",
+      "breakpoints": true
     }
   ]
 }

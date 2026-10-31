@@ -63,6 +63,7 @@ export interface L2Candidate {
 export interface L2Draft {
   action: L2Action;
   l2Id?: string;
+  supersede?: boolean;
   title: string;
   summary: string;
   body: string;

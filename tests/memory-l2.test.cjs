@@ -648,8 +648,75 @@ for (const api of ['chat', 'responses']) {
       },
     });
     assert.equal((await f.l2.run(`l2-api-${api}`, model, personal)).state, 'succeeded');
-    assert.equal(f.l2.getJob(`l2-api-${api}`, personal).promptVersion, 'l2-v1');
+    assert.equal(f.l2.getJob(`l2-api-${api}`, personal).promptVersion, 'l2-v2');
     assert.equal(calls, 1);
     assert.equal(f.l2.listMemories({ ownerSpaceId: 'personal' }, personal).length, 1);
   });
 }
+
+test('L2 supersede replaces contradicted evidence without deleting the old L1', async (t) => {
+  const f = fixture(t);
+  const old = await makeL1(f, 'l1-old', 'personal', [], personal, '我的 5K 个人最好成绩是 27:12。');
+  f.l2.recordChange({ l1Id: old.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'l2-old', ownerSpaceId: 'personal' }, personal);
+  await f.l2.run(
+    'l2-old',
+    {
+      generate: async () => ({
+        results: [
+          {
+            action: 'create',
+            title: '5K 个人最好成绩',
+            summary: '跑步记录',
+            body: '个人最好成绩是 27:12。',
+            l1Ids: [old.memory.id],
+          },
+        ],
+        uncoveredL1Ids: [],
+      }),
+    },
+    personal
+  );
+  const [before] = f.l2.listMemories({ ownerSpaceId: 'personal' }, personal);
+
+  const current = await makeL1(
+    f,
+    'l1-current',
+    'personal',
+    [],
+    personal,
+    '我的 5K 个人最好成绩更新为 25:50。'
+  );
+  f.l2.recordChange({ l1Id: current.memory.id, kind: 'created' }, personal);
+  f.l2.enqueue({ id: 'l2-current', ownerSpaceId: 'personal' }, personal);
+  await f.l2.run(
+    'l2-current',
+    {
+      generate: async ({ changes, candidates }) => {
+        assert.equal(changes.length, 1);
+        assert.equal(candidates[0].memory.id, before.id);
+        return {
+          results: [
+            {
+              action: 'update',
+              l2Id: before.id,
+              supersede: true,
+              title: '5K 个人最好成绩',
+              summary: '跑步记录',
+              body: '个人最好成绩是 25:50。',
+              l1Ids: [current.memory.id],
+            },
+          ],
+          uncoveredL1Ids: [],
+        };
+      },
+    },
+    personal
+  );
+
+  const after = f.l2.getMemory(before.id, personal);
+  assert.equal(after.body, '个人最好成绩是 25:50。');
+  assert.deepEqual(after.l1Ids, [current.memory.id]);
+  assert.deepEqual(after.sourceIds, [current.source.id]);
+  assert.ok(f.l1.getMemory(old.memory.id, personal));
+});

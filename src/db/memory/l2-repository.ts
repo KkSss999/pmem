@@ -21,6 +21,7 @@ import {
   l2SpaceLinks,
 } from './schema';
 import { assertIndexHealthy, indexStatus, rebuildIndex } from './l2-search-index';
+import { invalidateL3ForL2Change, registerL3ChangeForL2 } from './l3-invalidation';
 
 export class SqliteL2Repository implements L2Repository {
   constructor(private readonly db: BetterSQLite3Database) {}
@@ -348,6 +349,8 @@ export class SqliteL2Repository implements L2Repository {
           })
           .run();
         this.writeLinks(tx, id, input);
+        invalidateL3ForL2Change(tx, id, input.now);
+        registerL3ChangeForL2(tx, id, 'created', input.now);
       },
       { behavior: 'immediate' }
     );
@@ -401,6 +404,8 @@ export class SqliteL2Repository implements L2Repository {
           .where(eq(l2Memories.id, input.l2Id))
           .run();
         this.writeLinks(tx, input.l2Id, input);
+        invalidateL3ForL2Change(tx, input.l2Id, input.now);
+        registerL3ChangeForL2(tx, input.l2Id, 'updated', input.now);
       },
       { behavior: 'immediate' }
     );

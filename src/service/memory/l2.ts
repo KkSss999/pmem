@@ -131,14 +131,18 @@ function validateProposal(
       throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'A candidate L2 is updated twice.');
     updateIds.add(item.l2Id);
     const candidate = candidateById.get(item.l2Id)!;
-    if (candidate.memory.l1Ids.some((id) => !l1Ids.includes(id)))
+    if (item.supersede !== undefined && typeof item.supersede !== 'boolean')
+      throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'Invalid supersede flag.');
+    const supersede = item.supersede === true;
+    if (!supersede && candidate.memory.l1Ids.some((id) => !l1Ids.includes(id)))
       throw new MemoryError(
         'L2_MODEL_OUTPUT_INVALID',
-        'An update must preserve all existing L1 links.'
+        'An update must preserve all existing L1 links unless it supersedes them.'
       );
     return {
       action: 'update',
       l2Id: item.l2Id,
+      supersede,
       title,
       summary,
       body,

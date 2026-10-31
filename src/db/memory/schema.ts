@@ -383,3 +383,154 @@ export const l2Changes = sqliteTable(
     ),
   ]
 );
+
+export const l3Keywords = sqliteTable(
+  'memory_l3_keywords',
+  {
+    id: text('id').primaryKey(),
+    term: text('term').notNull(),
+    normalizedTerm: text('normalized_term').notNull(),
+    aliasesJson: text('aliases_json').notNull(),
+    kind: text('kind').notNull(),
+    scopeKey: text('scope_key').notNull(),
+    baseWeight: integer('base_weight').notNull(),
+    weight: integer('weight').notNull(),
+    hitCount: integer('hit_count').notNull().default(0),
+    lastHitAt: text('last_hit_at'),
+    needsRefresh: integer('needs_refresh').notNull().default(0),
+    state: text('state').notNull().default('active'),
+    expiresAt: text('expires_at').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('memory_l3_keyword_scope_term').on(table.scopeKey, table.normalizedTerm),
+    index('memory_l3_keyword_term').on(table.normalizedTerm),
+    index('memory_l3_keyword_scope_weight').on(table.scopeKey, table.weight),
+    index('memory_l3_keyword_expiry').on(table.state, table.expiresAt),
+    index('memory_l3_keyword_refresh').on(table.needsRefresh),
+    check(
+      'memory_l3_keyword_kind_check',
+      sql`${table.kind} IN ('topic', 'entity', 'preference', 'tool', 'concept', 'other')`
+    ),
+    check(
+      'memory_l3_keyword_weight_check',
+      sql`${table.baseWeight} BETWEEN 1 AND 5 AND ${table.weight} BETWEEN 1 AND 50`
+    ),
+    check(
+      'memory_l3_keyword_flags_check',
+      sql`${table.hitCount} >= 0 AND ${table.needsRefresh} IN (0, 1)`
+    ),
+    check('memory_l3_keyword_state_check', sql`${table.state} IN ('active', 'expired')`),
+  ]
+);
+
+export const l3KeywordSpaces = sqliteTable(
+  'memory_l3_keyword_spaces',
+  {
+    keywordId: text('keyword_id')
+      .notNull()
+      .references(() => l3Keywords.id),
+    spaceId: text('space_id')
+      .notNull()
+      .references(() => spaces.id),
+  },
+  (table) => [
+    uniqueIndex('memory_l3_keyword_space_unique').on(table.keywordId, table.spaceId),
+    index('memory_l3_keyword_space_reverse').on(table.spaceId, table.keywordId),
+  ]
+);
+
+export const l3KeywordL2Links = sqliteTable(
+  'memory_l3_keyword_l2_links',
+  {
+    keywordId: text('keyword_id')
+      .notNull()
+      .references(() => l3Keywords.id),
+    l2Id: text('l2_id')
+      .notNull()
+      .references(() => l2Memories.id),
+  },
+  (table) => [
+    uniqueIndex('memory_l3_keyword_l2_unique').on(table.keywordId, table.l2Id),
+    index('memory_l3_keyword_l2_reverse').on(table.l2Id, table.keywordId),
+  ]
+);
+
+export const l3Changes = sqliteTable(
+  'memory_l3_changes',
+  {
+    id: text('id').primaryKey(),
+    l2Id: text('l2_id')
+      .notNull()
+      .references(() => l2Memories.id),
+    kind: text('kind').notNull(),
+    l2Hash: text('l2_hash').notNull(),
+    state: text('state').notNull(),
+    jobId: text('job_id').references(() => l3Jobs.id),
+    reason: text('reason'),
+    createdAt: text('created_at').notNull(),
+    processedAt: text('processed_at'),
+  },
+  (table) => [
+    index('memory_l3_change_pending').on(table.state, table.createdAt),
+    index('memory_l3_change_l2').on(table.l2Id),
+    check(
+      'memory_l3_change_kind_check',
+      sql`${table.kind} IN ('created', 'updated', 'scope_changed', 'merged', 'removed')`
+    ),
+    check(
+      'memory_l3_change_state_check',
+      sql`${table.state} IN ('pending', 'claimed', 'processed', 'failed')`
+    ),
+  ]
+);
+
+export const l3Jobs = sqliteTable(
+  'memory_l3_jobs',
+  {
+    id: text('id').primaryKey(),
+    state: text('state').notNull(),
+    runId: text('run_id'),
+    promptVersion: text('prompt_version'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    createdAt: text('created_at').notNull(),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+  },
+  (table) => [
+    index('memory_l3_job_state').on(table.state),
+    check(
+      'memory_l3_job_state_check',
+      sql`${table.state} IN ('pending', 'running', 'succeeded', 'partial', 'failed', 'unknown')`
+    ),
+  ]
+);
+
+export const l3JobResults = sqliteTable(
+  'memory_l3_job_results',
+  {
+    id: text('id').primaryKey(),
+    jobId: text('job_id')
+      .notNull()
+      .references(() => l3Jobs.id),
+    resultIndex: integer('result_index').notNull(),
+    state: text('state').notNull(),
+    action: text('action').notNull(),
+    keywordId: text('keyword_id').references(() => l3Keywords.id),
+    l2IdsJson: text('l2_ids_json').notNull(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('memory_l3_job_result_index').on(table.jobId, table.resultIndex),
+    index('memory_l3_job_result_keyword').on(table.keywordId),
+    check(
+      'memory_l3_job_result_state_check',
+      sql`${table.state} IN ('committed', 'failed', 'skipped')`
+    ),
+    check('memory_l3_job_result_action_check', sql`${table.action} IN ('upsert')`),
+  ]
+);

@@ -1,6 +1,6 @@
 import type { L2GenerationModel } from '../../domain/memory/l2';
 
-export const L2_PROMPT_VERSION = 'l2-v1';
+export const L2_PROMPT_VERSION = 'l2-v2';
 
 export const l2SystemPrompt = `You maintain L2 memories: compact, independently understandable context synthesized from completed L1 memories.
 
@@ -21,6 +21,8 @@ Given changed L1 memories and zero or more candidate L2s, propose L2 creations a
 - Preserve conflicts and uncertainty instead of resolving them without evidence.
 - Do not treat an assistant suggestion as a user decision, and do not add facts or certainty that the supplied L1s do not support.
 - If a changed L1 has no durable L2 value, list it in uncoveredL1Ids with a short reason. Do not force every L1 into an L2.
+- If a changed L1 is a newer correction or replacement of a fact or state still in a candidate L2, update that candidate with supersede: true. Use the current fact and cite only evidence that supports it; remove contradicted old L1 links from l1Ids. Do not preserve an old value merely because it is still in the candidate.
+- If the changed L1 only adds compatible information, use supersede: false and preserve every existing candidate L1 link.
 - Do not add meta commentary about how many memories were used, that the content came from records, or what the sources did not mention. Provenance is stored separately.
 - Do not make negative claims about alternatives or future plans that the supplied L1s do not mention.
 
@@ -37,7 +39,7 @@ Given changed L1 memories and zero or more candidate L2s, propose L2 creations a
 
 Return exactly this shape. Use action, not type or status. For create, l2Id is null. Do not add ownerSpaceId, type, status, marks, or any other key.
 
-{"results":[{"action":"create|update","l2Id":null,"title":"...","summary":"...","body":"...","l1Ids":["..."]}],"uncoveredL1Ids":[{"l1Id":"...","reason":"..."}]}
+{"results":[{"action":"create|update","l2Id":null,"supersede":false,"title":"...","summary":"...","body":"...","l1Ids":["..."]}],"uncoveredL1Ids":[{"l1Id":"...","reason":"..."}]}
 
 Return only the JSON object: no markdown, commentary, or additional keys.`;
 
@@ -51,10 +53,11 @@ export const l2OutputSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['action', 'l2Id', 'title', 'summary', 'body', 'l1Ids'],
+        required: ['action', 'l2Id', 'supersede', 'title', 'summary', 'body', 'l1Ids'],
         properties: {
           action: { type: 'string', enum: ['create', 'update'] },
           l2Id: { type: ['string', 'null'] },
+          supersede: { type: 'boolean' },
           title: { type: 'string' },
           summary: { type: 'string' },
           body: { type: 'string' },
@@ -91,6 +94,7 @@ export function buildL2Input(input: Parameters<L2GenerationModel['generate']>[0]
         abstraction: memory.abstraction,
         cues: memory.cues,
         sourceIds: memory.sourceIds,
+        createdAt: memory.createdAt,
       },
     })),
     candidateL2: input.candidates.map(({ memory, evidence }) => ({
@@ -101,6 +105,7 @@ export function buildL2Input(input: Parameters<L2GenerationModel['generate']>[0]
       needsUpdate: memory.needsUpdate,
       relatedSpaceIds: memory.relatedSpaceIds,
       currentL1Ids: memory.l1Ids,
+      updatedAt: memory.updatedAt,
       evidence: evidence.map((item) => ({
         id: item.id,
         spaceId: item.spaceId,
