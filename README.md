@@ -2,19 +2,16 @@
 
 PMEM is a local Memory & Knowledge system for individuals to manage and use information across their lives and work. Personal describes who the system serves; its content can cover software projects, creative writing, research, daily life, and other contexts.
 
-The current development version provides database infrastructure, an embedded SDK lifecycle, and internal L0 and L1 Memory services. L1 extraction has an explicit task interface and OpenAI and DeepSeek API adapters; automatic scheduling, recall, and Knowledge are not implemented. Memory SDK and host integration are deferred.
+The current development version provides database infrastructure, an embedded SDK lifecycle, and internal L0 and L1 Memory services. L1 extraction has an explicit task interface and OpenAI and DeepSeek API adapters; automatic extraction scheduling, keyword recall, and similar-memory maintenance are implemented internally. L2, L3, Knowledge, Memory SDK, host integration, CLI, and MCP are not implemented yet.
 
 ## Requirements
 
-- Node.js 22 through 26 (CI targets 22 and 24)
+- Node.js 22 through 26
 - Bun 1.4.4 for development and package management
 
 ```sh
 bun install --frozen-lockfile
-bun run build
-bun run test
-bun run fmt:check
-bun run lint
+bun run check   # build, lint, format check, and tests
 ```
 
 ## SDK

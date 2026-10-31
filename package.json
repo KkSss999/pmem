@@ -18,6 +18,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run build && bun run lint && bun run fmt:check && bun run test",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint .",
