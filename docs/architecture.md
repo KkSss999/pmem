@@ -121,6 +121,7 @@ Wiki Knowledge 以**原始资料文件和 Wiki Markdown 页面为内容权威**�
 - Runtime 创建并关闭数据库与适配器，装配两个领域服务；资源归属和关闭责任必须明确。
 - SDK 对外提供 Memory、Knowledge 和必要的跨领域上下文能力。两个领域应能独立调用；组合结果必须标明来自哪个领域及对应来源。
 - CLI、MCP 后续作为并行 API 适配器接入同一应用服务与 Runtime，保持领域规则、数据权威和结果语义一致；具体命令、工具与兼容性另行设计。
+- Agentic Runtime 不由 PMEM 从零实现；计划以消费者身份接入 MiaoTs，PMEM 只提供 Memory 能力、Harness 内容和工具插件。最小边界见 [Agent Runtime 接入设计](agent-runtime.md)。
 - 当前阶段先实现 Memory 核心；Memory 的 SDK 接口与宿主适配后置，现有 SDK 仅提供数据库底座生命周期。
 - 可信调用身份、作用域和授权由入口调用方或宿主提供，API/Service 在读写和组合时一致执行；不得从不可信记忆正文中推导授权。
 - 常规持久化和确定性检索不以生成模型可用为前提。需要模型的用例明确声明该依赖及失败状态。
