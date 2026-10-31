@@ -3,7 +3,12 @@ import type { SchemaInput, SchemaValidationResult } from '../schema';
 
 export type ExtensionKind = 'schema' | 'validator' | 'retriever' | 'projector' | 'health' | 'hook';
 export type ExtensionCapability = `${ExtensionKind}.register` | 'extension.execute';
-export type ExtensionHookEvent = 'before_commit' | 'after_commit' | 'before_forget' | 'after_forget' | 'projection_error';
+export type ExtensionHookEvent =
+  | 'before_commit'
+  | 'after_commit'
+  | 'before_forget'
+  | 'after_forget'
+  | 'projection_error';
 
 export interface ExtensionContext {
   readonly extensionId: string;
@@ -19,7 +24,10 @@ export interface ExtensionResourceBase {
 }
 
 export interface ExtensionValidator extends ExtensionResourceBase {
-  readonly validate: (record: unknown, context: ExtensionContext) => SchemaValidationResult | void | Promise<SchemaValidationResult | void>;
+  readonly validate: (
+    record: unknown,
+    context: ExtensionContext,
+  ) => SchemaValidationResult | void | Promise<SchemaValidationResult | void>;
 }
 export interface ExtensionRetriever extends ExtensionResourceBase {
   readonly retrieve: (query: unknown, context: ExtensionContext) => unknown | Promise<unknown>;

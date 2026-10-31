@@ -30,13 +30,28 @@ export async function diffCommand(
       console.log('Field-level diff unavailable: the latest event has no before/after snapshot.');
     } else {
       for (const change of result.changes ?? []) {
-        console.log(`- ${change.path}: ${JSON.stringify(change.before)}\n+ ${JSON.stringify(change.after)}`);
+        console.log(
+          `- ${change.path}: ${JSON.stringify(change.before)}\n+ ${JSON.stringify(change.after)}`,
+        );
       }
     }
-    if (result.warnings?.length) for (const warning of result.warnings) console.log(`Warning: ${warning}`);
+    if (result.warnings?.length)
+      for (const warning of result.warnings) console.log(`Warning: ${warning}`);
   } catch (error: any) {
     if (format === 'json') {
-      console.log(JSON.stringify({ memoryId, previous: null, current: null, diffStatus: 'unavailable', error: error?.message ?? String(error) }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            memoryId,
+            previous: null,
+            current: null,
+            diffStatus: 'unavailable',
+            error: error?.message ?? String(error),
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
     console.log(`Memory diff failed: ${error?.message ?? String(error)}`);

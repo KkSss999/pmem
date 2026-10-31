@@ -1,8 +1,4 @@
-export {
-  createDefaultRetrieverRegistry,
-  createQueryPlan,
-  RetrieverRegistry,
-} from './registry';
+export { createDefaultRetrieverRegistry, createQueryPlan, RetrieverRegistry } from './registry';
 export type {
   QueryExecutionResult,
   QueryPlan,

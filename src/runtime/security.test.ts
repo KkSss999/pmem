@@ -17,7 +17,10 @@ function makeProject(): string {
   const pmemPath = path.join(root, '.pmem');
   ensureDir(pmemPath);
   saveManifest(pmemPath, getDefaultManifest('sec-test'));
-  writeFile(path.join(pmemPath, 'index.md'), '# sec-test\n\nName: sec-test\n\n## Current Focus\nSecurity tests\n');
+  writeFile(
+    path.join(pmemPath, 'index.md'),
+    '# sec-test\n\nName: sec-test\n\n## Current Focus\nSecurity tests\n',
+  );
   writeFile(path.join(pmemPath, 'state.md'), '# State\n\n## Overall Status\n- active\n');
   writeFile(path.join(pmemPath, 'next.md'), '# Next\n\n## Recommended Next Step\nContinue.\n');
   return root;
@@ -35,7 +38,11 @@ test('observe is denied for a principal lacking memory.observe (no cross-princip
   const memory = await openV12Pmem({ root, capabilities: CAPS });
   try {
     await assert.rejects(
-      () => memory.observe({ summary: 'should be denied', metadata: { principal: 'agent-x', scope: 'agent:x' } }),
+      () =>
+        memory.observe({
+          summary: 'should be denied',
+          metadata: { principal: 'agent-x', scope: 'agent:x' },
+        }),
       /principal 'agent-x' does not have it/,
     );
   } finally {
@@ -52,7 +59,10 @@ test('observe is allowed for a principal that holds memory.observe', async () =>
   ];
   const memory = await openV12Pmem({ root, capabilities: caps });
   try {
-    const receipt = await memory.observe({ summary: 'ok', metadata: { principal: 'agent-y', scope: 'agent:y' } });
+    const receipt = await memory.observe({
+      summary: 'ok',
+      metadata: { principal: 'agent-y', scope: 'agent:y' },
+    });
     assert.equal(receipt.type, 'observe');
   } finally {
     await memory.close();
@@ -64,7 +74,10 @@ test('no registered capabilities preserves v1.0 open behavior', async () => {
   const root = makeProject();
   const memory = await openV12Pmem({ root });
   try {
-    const receipt = await memory.observe({ summary: 'v1.0 compat', metadata: { principal: 'anyone' } });
+    const receipt = await memory.observe({
+      summary: 'v1.0 compat',
+      metadata: { principal: 'anyone' },
+    });
     assert.equal(receipt.type, 'observe');
   } finally {
     await memory.close();
@@ -76,7 +89,10 @@ test('admin principal is authorized for any capability via memory.admin', async 
   const root = makeProject();
   const memory = await openV12Pmem({ root, capabilities: CAPS });
   try {
-    const receipt = await memory.observe({ summary: 'admin ok', metadata: { principal: 'admin', scope: 'agent:x' } });
+    const receipt = await memory.observe({
+      summary: 'admin ok',
+      metadata: { principal: 'admin', scope: 'agent:x' },
+    });
     assert.equal(receipt.type, 'observe');
   } finally {
     await memory.close();

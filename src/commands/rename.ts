@@ -51,7 +51,9 @@ export function renameCommand(options: { find: string; replace: string; write?: 
   // Reject empty --find pattern: splitting on empty string inserts between every character
   if (!findPattern || findPattern.length === 0) {
     console.log('Error: --find pattern must not be empty.');
-    console.log('An empty pattern would insert the replacement between every character in card bodies.');
+    console.log(
+      'An empty pattern would insert the replacement between every character in card bodies.',
+    );
     process.exit(2);
   }
 
@@ -61,9 +63,10 @@ export function renameCommand(options: { find: string; replace: string; write?: 
     // card_globs are patterns like ".pmem/modules/**/*.md"
     // Extract base directory by removing the /**/... suffix
     const globSuffixIndex = cardGlob.indexOf('/**/');
-    const baseDir = globSuffixIndex >= 0
-      ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
-      : path.join(cwd, path.dirname(cardGlob));
+    const baseDir =
+      globSuffixIndex >= 0
+        ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
+        : path.join(cwd, path.dirname(cardGlob));
     if (fs.existsSync(baseDir)) {
       collectMdFiles(baseDir, cardFiles);
     }
@@ -131,12 +134,18 @@ export function renameCommand(options: { find: string; replace: string; write?: 
   // Preview mode (default)
   if (!isWrite) {
     const totalFmHits = changes.reduce((sum, c) => sum + c.frontmatterHits.length, 0);
-    const bodyOnlyCount = changes.filter(c => c.bodyChanged).length;
+    const bodyOnlyCount = changes.filter((c) => c.bodyChanged).length;
     if (totalFmHits > 0) {
-      console.log(`Preview: ${bodyOnlyCount} file(s) would have body changed, ${totalOccurrences} body occurrence(s) would be replaced.`);
-      console.log(`Plus ${totalFmHits} frontmatter hit(s) across ${changes.length} file(s) (preview only; --write does NOT modify frontmatter).\n`);
+      console.log(
+        `Preview: ${bodyOnlyCount} file(s) would have body changed, ${totalOccurrences} body occurrence(s) would be replaced.`,
+      );
+      console.log(
+        `Plus ${totalFmHits} frontmatter hit(s) across ${changes.length} file(s) (preview only; --write does NOT modify frontmatter).\n`,
+      );
     } else {
-      console.log(`Preview: ${bodyOnlyCount} file(s) would be changed, ${totalOccurrences} occurrence(s) would be replaced.\n`);
+      console.log(
+        `Preview: ${bodyOnlyCount} file(s) would be changed, ${totalOccurrences} occurrence(s) would be replaced.\n`,
+      );
     }
     for (const change of changes) {
       const label = change.bodyChanged
@@ -162,7 +171,9 @@ export function renameCommand(options: { find: string; replace: string; write?: 
       if (change.frontmatterHits.length > 0) {
         console.log('  Frontmatter hits (preview only; --write does NOT modify frontmatter):');
         for (const hit of change.frontmatterHits) {
-          console.log(`    Frontmatter.${hit.field}: ${hit.field} #${hit.index} "${hit.oldValue}" -> "${hit.newValue}"`);
+          console.log(
+            `    Frontmatter.${hit.field}: ${hit.field} #${hit.index} "${hit.oldValue}" -> "${hit.newValue}"`,
+          );
         }
       }
       console.log('');
@@ -191,13 +202,19 @@ export function renameCommand(options: { find: string; replace: string; write?: 
     atomicWrite(absPath, newContent);
   }
 
-  console.log(`${changes.filter(c => c.bodyChanged).length} file(s) changed, ${totalOccurrences} occurrence(s) replaced.`);
+  console.log(
+    `${changes.filter((c) => c.bodyChanged).length} file(s) changed, ${totalOccurrences} occurrence(s) replaced.`,
+  );
   console.log('Rebuilding indexes...');
   rebuildCommand({ changed: true });
   console.log('Done. Run `pmem verify` to check consistency.');
 }
 
-function splitFrontmatter(content: string): { frontmatter: string | null; body: string | null; fmEndIndex: number } {
+function splitFrontmatter(content: string): {
+  frontmatter: string | null;
+  body: string | null;
+  fmEndIndex: number;
+} {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return { frontmatter: null, body: null, fmEndIndex: 0 };
   const fmEndIndex = match.index! + match[0].length;
@@ -214,7 +231,7 @@ function splitFrontmatter(content: string): { frontmatter: string | null; body: 
 function collectFrontmatterHits(
   content: string,
   findPattern: string,
-  replaceText: string
+  replaceText: string,
 ): FrontmatterHit[] {
   const fm = parseFrontmatter(content);
   if (!fm) return [];

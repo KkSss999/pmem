@@ -11,9 +11,16 @@ export const PRESET_DEFAULTS: Record<string, RuntimeConfig> = {
   },
 };
 
-export function loadRuntimeConfig(preset?: RuntimePreset, overrides?: PartialRuntimeConfig): RuntimeConfig;
+export function loadRuntimeConfig(
+  preset?: RuntimePreset,
+  overrides?: PartialRuntimeConfig,
+): RuntimeConfig;
 /** @deprecated Root is ignored; retained only as a source-compatible call shape. */
-export function loadRuntimeConfig(_root: string, preset?: RuntimePreset, overrides?: PartialRuntimeConfig): RuntimeConfig;
+export function loadRuntimeConfig(
+  _root: string,
+  preset?: RuntimePreset,
+  overrides?: PartialRuntimeConfig,
+): RuntimeConfig;
 export function loadRuntimeConfig(
   presetOrRoot?: RuntimePreset,
   overridesOrPreset?: PartialRuntimeConfig | RuntimePreset,
@@ -21,9 +28,14 @@ export function loadRuntimeConfig(
 ): RuntimeConfig {
   const calledWithRoot = typeof overridesOrPreset === 'string';
   const preset = calledWithRoot ? overridesOrPreset : presetOrRoot;
-  const overrides = calledWithRoot ? legacyOverrides : overridesOrPreset as PartialRuntimeConfig | undefined;
+  const overrides = calledWithRoot
+    ? legacyOverrides
+    : (overridesOrPreset as PartialRuntimeConfig | undefined);
   const selectedPreset = preset ?? 'default';
-  const defaults = PRESET_DEFAULTS[selectedPreset] ?? { ...PRESET_DEFAULTS.default, preset: selectedPreset };
+  const defaults = PRESET_DEFAULTS[selectedPreset] ?? {
+    ...PRESET_DEFAULTS.default,
+    preset: selectedPreset,
+  };
   return deepMerge(defaults, overrides ?? {}) as RuntimeConfig;
 }
 

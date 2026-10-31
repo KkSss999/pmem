@@ -1,6 +1,13 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
-import { openMaintenanceDatabase, createSchema, startSession, endSession, getActiveSession, closeDatabase } from '../runtime/maintenance';
+import {
+  openMaintenanceDatabase,
+  createSchema,
+  startSession,
+  endSession,
+  getActiveSession,
+  closeDatabase,
+} from '../runtime/maintenance';
 
 const PMEM_DIR = '.pmem';
 
@@ -26,7 +33,9 @@ export function sessionStartCommand(agentName?: string): void {
   // 3. Check if there's already an active session
   const active = getActiveSession(db);
   if (active) {
-    console.log(`Active session already exists: ${active.id}. End it first with \`pmem session end\`.`);
+    console.log(
+      `Active session already exists: ${active.id}. End it first with \`pmem session end\`.`,
+    );
     closeDatabase();
     return;
   }
@@ -77,7 +86,9 @@ export function sessionEndCommand(taskSummary?: string): void {
   if (!active) {
     console.log('No active pmem session found.');
     console.log('Next: run `pmem session start -a "<agent-name>"` to begin a session.');
-    console.log('If this is expected (e.g., work was done without a formal session), run `pmem update --confirm` directly to record changes.');
+    console.log(
+      'If this is expected (e.g., work was done without a formal session), run `pmem update --confirm` directly to record changes.',
+    );
     closeDatabase();
     return;
   }
@@ -86,34 +97,51 @@ export function sessionEndCommand(taskSummary?: string): void {
   endSession(db, active.id, 'completed', taskSummary);
 
   // 6. Query session update log for summary
-  const logs = db.prepare(
-    "SELECT action, summary, created_at, success, affected_cards FROM update_log WHERE session_id = ? ORDER BY created_at"
-  ).all(active.id) as Array<{ action: string; summary: string | null; created_at: string; success: number; affected_cards: string | null }>;
+  const logs = db
+    .prepare(
+      'SELECT action, summary, created_at, success, affected_cards FROM update_log WHERE session_id = ? ORDER BY created_at',
+    )
+    .all(active.id) as Array<{
+    action: string;
+    summary: string | null;
+    created_at: string;
+    success: number;
+    affected_cards: string | null;
+  }>;
 
   // Count actions by type
-  let updateCount = 0, traceCount = 0, errorCount = 0;
+  let updateCount = 0,
+    traceCount = 0,
+    errorCount = 0;
   const allAffected = new Set<string>();
   for (const log of logs) {
-    if (!log.success) { errorCount++; continue; }
+    if (!log.success) {
+      errorCount++;
+      continue;
+    }
     if (log.action === 'confirm_update') updateCount++;
     if (log.action === 'create_trace') traceCount++;
     if (log.affected_cards) {
       try {
         const cards = JSON.parse(log.affected_cards) as string[];
-        cards.forEach(c => allAffected.add(c));
+        cards.forEach((c) => allAffected.add(c));
       } catch {}
     }
   }
 
   // Query unresolved dirty flags for this session
-  const dirtyFlags = db.prepare(
-    "SELECT scope, target, reason FROM dirty_flags WHERE session_id = ? AND resolved_at IS NULL"
-  ).all(active.id) as Array<{ scope: string; target: string; reason: string }>;
+  const dirtyFlags = db
+    .prepare(
+      'SELECT scope, target, reason FROM dirty_flags WHERE session_id = ? AND resolved_at IS NULL',
+    )
+    .all(active.id) as Array<{ scope: string; target: string; reason: string }>;
 
   // Print summary
   console.log(`Session ended: ${active.id}`);
   if (taskSummary) console.log(`  Summary: ${taskSummary}`);
-  console.log(`  Actions: ${updateCount} update(s), ${traceCount} trace(s) created${errorCount > 0 ? `, ${errorCount} error(s)` : ''}`);
+  console.log(
+    `  Actions: ${updateCount} update(s), ${traceCount} trace(s) created${errorCount > 0 ? `, ${errorCount} error(s)` : ''}`,
+  );
   if (allAffected.size > 0) {
     console.log(`  Cards affected: ${[...allAffected].join(', ')}`);
   }

@@ -62,14 +62,21 @@ export function discoverCommand(options: {
   }
 
   const manifest = loadManifest(pmemPath);
-  const isDiscoverEnabled = manifest && (manifest as any).discover?.enabled === false ? false : true;
+  const isDiscoverEnabled =
+    manifest && (manifest as any).discover?.enabled === false ? false : true;
 
   if (!isDiscoverEnabled) {
     if (options.format === 'json') {
-      console.log(JSON.stringify({
-        enabled: false,
-        reason: 'discover disabled in this project'
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            enabled: false,
+            reason: 'discover disabled in this project',
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log('discover disabled in this project');
     }
@@ -102,11 +109,11 @@ export function discoverCommand(options: {
   // 2. Detect or filter languages
   let activePatterns: LanguagePattern[];
   if (options.lang && options.lang !== 'auto') {
-    const langs = options.lang.split(',').map(l => l.trim().toLowerCase());
+    const langs = options.lang.split(',').map((l) => l.trim().toLowerCase());
     activePatterns = filterPatterns(allPatterns, langs);
   } else {
     const detected = detectLanguages(cwd, allPatterns);
-    activePatterns = allPatterns.filter(p => detected.includes(p.language));
+    activePatterns = allPatterns.filter((p) => detected.includes(p.language));
   }
 
   if (activePatterns.length === 0) {
@@ -114,12 +121,23 @@ export function discoverCommand(options: {
       ? `No matching language patterns found for: ${options.lang}`
       : 'No supported languages detected in this project.';
     if (options.format === 'json') {
-      console.log(JSON.stringify({
-        project_languages: [],
-        discovered_edges: [],
-        ambiguous: [],
-        summary: { total_discovered: 0, high_confidence: 0, low_confidence: 0, unmatched_refs: 0 },
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            project_languages: [],
+            discovered_edges: [],
+            ambiguous: [],
+            summary: {
+              total_discovered: 0,
+              high_confidence: 0,
+              low_confidence: 0,
+              unmatched_refs: 0,
+            },
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log(msg);
     }
@@ -130,9 +148,9 @@ export function discoverCommand(options: {
   createSchema(db);
 
   // 3. Get all registered source files from the paths table
-  const sourceFileRows = db.prepare(
-    "SELECT DISTINCT path, card_id FROM paths WHERE relation = 'source_file'"
-  ).all() as Array<{ path: string; card_id: string }>;
+  const sourceFileRows = db
+    .prepare("SELECT DISTINCT path, card_id FROM paths WHERE relation = 'source_file'")
+    .all() as Array<{ path: string; card_id: string }>;
 
   // Build: absolutePath → cardId map; also track scanned files to avoid duplicates
   const fileCardMap = new Map<string, string>();
@@ -152,19 +170,28 @@ export function discoverCommand(options: {
   // Also detect languages from source file extensions (not just indicator files)
   if (!options.lang || options.lang === 'auto') {
     const extLangMap: Record<string, string> = {
-      '.ts': 'nodejs', '.tsx': 'nodejs', '.js': 'nodejs', '.jsx': 'nodejs',
-      '.py': 'python', '.rs': 'rust', '.go': 'go',
-      '.c': 'cpp', '.cpp': 'cpp', '.h': 'cpp', '.hpp': 'cpp',
-      '.java': 'java', '.kt': 'java',
+      '.ts': 'nodejs',
+      '.tsx': 'nodejs',
+      '.js': 'nodejs',
+      '.jsx': 'nodejs',
+      '.py': 'python',
+      '.rs': 'rust',
+      '.go': 'go',
+      '.c': 'cpp',
+      '.cpp': 'cpp',
+      '.h': 'cpp',
+      '.hpp': 'cpp',
+      '.java': 'java',
+      '.kt': 'java',
     };
-    const extDetected = new Set(activePatterns.map(p => p.language));
+    const extDetected = new Set(activePatterns.map((p) => p.language));
     for (const absPath of seenFiles) {
       const ext = path.extname(absPath).toLowerCase();
       const lang = extLangMap[ext];
       if (lang) extDetected.add(lang);
     }
     // Filter active patterns to include extension-detected languages
-    activePatterns = allPatterns.filter(p => extDetected.has(p.language));
+    activePatterns = allPatterns.filter((p) => extDetected.has(p.language));
   }
 
   // 4. Scan for references
@@ -200,7 +227,10 @@ export function discoverCommand(options: {
             // They are never project-internal references and would only create noise.
             if (isBuiltinModule(cleanTarget, langPattern.language)) continue;
 
-            if (pattern.scope !== 'external' && (cleanTarget.startsWith('.') || cleanTarget.startsWith('/'))) {
+            if (
+              pattern.scope !== 'external' &&
+              (cleanTarget.startsWith('.') || cleanTarget.startsWith('/'))
+            ) {
               // Local import: try to resolve as file path
               const resolvedFile = resolveImportPath(absPath, cleanTarget, langPattern.extensions);
 
@@ -272,20 +302,20 @@ export function discoverCommand(options: {
   const dedupedAmbiguous = dedupAmbiguous(ambiguous);
 
   // 6. Output
-  const highConf = edges.filter(e => e.confidence >= 0.7).length;
-  const lowConf = edges.filter(e => e.confidence < 0.7).length;
-  const externalRefs = dedupedAmbiguous.filter(a => a.kind === 'external_unmatched').length;
-  const actionable = dedupedAmbiguous.filter(a => a.severity === 'actionable').length;
+  const highConf = edges.filter((e) => e.confidence >= 0.7).length;
+  const lowConf = edges.filter((e) => e.confidence < 0.7).length;
+  const externalRefs = dedupedAmbiguous.filter((a) => a.kind === 'external_unmatched').length;
+  const actionable = dedupedAmbiguous.filter((a) => a.severity === 'actionable').length;
 
   const result: DiscoverResult = {
-    project_languages: activePatterns.map(p => p.language),
+    project_languages: activePatterns.map((p) => p.language),
     discovered_edges: edges,
     ambiguous: dedupedAmbiguous,
     summary: {
       total_discovered: edges.length,
       high_confidence: highConf,
       low_confidence: lowConf,
-      unmatched_refs: dedupedAmbiguous.filter(a => a.kind === 'unmatched_target').length,
+      unmatched_refs: dedupedAmbiguous.filter((a) => a.kind === 'unmatched_target').length,
       external_refs: externalRefs,
       actionable,
     },
@@ -319,7 +349,7 @@ export function discoverCommand(options: {
     }
 
     // Mark cards with new inferred edges as dirty
-    const dirtyCardIds = new Set(edges.map(e => e.from_id));
+    const dirtyCardIds = new Set(edges.map((e) => e.from_id));
     for (const cardId of dirtyCardIds) {
       insertDirtyFlag(db, 'card', cardId, 'discover:inferred_edges_added', activeSession?.id);
     }
@@ -449,9 +479,9 @@ function findTargetCards(
 
   // 3. Card alias match
   try {
-    const aliasRows = db.prepare(
-      'SELECT card_id FROM aliases WHERE normalized_alias = ?'
-    ).all(target.toLowerCase().trim()) as Array<{ card_id: string }>;
+    const aliasRows = db
+      .prepare('SELECT card_id FROM aliases WHERE normalized_alias = ?')
+      .all(target.toLowerCase().trim()) as Array<{ card_id: string }>;
     for (const row of aliasRows) {
       if (!results.includes(row.card_id)) {
         results.push(row.card_id);
@@ -464,9 +494,9 @@ function findTargetCards(
   // 4. Card ID substring match
   try {
     const normalizedTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    const cardRows = db.prepare(
-      'SELECT id FROM cards WHERE id = ? AND is_deleted = 0'
-    ).all(normalizedTarget) as Array<{ id: string }>;
+    const cardRows = db
+      .prepare('SELECT id FROM cards WHERE id = ? AND is_deleted = 0')
+      .all(normalizedTarget) as Array<{ id: string }>;
     for (const row of cardRows) {
       if (!results.includes(row.id)) {
         results.push(row.id);
@@ -559,7 +589,10 @@ function extractDeps(
         while ((m = singleRe.exec(content)) !== null) {
           deps.push(m[1]);
         }
-      } else if (extractKey === 'target_link_libraries,find_package' || extractKey === 'find_package,target_link_libraries') {
+      } else if (
+        extractKey === 'target_link_libraries,find_package' ||
+        extractKey === 'find_package,target_link_libraries'
+      ) {
         // CMakeLists.txt style
         const findPkgRe = /find_package\s*\(\s*(\w+)/g;
         let fm: RegExpExecArray | null;
@@ -584,7 +617,7 @@ function extractDeps(
         // Match [section] or [section.sub]
         const sectionRe = new RegExp(
           `\\[${section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]\\s*\\n([\\s\\S]*?)(?:\\n\\[|$)`,
-          'm'
+          'm',
         );
         const m = content.match(sectionRe);
         if (m) {
@@ -605,7 +638,8 @@ function extractDeps(
 
     case 'xml': {
       // Extract <dependency> blocks from pom.xml
-      const depRe = /<dependency>\s*<groupId>([^<]+)<\/groupId>\s*<artifactId>([^<]+)<\/artifactId>/g;
+      const depRe =
+        /<dependency>\s*<groupId>([^<]+)<\/groupId>\s*<artifactId>([^<]+)<\/artifactId>/g;
       let dm: RegExpExecArray | null;
       while ((dm = depRe.exec(content)) !== null) {
         deps.push(`${dm[1]}:${dm[2]}`);
@@ -616,7 +650,10 @@ function extractDeps(
     case 'groovy': {
       // Extract implementation/api lines from build.gradle
       const extractKey = depFilePattern.extractDeps;
-      const keys = extractKey.split(',').map(k => k.trim()).join('|');
+      const keys = extractKey
+        .split(',')
+        .map((k) => k.trim())
+        .join('|');
       const gradleRe = new RegExp(`(?:${keys})\\s+['"]([^'"]+)['"]`, 'g');
       let gm: RegExpExecArray | null;
       while ((gm = gradleRe.exec(content)) !== null) {
@@ -662,24 +699,30 @@ function printCompact(result: DiscoverResult): void {
     console.log('\nInferred Edges:');
     for (const edge of result.discovered_edges) {
       const icon = edge.confidence >= 0.8 ? '●' : edge.confidence >= 0.7 ? '○' : '◌';
-      console.log(`  ${icon} ${edge.from_id} → ${edge.to_id} (${edge.type}, conf ${edge.confidence.toFixed(1)}, ${edge.evidence.language})`);
+      console.log(
+        `  ${icon} ${edge.from_id} → ${edge.to_id} (${edge.type}, conf ${edge.confidence.toFixed(1)}, ${edge.evidence.language})`,
+      );
     }
   }
 
   if (result.ambiguous.length > 0) {
     // Show actionable items first so the agent's review is signal-first
-    const actionable = result.ambiguous.filter(a => a.severity === 'actionable');
-    const informational = result.ambiguous.filter(a => a.severity === 'informational');
-    const other = result.ambiguous.filter(a => !a.severity);
+    const actionable = result.ambiguous.filter((a) => a.severity === 'actionable');
+    const informational = result.ambiguous.filter((a) => a.severity === 'informational');
+    const other = result.ambiguous.filter((a) => !a.severity);
 
     if (actionable.length > 0) {
       console.log('\n⚠ Actionable (consider creating a card):');
       for (const amb of actionable) {
         const tag = `[${amb.kind}]`;
         if (amb.kind === 'unmatched_target') {
-          console.log(`  ${tag} ${amb.from_file}: "${amb.reference}" → no matching card (${amb.language})`);
+          console.log(
+            `  ${tag} ${amb.from_file}: "${amb.reference}" → no matching card (${amb.language})`,
+          );
         } else if (amb.kind === 'multiple_targets') {
-          console.log(`  ${tag} ${amb.from_file}: "${amb.reference}" → ${amb.suggested_targets?.join(', ')} (${amb.language})`);
+          console.log(
+            `  ${tag} ${amb.from_file}: "${amb.reference}" → ${amb.suggested_targets?.join(', ')} (${amb.language})`,
+          );
         } else if (amb.kind === 'low_confidence') {
           console.log(`  ${tag} ${amb.reference} (conf ${amb.confidence?.toFixed(1)})`);
         }
@@ -687,7 +730,9 @@ function printCompact(result: DiscoverResult): void {
     }
 
     if (informational.length > 0) {
-      console.log(`\n· Informational (external/builtin, no action): ${informational.length} item(s)`);
+      console.log(
+        `\n· Informational (external/builtin, no action): ${informational.length} item(s)`,
+      );
       // Show up to 5, then a count
       for (const amb of informational.slice(0, 5)) {
         console.log(`  [external] "${amb.reference}" from ${path.basename(amb.from_file)}`);

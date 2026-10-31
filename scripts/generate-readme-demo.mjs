@@ -57,7 +57,11 @@ const screens = [
 ];
 
 function escapeXml(value) {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
 }
 
 function text(x, y, value, className) {
@@ -87,7 +91,8 @@ function render(screen) {
 
   screen.lines.forEach(([label, value, kind], index) => {
     const y = 434 + index * 58;
-    const className = kind === 'strong' ? 'valueStrong' : kind === 'success' ? 'valueSuccess' : 'value';
+    const className =
+      kind === 'strong' ? 'valueStrong' : kind === 'success' ? 'valueSuccess' : 'value';
     output.push(text(146, y, `${label}:`, 'label'));
     output.push(text(390, y, value, className));
   });

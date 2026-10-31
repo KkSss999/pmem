@@ -16,7 +16,10 @@ import { openV12Pmem } from '../compatibility/v1_2_runtime';
 import { createSchema, upsertCard } from '../core/db';
 import { rebuildSemanticIndex } from '../core/semantic';
 import { createSemanticEvidence } from '../core/semantic';
-import { DEFAULT_SEMANTIC_MODEL, DEFAULT_SEMANTIC_MODEL_REVISION } from '../core/semantic/transformers';
+import {
+  DEFAULT_SEMANTIC_MODEL,
+  DEFAULT_SEMANTIC_MODEL_REVISION,
+} from '../core/semantic/transformers';
 import { SqliteMemoryBackend } from '../storage';
 import type { CardRow } from '../types';
 
@@ -25,15 +28,24 @@ function makeProject(): string {
   const pmemPath = path.join(root, '.pmem');
   ensureDir(pmemPath);
   saveManifest(pmemPath, getDefaultManifest('runtime-test'));
-  writeFile(path.join(pmemPath, 'index.md'), '# runtime-test\n\nName: runtime-test\n\n## Current Focus\nRuntime tests\n');
+  writeFile(
+    path.join(pmemPath, 'index.md'),
+    '# runtime-test\n\nName: runtime-test\n\n## Current Focus\nRuntime tests\n',
+  );
   writeFile(path.join(pmemPath, 'state.md'), '# State\n\n## Overall Status\n- active\n');
-  writeFile(path.join(pmemPath, 'next.md'), '# Next\n\n## Recommended Next Step\nContinue runtime tests.\n');
+  writeFile(
+    path.join(pmemPath, 'next.md'),
+    '# Next\n\n## Recommended Next Step\nContinue runtime tests.\n',
+  );
   return root;
 }
 
 test('loadRuntimeConfig keeps Runtime defaults domain-neutral and applies overrides', () => {
   const root = makeProject();
-  const config = loadRuntimeConfig(root, 'software', { working: { ttl: '1h' }, durable: { confirmation: 'optional' } });
+  const config = loadRuntimeConfig(root, 'software', {
+    working: { ttl: '1h' },
+    durable: { confirmation: 'optional' },
+  });
   assert.equal(config.preset, 'software');
   assert.equal(config.branchAware, false);
   assert.equal(config.working.ttl, '1h');
@@ -54,22 +66,32 @@ test('ScopeManager resolves explicit, session, and project scopes', () => {
 test('PolicyEngine applies confirmation and TTL rules', () => {
   const config = loadRuntimeConfig(makeProject(), 'software', { working: { ttl: '1ms' } });
   const policy = new PolicyEngine(config);
-  assert.equal(policy.requiresConfirmation({ type: 'observe', scope: 'project', summary: 'change' }), true);
-  assert.equal(policy.isExpired({
-    filePath: '.pmem/traces/old.md',
-    body: 'old',
-    frontmatter: {
-      id: 'trace.old',
-      type: 'trace',
-      updated: '2000-01-01T00:00:00.000Z',
-    },
-  }), true);
+  assert.equal(
+    policy.requiresConfirmation({ type: 'observe', scope: 'project', summary: 'change' }),
+    true,
+  );
+  assert.equal(
+    policy.isExpired({
+      filePath: '.pmem/traces/old.md',
+      body: 'old',
+      frontmatter: {
+        id: 'trace.old',
+        type: 'trace',
+        updated: '2000-01-01T00:00:00.000Z',
+      },
+    }),
+    true,
+  );
 });
 
 test('EventStore appends, replays, and returns working memory', () => {
   const db = new Database(':memory:');
   const events = new EventStore(db, '1h');
-  const receipt = events.append({ type: 'observe', scope: 'project', payload: { summary: 'observed' } });
+  const receipt = events.append({
+    type: 'observe',
+    scope: 'project',
+    payload: { summary: 'observed' },
+  });
   assert.equal(receipt.type, 'observe');
   assert.equal(events.replay().length, 1);
   const working = events.working('project');
@@ -84,7 +106,10 @@ test('Pmem.open exposes runtime query and event APIs', async () => {
   try {
     const recall = await memory.recall({ noTraces: true });
     assert.equal(recall.project, 'runtime-test');
-    const receipt = await memory.observe({ file: 'src/runtime/index.ts', summary: 'runtime observed' });
+    const receipt = await memory.observe({
+      file: 'src/runtime/index.ts',
+      summary: 'runtime observed',
+    });
     assert.equal(receipt.type, 'observe');
     assert.equal(receipt.requires_confirmation, true);
     const tombstone = await memory.forget({ id: receipt.id, reason: 'runtime forgotten' });
@@ -148,7 +173,11 @@ test('v1.3.3 keeps SQLite semantic retrieval deterministic-safe when the model c
   try {
     assert.equal(memory.backend.capabilities.query.semantic, false);
     const result = await memory.ask('query without model cache');
-    assert.ok(result.warnings?.some((warning: string) => warning.includes('degraded to deterministic recall')));
+    assert.ok(
+      result.warnings?.some((warning: string) =>
+        warning.includes('degraded to deterministic recall'),
+      ),
+    );
   } finally {
     await memory.close();
   }
@@ -189,7 +218,11 @@ test('Pmem.packContext converts ranked Runtime records into a deterministic Cont
     await tx.putRecord({
       id: 'memory.context-pack',
       schema: { id: 'memory', version: '1.0.0' },
-      data: { title: 'Payment timeout', content: 'Retry after timeout with bounded backoff.', type: 'decision' },
+      data: {
+        title: 'Payment timeout',
+        content: 'Retry after timeout with bounded backoff.',
+        type: 'decision',
+      },
       scope: 'project',
       provenance: { source: 'runtime-test', source_id: 'decisions/payment-timeout.md' },
       created_at: now,
@@ -227,7 +260,12 @@ test('Pmem.packContext carries validated semantic provenance into evidence', asy
     });
     await tx.commit();
     const semanticEvidence = createSemanticEvidence({
-      provenance: { model: 'test-model', revision: 'rev-1', dimension: 3, chunkStrategy: 'heading-aware-v1' },
+      provenance: {
+        model: 'test-model',
+        revision: 'rev-1',
+        dimension: 3,
+        chunkStrategy: 'heading-aware-v1',
+      },
       chunkId: 'memory.semantic-pack#0',
       heading: 'Semantic result',
       headingPath: ['Semantic result'],
@@ -236,12 +274,14 @@ test('Pmem.packContext carries validated semantic provenance into evidence', asy
     });
     backend.setSemanticAdapter({
       search: async () => ({
-        hits: [{
-          record_id: 'memory.semantic-pack',
-          score: semanticEvidence.similarity,
-          channels: ['semantic'],
-          metadata: { semanticEvidence },
-        }],
+        hits: [
+          {
+            record_id: 'memory.semantic-pack',
+            score: semanticEvidence.similarity,
+            channels: ['semantic'],
+            metadata: { semanticEvidence },
+          },
+        ],
       }),
     });
 
@@ -263,7 +303,8 @@ test('Pmem.forget rejects an unknown card or event without writing a tombstone',
     const countEvents = (): number => {
       const db = new Database(dbPath);
       try {
-        return (db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number }).count;
+        return (db.prepare('SELECT COUNT(*) AS count FROM events').get() as { count: number })
+          .count;
       } finally {
         db.close();
       }
@@ -349,7 +390,7 @@ test('capture commits canonically when automatic semantic indexing is unavailabl
     const db = new Database(path.join(pmemPath, 'pmem.db'));
     try {
       const events = new EventStore(db, '1h').replay();
-      assert.ok(events.some(event => event.type === 'commit'));
+      assert.ok(events.some((event) => event.type === 'commit'));
     } finally {
       db.close();
     }
@@ -377,18 +418,28 @@ test('Pmem.context keeps non-git changed_files unique and non-consuming', async 
   // boundary-time race is covered separately by status.test.ts; leave enough
   // filesystem timestamp headroom here to avoid platform precision flakes.
   const boundary = Date.now() - 1000;
-  writeFile(path.join(pmemPath, '.last-status'), JSON.stringify({
-    version: 1,
-    watermark_ms: boundary,
-    pending: [],
-  }, null, 2));
+  writeFile(
+    path.join(pmemPath, '.last-status'),
+    JSON.stringify(
+      {
+        version: 1,
+        watermark_ms: boundary,
+        pending: [],
+      },
+      null,
+      2,
+    ),
+  );
   const tracePath = path.join(pmemPath, 'traces', 'trace.context-change.md');
-  writeFile(tracePath, `---
+  writeFile(
+    tracePath,
+    `---
 id: trace.context-change
 type: trace
 ---
 # Context change
-`);
+`,
+  );
   fs.utimesSync(tracePath, (boundary + 500) / 1000, (boundary + 500) / 1000);
 
   const memory = await openV12Pmem({ root });
@@ -398,13 +449,15 @@ type: trace
     for (const result of [first, second]) {
       const paths = result.changed_files.map((change: any) => change.path);
       assert.equal(new Set(paths).size, paths.length, JSON.stringify(paths));
-      assert.equal(paths.filter((filePath: any) => filePath === '.pmem/traces/trace.context-change.md').length, 1);
+      assert.equal(
+        paths.filter((filePath: any) => filePath === '.pmem/traces/trace.context-change.md').length,
+        1,
+      );
     }
   } finally {
     await memory.close();
   }
 });
-
 
 test('two same-root Pmem instances keep independent DB handles after one closes', async () => {
   const root = makeProject();
@@ -442,21 +495,53 @@ test('Pmem ask and context reject an unverified semantic cache and degrade deter
   const db = new Database(path.join(pmemPath, 'pmem.db'));
   createSchema(db);
   const row: CardRow = {
-    id: 'decision.cache_guard', type: 'decision', title: 'Cache Guard', status: 'active', priority: null,
-    file_path: '.pmem/decisions/decision.cache_guard.md', summary: 'Deterministic fallback card',
-    schema_version: '0.3', card_version: 1, created_at: null, updated_at: null, last_verified_at: null,
-    file_hash: 'f', frontmatter_hash: 'fm', body_hash: 'b', token_count: 1, section_count: 1,
-    is_deleted: 0, is_candidate: 0, trust_label: 'user_confirmed', sensitivity: 'internal',
+    id: 'decision.cache_guard',
+    type: 'decision',
+    title: 'Cache Guard',
+    status: 'active',
+    priority: null,
+    file_path: '.pmem/decisions/decision.cache_guard.md',
+    summary: 'Deterministic fallback card',
+    schema_version: '0.3',
+    card_version: 1,
+    created_at: null,
+    updated_at: null,
+    last_verified_at: null,
+    file_hash: 'f',
+    frontmatter_hash: 'fm',
+    body_hash: 'b',
+    token_count: 1,
+    section_count: 1,
+    is_deleted: 0,
+    is_candidate: 0,
+    trust_label: 'user_confirmed',
+    sensitivity: 'internal',
   };
   upsertCard(db, row);
-  await rebuildSemanticIndex(db, [{
-    id: row.id, title: row.title, summary: row.summary, body: '# Cache Guard\nverified fallback',
-    frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
-  }], {
-    modelId: manifest.embedding.model!, revision: manifest.embedding.revision!, dimension: 384,
-    async embedPassages(texts) { return texts.map(() => Array(384).fill(1)); },
-    async embedQuery() { return Array(384).fill(1); },
-  }, { mode: 'full' });
+  await rebuildSemanticIndex(
+    db,
+    [
+      {
+        id: row.id,
+        title: row.title,
+        summary: row.summary,
+        body: '# Cache Guard\nverified fallback',
+        frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
+      },
+    ],
+    {
+      modelId: manifest.embedding.model!,
+      revision: manifest.embedding.revision!,
+      dimension: 384,
+      async embedPassages(texts) {
+        return texts.map(() => Array(384).fill(1));
+      },
+      async embedQuery() {
+        return Array(384).fill(1);
+      },
+    },
+    { mode: 'full' },
+  );
   db.close();
 
   const memory = await openV12Pmem({ root });

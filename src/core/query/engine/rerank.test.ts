@@ -6,7 +6,12 @@ import { parseIntent } from './intent';
 import { rerankCandidates } from './rerank';
 import type { ScoredResult } from './scoring';
 
-function result(id: string, score: number, channel: ScoredResult['reasons'][number]['channel'], overrides: Partial<ScoredResult> = {}): ScoredResult {
+function result(
+  id: string,
+  score: number,
+  channel: ScoredResult['reasons'][number]['channel'],
+  overrides: Partial<ScoredResult> = {},
+): ScoredResult {
   const card: CardRow = {
     id,
     type: 'module',
@@ -53,8 +58,14 @@ describe('v1.2 contextual reranking', () => {
       rerank_text: 'authentication credential target',
       reasons: [{ channel: 'semantic', detail: 'semantic', base: 0.95, similarity: 0.99 }],
     });
-    const ranked = rerankCandidates([exactId, exactTitle, exactPath, semantic], plan('authentication credential'));
-    assert.deepEqual(ranked.map(item => item.card.id), ['decision.exact', 'decision.title', 'module.path', 'module.semantic']);
+    const ranked = rerankCandidates(
+      [exactId, exactTitle, exactPath, semantic],
+      plan('authentication credential'),
+    );
+    assert.deepEqual(
+      ranked.map((item) => item.card.id),
+      ['decision.exact', 'decision.title', 'module.path', 'module.semantic'],
+    );
   });
 
   it('reranks contextual evidence but preserves graph provenance and caps graph inheritance', () => {
@@ -71,7 +82,7 @@ describe('v1.2 contextual reranking', () => {
     });
     const ranked = rerankCandidates([weak, seed, graph], plan('authentication credential'));
     assert.equal(ranked[0].card.id, 'module.seed');
-    const graphResult = ranked.find(item => item.card.id === 'module.graph')!;
+    const graphResult = ranked.find((item) => item.card.id === 'module.graph')!;
     assert.equal(graphResult.edge_type, 'depends_on');
     assert.equal(graphResult.from_card, 'module.seed');
     assert.equal(graphResult.reasons[0].channel, 'graph');
@@ -81,8 +92,8 @@ describe('v1.2 contextual reranking', () => {
   it('is deterministic for tied factors', () => {
     const left = result('module.b', 0.7, 'fts');
     const right = result('module.a', 0.7, 'fts');
-    const first = rerankCandidates([left, right], plan('unknown')).map(item => item.card.id);
-    const second = rerankCandidates([left, right], plan('unknown')).map(item => item.card.id);
+    const first = rerankCandidates([left, right], plan('unknown')).map((item) => item.card.id);
+    const second = rerankCandidates([left, right], plan('unknown')).map((item) => item.card.id);
     assert.deepEqual(first, second);
     assert.deepEqual(first, ['module.b', 'module.a'], 'original rank is the stable tie-breaker');
   });

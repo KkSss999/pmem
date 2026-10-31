@@ -320,7 +320,9 @@ export interface MemoryBackend {
    * `cursor` resumes before the oldest returned event; callers may paginate
    * until enough visible events have been collected.
    */
-  listEvents?(options?: MemoryHistoryOptions & { recordId?: string }): MaybePromise<readonly MemoryEvent[]>;
+  listEvents?(
+    options?: MemoryHistoryOptions & { recordId?: string },
+  ): MaybePromise<readonly MemoryEvent[]>;
   beginTransaction(options?: BackendTransactionOptions): MaybePromise<BackendTransaction>;
 }
 

@@ -19,13 +19,17 @@ export function extractSymbols(filePath: string, content: string): string[] {
       }
 
       // 2. const/let/var function (arrow or regular)
-      const varFuncMatch = trimmed.match(/(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:\([^)]*\)|[a-zA-Z0-9_$]+)\s*=>/);
+      const varFuncMatch = trimmed.match(
+        /(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:\([^)]*\)|[a-zA-Z0-9_$]+)\s*=>/,
+      );
       if (varFuncMatch) {
         symbols.push(`function:${varFuncMatch[1]}`);
         continue;
       }
 
-      const varFuncMatch2 = trimmed.match(/(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*function\b/);
+      const varFuncMatch2 = trimmed.match(
+        /(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*function\b/,
+      );
       if (varFuncMatch2) {
         symbols.push(`function:${varFuncMatch2[1]}`);
         continue;

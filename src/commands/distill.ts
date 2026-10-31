@@ -25,7 +25,11 @@ interface SplitSuggestion {
   suggestedSplits: string[];
 }
 
-export function distillCommand(options: { confirm?: boolean; suggestSplits?: boolean; applySuggestion?: string }): void {
+export function distillCommand(options: {
+  confirm?: boolean;
+  suggestSplits?: boolean;
+  applySuggestion?: string;
+}): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const manifest = loadManifest(pmemPath);
@@ -39,7 +43,9 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
   const config = resolveConfig(manifest);
   _mergeTargetTypes = config.merge_target_types;
   // Only directories that correspond to merge target types (not all type_dirs).
-  _mergeTargetDirs = [...new Set(config.merge_target_types.map(t => config.type_dirs[t]).filter(Boolean))];
+  _mergeTargetDirs = [
+    ...new Set(config.merge_target_types.map((t) => config.type_dirs[t]).filter(Boolean)),
+  ];
 
   // Eagerly open DB if it exists, so downstream helpers can use getDatabase()
   const dbPath = path.join(pmemPath, 'pmem.db');
@@ -97,7 +103,12 @@ export function distillCommand(options: { confirm?: boolean; suggestSplits?: boo
       console.log(`## Target: ${group.relatedNode}`);
       console.log(`  Traces: ${group.traces.length}`);
       console.log(`  Suggested update:`);
-      console.log(`${group.suggestedUpdate.split('\n').map(l => '    ' + l).join('\n')}`);
+      console.log(
+        `${group.suggestedUpdate
+          .split('\n')
+          .map((l) => '    ' + l)
+          .join('\n')}`,
+      );
       console.log('');
     }
     console.log('Run with --confirm to apply these changes.');
@@ -130,17 +141,19 @@ function applySuggestionAction(pmemPath: string, targetNodeId: string): void {
   const groups = groupTracesByRelated(traces);
 
   // Find the group matching targetNodeId
-  const matchingGroup = groups.find(g => g.relatedNode === targetNodeId);
+  const matchingGroup = groups.find((g) => g.relatedNode === targetNodeId);
   if (!matchingGroup) {
     console.log(`No undistilled traces found for target: ${targetNodeId}`);
-    console.log('Available targets: ' + groups.map(g => g.relatedNode).join(', '));
+    console.log('Available targets: ' + groups.map((g) => g.relatedNode).join(', '));
     process.exit(2);
   }
 
   // Apply distillation for this group only
   applyDistillation(pmemPath, [matchingGroup]);
   markTracesDistilled(traceFiles, matchingGroup.traces);
-  console.log(`Applied distillation to ${targetNodeId}: ${matchingGroup.traces.length} trace(s) merged.`);
+  console.log(
+    `Applied distillation to ${targetNodeId}: ${matchingGroup.traces.length} trace(s) merged.`,
+  );
   console.log('Run `pmem rebuild` to update indexes.');
   process.exit(0);
 }
@@ -166,10 +179,16 @@ function parseFrontmatterAndBody(content: string, filePath: string): MemoryCard 
       const key = match[1];
       let val: any = match[2].trim();
       if (key === 'tags' && val.startsWith('[')) {
-        val = val.slice(1, -1).split(',').map((s: string) => s.trim());
+        val = val
+          .slice(1, -1)
+          .split(',')
+          .map((s: string) => s.trim());
       }
       if (key === 'related' && val.startsWith('[')) {
-        val = val.slice(1, -1).split(',').map((s: string) => s.trim());
+        val = val
+          .slice(1, -1)
+          .split(',')
+          .map((s: string) => s.trim());
       }
       (frontmatter as any)[key] = val;
     }
@@ -216,8 +235,10 @@ function groupTracesByRelatedDb(traces: MemoryCard[], db: Database.Database): Tr
   for (const trace of traces) {
     const traceId = trace.frontmatter.id;
     const edgeRows = relatedStmt.all(
-      traceId, ..._mergeTargetTypes,
-      traceId, ..._mergeTargetTypes
+      traceId,
+      ..._mergeTargetTypes,
+      traceId,
+      ..._mergeTargetTypes,
     ) as Array<{ related_id: string }>;
     const key = edgeRows.length > 0 ? edgeRows[0].related_id : 'project';
     if (!map.has(key)) map.set(key, []);
@@ -243,7 +264,7 @@ function groupTracesByRelatedFallback(traces: MemoryCard[]): TraceGroup[] {
 function buildTraceGroups(map: Map<string, MemoryCard[]>): TraceGroup[] {
   const groups: TraceGroup[] = [];
   for (const [node, nodeTraces] of map) {
-    const summaryParts = nodeTraces.map(t => {
+    const summaryParts = nodeTraces.map((t) => {
       const title = extractMarkdownTitle(t.body) || path.basename(t.filePath, '.md');
       return `- ${title}`;
     });
@@ -269,9 +290,9 @@ function findCardFile(pmemPath: string, nodeId: string): string | null {
   const db = getDatabase();
   if (db) {
     try {
-      const row = db.prepare(
-        "SELECT file_path FROM cards WHERE id = ? AND is_deleted = 0"
-      ).get(nodeId) as { file_path: string } | undefined;
+      const row = db
+        .prepare('SELECT file_path FROM cards WHERE id = ? AND is_deleted = 0')
+        .get(nodeId) as { file_path: string } | undefined;
       if (row) return row.file_path;
     } catch {
       // DB query failed — fall back
@@ -313,7 +334,10 @@ function applyDistillation(pmemPath: string, groups: TraceGroup[]): void {
     if (!content) continue;
 
     // Append distilled content to the card
-    const distilledSection = `\n\n## Distilled from Traces (${new Date().toISOString().split('T')[0]})\n${group.suggestedUpdate.split('\n').map(l => '> ' + l.replace(/^- /, '• ')).join('\n')}\n`;
+    const distilledSection = `\n\n## Distilled from Traces (${new Date().toISOString().split('T')[0]})\n${group.suggestedUpdate
+      .split('\n')
+      .map((l) => '> ' + l.replace(/^- /, '• '))
+      .join('\n')}\n`;
     const updated = content.trimEnd() + distilledSection;
     atomicWrite(cardPath, updated);
     console.log(`  ✓ Updated ${group.relatedNode} (${cardPath})`);
@@ -327,7 +351,7 @@ function markTracesDistilled(allTraceFiles: string[], allTraces: MemoryCard[]): 
     if (!content || !content.startsWith('---')) continue;
 
     // Check if this trace is in our undistilled set
-    const isUndistilled = allTraces.some(t => t.filePath === file);
+    const isUndistilled = allTraces.some((t) => t.filePath === file);
     if (!isUndistilled) continue;
 
     // Add distilled: true to frontmatter
@@ -392,15 +416,18 @@ function suggestCardSplits(pmemPath: string, manifest: ReturnType<typeof loadMan
     }
     console.log('');
   }
-  console.log('Review each card and split manually, or use a future `pmem split --interactive` command.');
+  console.log(
+    'Review each card and split manually, or use a future `pmem split --interactive` command.',
+  );
 }
 
 function suggestCardSplitsDb(
   db: Database.Database,
   policy: { max_tokens: Record<string, number> },
-  suggestions: SplitSuggestion[]
+  suggestions: SplitSuggestion[],
 ): void {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT id, type, file_path, token_count FROM cards
     WHERE is_deleted = 0
       AND type != 'trace'
@@ -409,7 +436,8 @@ function suggestCardSplitsDb(
       AND file_path NOT LIKE '%/indexes/%'
       AND file_path NOT LIKE '%/integrations/%'
     ORDER BY token_count DESC
-  `).all() as Array<{ id: string; type: string; file_path: string; token_count: number }>;
+  `)
+    .all() as Array<{ id: string; type: string; file_path: string; token_count: number }>;
 
   for (const row of rows) {
     const maxForType = policy.max_tokens[row.type];
@@ -419,14 +447,15 @@ function suggestCardSplitsDb(
     // Still need to read the file for h2 section splitting suggestions
     const content = readFile(row.file_path);
     const h2s = content ? content.match(/^##\s+(.+)$/gm) : null;
-    const splitNames = h2s ? h2s.slice(0, 4).map(h => h.replace(/^##\s+/, '').trim()) : [];
+    const splitNames = h2s ? h2s.slice(0, 4).map((h) => h.replace(/^##\s+/, '').trim()) : [];
 
     suggestions.push({
       cardId: row.id,
       cardFile: row.file_path,
       currentTokens,
       maxTokens: maxForType,
-      suggestedSplits: splitNames.length > 0 ? splitNames : ['(No H2 sections to suggest splits from)'],
+      suggestedSplits:
+        splitNames.length > 0 ? splitNames : ['(No H2 sections to suggest splits from)'],
     });
   }
 }
@@ -434,12 +463,18 @@ function suggestCardSplitsDb(
 function suggestCardSplitsFallback(
   pmemPath: string,
   policy: { max_tokens: Record<string, number> },
-  suggestions: SplitSuggestion[]
+  suggestions: SplitSuggestion[],
 ): void {
   // Scan all cards
   const cardFiles = listFiles(pmemPath, /\.md$/);
   for (const file of cardFiles) {
-    if (file.includes('/traces/') || file.includes('/backups/') || file.includes('/indexes/') || file.includes('/integrations/')) continue;
+    if (
+      file.includes('/traces/') ||
+      file.includes('/backups/') ||
+      file.includes('/indexes/') ||
+      file.includes('/integrations/')
+    )
+      continue;
 
     const content = readFile(file);
     if (!content) continue;
@@ -452,19 +487,23 @@ function suggestCardSplitsFallback(
     if (maxForType && estimatedTokens > maxForType) {
       // Count markdown sections
       const h2s = content.match(/^##\s+(.+)$/gm);
-      const splitNames = h2s ? h2s.slice(0, 4).map(h => h.replace(/^##\s+/, '').trim()) : [];
+      const splitNames = h2s ? h2s.slice(0, 4).map((h) => h.replace(/^##\s+/, '').trim()) : [];
 
       suggestions.push({
         cardId: card.frontmatter.id || path.basename(file, '.md'),
         cardFile: file,
         currentTokens: estimatedTokens,
         maxTokens: maxForType,
-        suggestedSplits: splitNames.length > 0 ? splitNames : ['(No H2 sections to suggest splits from)'],
+        suggestedSplits:
+          splitNames.length > 0 ? splitNames : ['(No H2 sections to suggest splits from)'],
       });
     }
   }
 }
 
 function toSlug(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
 }

@@ -25,7 +25,9 @@ describe('MCP security module', () => {
       fs.mkdirSync(path.join(pmemDir, 'modules'), { recursive: true });
 
       // Create minimal project for testing
-      fs.writeFileSync(path.join(pmemDir, 'manifest.yml'), `pmem:
+      fs.writeFileSync(
+        path.join(pmemDir, 'manifest.yml'),
+        `pmem:
   schema_version: '0.3'
   protocol_version: '0.3'
   created_by: 0.3.0
@@ -129,46 +131,67 @@ integrations:
   active: []
 migrations:
   applied: []
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'index.md'), `# Project Memory Index
+      fs.writeFileSync(
+        path.join(pmemDir, 'index.md'),
+        `# Project Memory Index
 ## Project
 Name: readonly-test
 Stage: Alpha
 Status: active
 ## Current Focus
 Testing
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'state.md'), `# State
+      fs.writeFileSync(
+        path.join(pmemDir, 'state.md'),
+        `# State
 ## Overall Status
 active
 ## Recent Changes
 - Test change
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'next.md'), `# Next Steps
+      fs.writeFileSync(
+        path.join(pmemDir, 'next.md'),
+        `# Next Steps
 ## Recommended Next Step
 Run tests
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'modules', 'module.core.md'), `---
+      fs.writeFileSync(
+        path.join(pmemDir, 'modules', 'module.core.md'),
+        `---
 id: module.core
 type: module
 status: active
 ---
 # Core Module
-`);
+`,
+      );
 
       // Build database
       const { execSync } = require('child_process');
       try {
-        execSync(`node "${PMEM_BIN}" rebuild --full`, { cwd: testDir, stdio: 'ignore', timeout: 10_000 });
-      } catch { /* ignore */ }
+        execSync(`node "${PMEM_BIN}" rebuild --full`, {
+          cwd: testDir,
+          stdio: 'ignore',
+          timeout: 10_000,
+        });
+      } catch {
+        /* ignore */
+      }
     });
 
     after(() => {
-      try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+      } catch {}
     });
 
     it('recallQuery does not modify file system', () => {
@@ -183,7 +206,11 @@ status: active
       const afterFiles = countMdFiles(pmemDir);
       const afterCards = countCards(pmemDir);
 
-      assert.strictEqual(afterFiles, beforeFiles, 'MD file count should not change after recallQuery');
+      assert.strictEqual(
+        afterFiles,
+        beforeFiles,
+        'MD file count should not change after recallQuery',
+      );
       assert.strictEqual(afterCards, beforeCards, 'Card count should not change after recallQuery');
     });
 
@@ -202,10 +229,7 @@ status: active
   // ── Test 2: Path traversal prevention ──
   describe('validatePathScope', () => {
     it('rejects path traversal to /tmp/evil/.pmem', () => {
-      assert.throws(
-        () => validatePathScope('/tmp/evil/.pmem'),
-        /Path scope violation/
-      );
+      assert.throws(() => validatePathScope('/tmp/evil/.pmem'), /Path scope violation/);
     });
 
     it('accepts valid .pmem under CWD', () => {
@@ -228,7 +252,10 @@ status: active
       const sibling = fs.mkdtempSync(path.join(TEMP_ROOT, 'runtime-sibling-'));
       fs.mkdirSync(path.join(root, '.pmem'), { recursive: true });
       fs.mkdirSync(path.join(sibling, '.pmem'), { recursive: true });
-      assert.throws(() => validatePathScope(path.join(sibling, '.pmem'), root), /Path scope violation/);
+      assert.throws(
+        () => validatePathScope(path.join(sibling, '.pmem'), root),
+        /Path scope violation/,
+      );
     });
   });
 
@@ -250,10 +277,7 @@ status: active
     it('rejects symlink pointing outside .pmem', () => {
       const linkPath = path.join(linkDir, 'pmem-link');
       if (fs.existsSync(linkPath)) {
-        assert.throws(
-          () => validatePathScope(linkPath),
-          /Path scope violation/
-        );
+        assert.throws(() => validatePathScope(linkPath), /Path scope violation/);
       }
     });
   });
@@ -262,10 +286,7 @@ status: active
   describe('prefix confusion', () => {
     it('rejects .pmem-evil directory (bare startsWith bypass)', () => {
       // CRITICAL: .pmem-evil would pass a naive startsWith('.pmem') check
-      assert.throws(
-        () => validatePathScope('.pmem-evil/'),
-        /Path scope violation/
-      );
+      assert.throws(() => validatePathScope('.pmem-evil/'), /Path scope violation/);
     });
   });
 
@@ -281,12 +302,17 @@ status: active
       // Create a real source file with code-like content
       const srcDir = path.join(safeDir, 'src');
       fs.mkdirSync(srcDir, { recursive: true });
-      fs.writeFileSync(path.join(srcDir, 'index.ts'), `#!/usr/bin/env node
+      fs.writeFileSync(
+        path.join(srcDir, 'index.ts'),
+        `#!/usr/bin/env node
 import { something } from './lib';
 export function main() { console.log('hello'); }
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'manifest.yml'), `pmem:
+      fs.writeFileSync(
+        path.join(pmemDir, 'manifest.yml'),
+        `pmem:
   schema_version: '0.3'
   protocol_version: '0.3'
   created_by: 0.3.0
@@ -398,29 +424,41 @@ schema:
   foundational_types: [module]
   evidence_types: [decision, trace]
   default_type: trace
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'index.md'), `# Project Memory Index
+      fs.writeFileSync(
+        path.join(pmemDir, 'index.md'),
+        `# Project Memory Index
 ## Project
 Name: sourcefile-test
 Stage: Alpha
 Status: active
 ## Current Focus
 Testing source file safety
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'state.md'), `# State
+      fs.writeFileSync(
+        path.join(pmemDir, 'state.md'),
+        `# State
 ## Overall Status
 active
-`);
+`,
+      );
 
-      fs.writeFileSync(path.join(pmemDir, 'next.md'), `# Next Steps
+      fs.writeFileSync(
+        path.join(pmemDir, 'next.md'),
+        `# Next Steps
 ## Recommended Next Step
 Run tests
-`);
+`,
+      );
 
       // Create a card that references the real source file
-      fs.writeFileSync(path.join(pmemDir, 'modules', 'module.core.md'), `---
+      fs.writeFileSync(
+        path.join(pmemDir, 'modules', 'module.core.md'),
+        `---
 id: module.core
 type: module
 status: active
@@ -429,17 +467,26 @@ source_files: [src/index.ts]
 # Core Module
 
 Core entry point.
-`);
+`,
+      );
 
       // Build the database
       const { execSync } = require('child_process');
       try {
-        execSync(`node "${PMEM_BIN}" rebuild --full`, { cwd: safeDir, stdio: 'ignore', timeout: 10_000 });
-      } catch { /* ignore */ }
+        execSync(`node "${PMEM_BIN}" rebuild --full`, {
+          cwd: safeDir,
+          stdio: 'ignore',
+          timeout: 10_000,
+        });
+      } catch {
+        /* ignore */
+      }
     });
 
     after(() => {
-      try { fs.rmSync(path.join(TEMP_ROOT, 'sourcefile-test'), { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(path.join(TEMP_ROOT, 'sourcefile-test'), { recursive: true, force: true });
+      } catch {}
     });
 
     it('relatedQuery results do not contain source file content', () => {
@@ -458,7 +505,7 @@ Core entry point.
       const json = JSON.stringify(result);
       // Should not leak source code content
       assert.ok(!json.includes('#!/usr/bin/env node'), 'Should not contain source code');
-      assert.ok(!json.includes("console.log"), 'Should not contain source code strings');
+      assert.ok(!json.includes('console.log'), 'Should not contain source code strings');
       // Should reference the card's own file path (not source file content)
       assert.ok(json.includes('module.core.md'), 'Should contain card file path');
     });
@@ -469,7 +516,7 @@ Core entry point.
       assert.strictEqual(MCP_SERVER_NAME, 'pmem-rt');
       // Version is sourced from package.json — assert consistency, not a hardcoded literal.
       const pkgVersion = JSON.parse(
-        fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8')
+        fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'),
       ).version as string;
       assert.strictEqual(PACKAGE_VERSION, pkgVersion);
       assert.strictEqual(MCP_SCHEMA_VERSION, PACKAGE_VERSION);
@@ -526,9 +573,7 @@ Core entry point.
 
     it('marks affected_cards entries', () => {
       const result = {
-        affected_cards: [
-          { card_id: 'module.x', match_type: 'exact' },
-        ],
+        affected_cards: [{ card_id: 'module.x', match_type: 'exact' }],
       };
       // affected_cards items don't have id/type/title, so they won't be tagged
       // This is correct — they're just references
@@ -572,7 +617,9 @@ function countCards(dir: string): number {
   try {
     const Database = require('better-sqlite3');
     const db = new Database(dbPath, { readonly: true });
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM cards WHERE is_deleted = 0').get() as { cnt: number };
+    const row = db.prepare('SELECT COUNT(*) as cnt FROM cards WHERE is_deleted = 0').get() as {
+      cnt: number;
+    };
     db.close();
     return row.cnt;
   } catch {

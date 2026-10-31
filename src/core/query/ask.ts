@@ -7,7 +7,14 @@ import { parseIntent } from './engine/intent';
 import { buildQueryPlan } from './engine/queryPlan';
 import { rerankCandidates, type RerankExplanation } from './engine/rerank';
 import { generateCandidates } from './engine/candidates';
-import { CHANNEL_BASE, fuseAndScore, type ScoredCandidate, type ScoredResult, type Reason, type ScoreFactors } from './engine/scoring';
+import {
+  CHANNEL_BASE,
+  fuseAndScore,
+  type ScoredCandidate,
+  type ScoredResult,
+  type Reason,
+  type ScoreFactors,
+} from './engine/scoring';
 import {
   getSemanticStatus,
   loadSemanticProjectDocuments,
@@ -19,7 +26,15 @@ import {
 import { summarizeSemanticEligibility } from '../health/semantic';
 
 // Legacy match_type retained for AskResultV03 back-compat.
-type MatchType = 'exact_id' | 'exact_title' | 'alias' | 'tag' | 'source_file' | 'graph_expansion' | 'keyword_fallback' | 'type_filter';
+type MatchType =
+  | 'exact_id'
+  | 'exact_title'
+  | 'alias'
+  | 'tag'
+  | 'source_file'
+  | 'graph_expansion'
+  | 'keyword_fallback'
+  | 'type_filter';
 
 export interface AskMatchV03 {
   id: string;
@@ -115,7 +130,11 @@ const CHANNEL_TO_MATCH_TYPE: Record<string, MatchType> = {
   graph: 'graph_expansion',
 };
 
-export function askQuery(pmemPath: string, query: string, options: AskOptions & { db?: Database.Database } = {}): AskResultV03 {
+export function askQuery(
+  pmemPath: string,
+  query: string,
+  options: AskOptions & { db?: Database.Database } = {},
+): AskResultV03 {
   return executeAskQuery(pmemPath, query, options);
 }
 
@@ -143,11 +162,20 @@ export async function askQueryWithSemantic(
       };
     }
     const search = await searchSemanticCardsDetailed(db, query, provider, 48);
-    return executeAskQuery(pmemPath, query, { ...options, db }, search.matches, options.rerank !== false, search.diagnostics);
+    return executeAskQuery(
+      pmemPath,
+      query,
+      { ...options, db },
+      search.matches,
+      options.rerank !== false,
+      search.diagnostics,
+    );
   } catch (error: any) {
     return {
       ...executeAskQuery(pmemPath, query, { ...options, db }),
-      warnings: [`Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`],
+      warnings: [
+        `Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`,
+      ],
     };
   }
 }
@@ -172,14 +200,28 @@ function executeAskQuery(
   const manifest = loadManifest(pmemPath);
   const config = manifest
     ? resolveConfig(manifest)
-    : { evidence_types: ['decision', 'trace'], card_types: ['module', 'decision', 'trace', 'task', 'feature', 'risk'] };
-  const configuredTypes: string[] = (config as any).card_types ?? ['module', 'decision', 'trace', 'task', 'feature', 'risk'];
+    : {
+        evidence_types: ['decision', 'trace'],
+        card_types: ['module', 'decision', 'trace', 'task', 'feature', 'risk'],
+      };
+  const configuredTypes: string[] = (config as any).card_types ?? [
+    'module',
+    'decision',
+    'trace',
+    'task',
+    'feature',
+    'risk',
+  ];
   // Custom domain cards may exist in the index even when an older manifest did
   // not declare them. Include indexed types so enumeration remains useful
   // without changing the manifest or the write-side schema.
-  const indexedTypes = (db.prepare(
-    'SELECT DISTINCT type FROM cards WHERE is_deleted = 0 AND is_candidate = 0 ORDER BY type'
-  ).all() as Array<{ type: string }>).map(row => row.type);
+  const indexedTypes = (
+    db
+      .prepare(
+        'SELECT DISTINCT type FROM cards WHERE is_deleted = 0 AND is_candidate = 0 ORDER BY type',
+      )
+      .all() as Array<{ type: string }>
+  ).map((row) => row.type);
   const knownTypes = [...new Set([...configuredTypes, ...indexedTypes])];
 
   const intent = parseIntent(query, knownTypes);
@@ -189,34 +231,42 @@ function executeAskQuery(
   const candidates = generateCandidates(db, intent, {
     additionalCandidates: semanticCandidates(db, semanticMatches),
   });
-  const deterministicCandidateCount = new Set(candidates.filter(candidate =>
-    candidate.reasons.some(reason => reason.channel !== 'semantic' && reason.channel !== 'graph')
-  ).map(candidate => candidate.card.id)).size;
+  const deterministicCandidateCount = new Set(
+    candidates
+      .filter((candidate) =>
+        candidate.reasons.some(
+          (reason) => reason.channel !== 'semantic' && reason.channel !== 'graph',
+        ),
+      )
+      .map((candidate) => candidate.card.id),
+  ).size;
 
-  const dirtyRows = db.prepare(
-    "SELECT target FROM dirty_flags WHERE resolved_at IS NULL AND scope = 'card'"
-  ).all() as Array<{ target: string }>;
-  const dirtyCardIds = new Set(dirtyRows.map(r => r.target));
+  const dirtyRows = db
+    .prepare("SELECT target FROM dirty_flags WHERE resolved_at IS NULL AND scope = 'card'")
+    .all() as Array<{ target: string }>;
+  const dirtyCardIds = new Set(dirtyRows.map((r) => r.target));
 
   const scoredAll = fuseAndScore(candidates, {
     now: options.now ?? Date.now(),
     dirtyCardIds,
   });
   // v1.1: never surface secret-sensitivity cards in ask output.
-  const visible = scoredAll.filter(r => (r.card as any).sensitivity !== 'secret');
+  const visible = scoredAll.filter((r) => (r.card as any).sensitivity !== 'secret');
   const scored = rerankEnabled ? rerankCandidates(visible, buildQueryPlan(intent)) : visible;
 
   const limit = options.limit ?? 20;
   const top = scored.slice(0, limit);
 
-  const matched: AskMatchV03[] = top.map(r => toMatch(r, options.explain ?? false, db, pmemPath, intent.tokens));
+  const matched: AskMatchV03[] = top.map((r) =>
+    toMatch(r, options.explain ?? false, db, pmemPath, intent.tokens),
+  );
 
-  const recommendedFiles = top.slice(0, 8).map(r => r.card.file_path);
+  const recommendedFiles = top.slice(0, 8).map((r) => r.card.file_path);
 
   const evidenceTypes: string[] = (config as any).evidence_types ?? ['decision', 'trace'];
   const evidencePaths = scored
-    .filter(r => evidenceTypes.includes(r.card.type))
-    .map(r => r.card.file_path);
+    .filter((r) => evidenceTypes.includes(r.card.type))
+    .map((r) => r.card.file_path);
 
   const result: AskResultV03 = {
     query,
@@ -225,22 +275,36 @@ function executeAskQuery(
     evidence_paths: evidencePaths,
   };
   if (options.explain || matched.length === 0) {
-    const cardCount = (db.prepare('SELECT COUNT(*) AS count FROM cards WHERE is_deleted = 0 AND is_candidate = 0').get() as { count: number }).count;
+    const cardCount = (
+      db
+        .prepare('SELECT COUNT(*) AS count FROM cards WHERE is_deleted = 0 AND is_candidate = 0')
+        .get() as { count: number }
+    ).count;
     const semanticStatus = getSemanticStatus(db);
     const embeddingEnabled = !!(manifest && 'embedding' in manifest && manifest.embedding.enabled);
     const eligibility = embeddingEnabled
       ? summarizeSemanticEligibility(loadSemanticProjectDocuments(pmemPath))
-      : { eligible_cards: 0, excluded_cards: 0, excluded_by_reason: {}, excluded_by_trust_detail: {} };
-    const noResultReason: AskNoResultReason | null = matched.length > 0 ? null
-      : cardCount === 0 ? 'project_empty'
-      : embeddingEnabled && eligibility.eligible_cards === 0 && eligibility.excluded_cards > 0
-        ? 'semantic_all_cards_excluded'
-        : embeddingEnabled && semanticSearch?.abstainedReason
-          && semanticSearch.abstainedReason !== 'index_unavailable'
-          && semanticSearch.abstainedReason !== 'no_positive_similarity'
-          ? 'semantic_below_relevance_threshold'
-          : embeddingEnabled && !semanticStatus.available ? 'semantic_index_unavailable'
-          : 'no_channel_match';
+      : {
+          eligible_cards: 0,
+          excluded_cards: 0,
+          excluded_by_reason: {},
+          excluded_by_trust_detail: {},
+        };
+    const noResultReason: AskNoResultReason | null =
+      matched.length > 0
+        ? null
+        : cardCount === 0
+          ? 'project_empty'
+          : embeddingEnabled && eligibility.eligible_cards === 0 && eligibility.excluded_cards > 0
+            ? 'semantic_all_cards_excluded'
+            : embeddingEnabled &&
+                semanticSearch?.abstainedReason &&
+                semanticSearch.abstainedReason !== 'index_unavailable' &&
+                semanticSearch.abstainedReason !== 'no_positive_similarity'
+              ? 'semantic_below_relevance_threshold'
+              : embeddingEnabled && !semanticStatus.available
+                ? 'semantic_index_unavailable'
+                : 'no_channel_match';
     result.diagnostics = {
       card_count: cardCount,
       deterministic_candidate_count: deterministicCandidateCount,
@@ -276,22 +340,37 @@ function executeTypeBrowse(
   options: AskOptions & { db?: Database.Database },
   config: any,
 ): AskResultV03 {
-  const cards = db.prepare(
-    `SELECT * FROM cards
+  const cards = db
+    .prepare(
+      `SELECT * FROM cards
      WHERE type = ? AND is_deleted = 0 AND is_candidate = 0
        AND COALESCE(sensitivity, '') <> 'secret'
-     ORDER BY id ASC`
-  ).all(type) as import('../../types').CardRow[];
-  const matched = cards.map(card => {
-    const match = toMatch({
-      card,
-      base: 1,
-      score: 1,
-      factors: { type_weight: 1, recency: 1, staleness: 1, status: 1, confidence: 1, superseded: 1 },
-      stale: false,
-      graph_distance: 0,
-      reasons: [{ channel: 'like', detail: `type = ${type}`, base: 1 }],
-    }, options.explain ?? false, db, pmemPath, []);
+     ORDER BY id ASC`,
+    )
+    .all(type) as import('../../types').CardRow[];
+  const matched = cards.map((card) => {
+    const match = toMatch(
+      {
+        card,
+        base: 1,
+        score: 1,
+        factors: {
+          type_weight: 1,
+          recency: 1,
+          staleness: 1,
+          status: 1,
+          confidence: 1,
+          superseded: 1,
+        },
+        stale: false,
+        graph_distance: 0,
+        reasons: [{ channel: 'like', detail: `type = ${type}`, base: 1 }],
+      },
+      options.explain ?? false,
+      db,
+      pmemPath,
+      [],
+    );
     match.match_type = 'type_filter';
     return match;
   });
@@ -299,15 +378,22 @@ function executeTypeBrowse(
   return {
     query,
     matched,
-    recommended_files: cards.map(card => card.file_path),
-    evidence_paths: cards.filter(card => evidenceTypes.includes(card.type)).map(card => card.file_path),
+    recommended_files: cards.map((card) => card.file_path),
+    evidence_paths: cards
+      .filter((card) => evidenceTypes.includes(card.type))
+      .map((card) => card.file_path),
     browse: { type, total: cards.length, complete: true },
   };
 }
 
-function semanticCandidates(db: Database.Database, matches: readonly SemanticCardMatch[]): ScoredCandidate[] {
+function semanticCandidates(
+  db: Database.Database,
+  matches: readonly SemanticCardMatch[],
+): ScoredCandidate[] {
   const candidates: ScoredCandidate[] = [];
-  const cardQuery = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0 AND is_candidate = 0');
+  const cardQuery = db.prepare(
+    'SELECT * FROM cards WHERE id = ? AND is_deleted = 0 AND is_candidate = 0',
+  );
   for (const match of matches) {
     const card = cardQuery.get(match.cardId) as import('../../types').CardRow | undefined;
     if (!card || card.sensitivity === 'secret') continue;
@@ -316,16 +402,18 @@ function semanticCandidates(db: Database.Database, matches: readonly SemanticCar
       card,
       base,
       graph_distance: 0,
-      reasons: [{
-        channel: 'semantic',
-        detail: `cosine ${match.similarity.toFixed(4)} at ${match.headingPath.join(' > ') || '(card root)'}`,
-        base,
-        similarity: match.similarity,
-        chunk_id: match.chunkId,
-        heading: match.heading,
-        model_revision: match.modelRevision,
-        parent_card: match.cardId,
-      }],
+      reasons: [
+        {
+          channel: 'semantic',
+          detail: `cosine ${match.similarity.toFixed(4)} at ${match.headingPath.join(' > ') || '(card root)'}`,
+          base,
+          similarity: match.similarity,
+          chunk_id: match.chunkId,
+          heading: match.heading,
+          model_revision: match.modelRevision,
+          parent_card: match.cardId,
+        },
+      ],
       rerank_text: `${match.content}\n${match.context}`,
     });
   }
@@ -372,8 +460,10 @@ function toMatch(
   return match;
 }
 
-const SENSITIVE_VALUE_RE = /(\b(?:api[-_ ]?key|secret(?:[-_ ]?key)?|password|passwd|token|authorization|bearer)\s*[:=]\s*["'`]?)([^\s,;"'`]+)/gi;
-const KNOWN_TOKEN_RE = /\b(?:sk|rk)-[A-Za-z0-9]{16,}\b|\bgh[pousr]_[A-Za-z0-9_]{20,}\b|\bAKIA[0-9A-Z]{16}\b/g;
+const SENSITIVE_VALUE_RE =
+  /(\b(?:api[-_ ]?key|secret(?:[-_ ]?key)?|password|passwd|token|authorization|bearer)\s*[:=]\s*["'`]?)([^\s,;"'`]+)/gi;
+const KNOWN_TOKEN_RE =
+  /\b(?:sk|rk)-[A-Za-z0-9]{16,}\b|\bgh[pousr]_[A-Za-z0-9_]{20,}\b|\bAKIA[0-9A-Z]{16}\b/g;
 
 function sanitizeContent(value: string): string {
   return value
@@ -393,7 +483,9 @@ function readCardSnippet(
   if (card.sensitivity === 'secret') return undefined;
   let body = '';
   try {
-    const row = db.prepare('SELECT body FROM card_fts WHERE card_id = ? LIMIT 1').get(card.id) as { body?: string } | undefined;
+    const row = db.prepare('SELECT body FROM card_fts WHERE card_id = ? LIMIT 1').get(card.id) as
+      | { body?: string }
+      | undefined;
     body = row?.body ?? '';
   } catch {
     // Older indexes may not have FTS; the Markdown card remains a safe fallback.
@@ -409,13 +501,15 @@ function readCardSnippet(
   }
   const paragraphs = body
     .split(/\n\s*\n/)
-    .map(part => sanitizeContent(part.replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '')))
+    .map((part) => sanitizeContent(part.replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '')))
     .filter(Boolean);
   if (paragraphs.length === 0) return undefined;
-  const terms = queryTokens.filter(token => token.length > 1 || /[一-鿿]/.test(token));
-  const lowerTerms = terms.map(term => term.toLowerCase());
-  const contentParagraphs = paragraphs.filter(paragraph => paragraph !== card.title);
-  const relevant = contentParagraphs.find(paragraph => lowerTerms.some(term => paragraph.toLowerCase().includes(term)));
+  const terms = queryTokens.filter((token) => token.length > 1 || /[一-鿿]/.test(token));
+  const lowerTerms = terms.map((term) => term.toLowerCase());
+  const contentParagraphs = paragraphs.filter((paragraph) => paragraph !== card.title);
+  const relevant = contentParagraphs.find((paragraph) =>
+    lowerTerms.some((term) => paragraph.toLowerCase().includes(term)),
+  );
   const snippet = relevant ?? contentParagraphs[0] ?? paragraphs[0];
   return snippet.length > 420 ? `${snippet.slice(0, 417).trimEnd()}...` : snippet;
 }

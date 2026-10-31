@@ -129,7 +129,10 @@ export function recencyFactor(updatedAt: string | null, now: number): number {
   return RECENCY_FLOOR + (1 - RECENCY_FLOOR) * Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS);
 }
 
-export function stalenessPenalty(card: CardRow, dirtyCardIds: Set<string>): { penalty: number; stale: boolean } {
+export function stalenessPenalty(
+  card: CardRow,
+  dirtyCardIds: Set<string>,
+): { penalty: number; stale: boolean } {
   let penalty = 1.0;
   let stale = false;
   if (dirtyCardIds.has(card.id)) {
@@ -191,7 +194,10 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
       if (cand.rerank_text?.trim()) {
         if (!existing.rerank_text?.trim()) {
           existing.rerank_text = cand.rerank_text;
-        } else if (existing.rerank_text !== cand.rerank_text && !existing.rerank_text.includes(cand.rerank_text)) {
+        } else if (
+          existing.rerank_text !== cand.rerank_text &&
+          !existing.rerank_text.includes(cand.rerank_text)
+        ) {
           existing.rerank_text = `${existing.rerank_text}\n${cand.rerank_text}`;
         }
       }
@@ -220,35 +226,45 @@ export function fuseAndScore(candidates: ScoredCandidate[], opts: ScoringOptions
       ...cand,
       score: round4(cand.base * tw * rf * penalty * sf * cf * supf),
       factors: {
-        type_weight: tw, recency: round4(rf), staleness: round4(penalty), status: sf,
-        confidence: round4(cf), superseded: round4(supf),
+        type_weight: tw,
+        recency: round4(rf),
+        staleness: round4(penalty),
+        status: sf,
+        confidence: round4(cf),
+        superseded: round4(supf),
       },
       stale,
     });
   }
 
   results.sort((a, b) => {
-    const aExactId = a.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
-    const bExactId = b.reasons.some(r => r.channel === 'exact_id') ? 1 : 0;
+    const aExactId = a.reasons.some((r) => r.channel === 'exact_id') ? 1 : 0;
+    const bExactId = b.reasons.some((r) => r.channel === 'exact_id') ? 1 : 0;
     if (aExactId !== bExactId) return bExactId - aExactId;
 
     // Semantic similarity may discover candidates, but must never displace an
     // exact title/path hit. Keep all pre-v1.1 deterministic channels otherwise
     // ordered by their established fused score.
     const exactAgainstSemantic = (result: ScoredResult, other: ScoredResult): number => {
-      const exact = result.reasons.some(r => r.channel === 'exact_title' || r.channel === 'source_file');
-      const otherSemanticOnly = other.reasons.some(r => r.channel === 'semantic')
-        && !other.reasons.some(r => r.channel === 'exact_title' || r.channel === 'source_file');
+      const exact = result.reasons.some(
+        (r) => r.channel === 'exact_title' || r.channel === 'source_file',
+      );
+      const otherSemanticOnly =
+        other.reasons.some((r) => r.channel === 'semantic') &&
+        !other.reasons.some((r) => r.channel === 'exact_title' || r.channel === 'source_file');
       return exact && otherSemanticOnly ? 1 : 0;
     };
     const aAuthority = exactAgainstSemantic(a, b);
     const bAuthority = exactAgainstSemantic(b, a);
-    return (bAuthority - aAuthority) || (b.score - a.score) || a.card.id.localeCompare(b.card.id);
+    return bAuthority - aAuthority || b.score - a.score || a.card.id.localeCompare(b.card.id);
   });
   return results;
 }
 
-function preferGraphEvidence(current: GraphEvidence | undefined, next: GraphEvidence | undefined): GraphEvidence | undefined {
+function preferGraphEvidence(
+  current: GraphEvidence | undefined,
+  next: GraphEvidence | undefined,
+): GraphEvidence | undefined {
   if (!current) return next;
   if (!next) return current;
   if (current.seed_evidence !== next.seed_evidence) {

@@ -36,7 +36,7 @@ export function validatePathScope(pmemPath: string, runtimeRoot: string = proces
 
   if (!isExact && !isChild) {
     throw new Error(
-      `Path scope violation: "${realPmemPath}" is outside the allowed directory "${allowedRoot}"`
+      `Path scope violation: "${realPmemPath}" is outside the allowed directory "${allowedRoot}"`,
     );
   }
 }
@@ -69,7 +69,7 @@ function truncateFields(obj: any, maxTokens: number): any {
   if (typeof obj !== 'object' || obj === null) return obj;
 
   if (Array.isArray(obj)) {
-    return obj.map(item => truncateFields(item, maxTokens));
+    return obj.map((item) => truncateFields(item, maxTokens));
   }
 
   const result: Record<string, any> = {};
@@ -78,8 +78,8 @@ function truncateFields(obj: any, maxTokens: number): any {
       const val = typeof obj[key] === 'string' ? obj[key] : JSON.stringify(obj[key]);
       // Rough: keep first ~maxTokens/2 words
       const words = val.split(/\s+/);
-      result[key] = words.slice(0, Math.floor(maxTokens / 2)).join(' ') +
-        ' [truncated for token budget]';
+      result[key] =
+        words.slice(0, Math.floor(maxTokens / 2)).join(' ') + ' [truncated for token budget]';
     } else {
       result[key] = truncateFields(obj[key], maxTokens);
     }
@@ -100,10 +100,12 @@ export function addContentTrust(result: any): any {
 
     // Tag objects that look like cards: have an id plus title, file, or match_type.
     // Covers CardRow (has type), AskMatchV03 (no type), and RelatedEdgeItem.
-    const hasCardShape = obj.id !== undefined && (
-      obj.title !== undefined || obj.file !== undefined || obj.match_type !== undefined ||
-      obj.target_id !== undefined
-    );
+    const hasCardShape =
+      obj.id !== undefined &&
+      (obj.title !== undefined ||
+        obj.file !== undefined ||
+        obj.match_type !== undefined ||
+        obj.target_id !== undefined);
     if (hasCardShape) {
       obj.content_trust = 'untrusted_project_data';
     }
@@ -128,7 +130,12 @@ export function addContentTrust(result: any): any {
 /**
  * Validate MCP capture inputs for security constraints (lengths, boundaries).
  */
-export function validateCaptureInputs(pmemPath: string, summary?: string, next?: string, runtimeRoot?: string): void {
+export function validateCaptureInputs(
+  pmemPath: string,
+  summary?: string,
+  next?: string,
+  runtimeRoot?: string,
+): void {
   // Validate path scope first
   validatePathScope(pmemPath, runtimeRoot);
 
@@ -154,7 +161,7 @@ export function validateCaptureInputs(pmemPath: string, summary?: string, next?:
     '<!-- pmem:next:start -->',
     '<!-- pmem:next:end -->',
     '<!-- pmem:rules:start -->',
-    '<!-- pmem:rules:end -->'
+    '<!-- pmem:rules:end -->',
   ];
   for (const marker of forbiddenMarkers) {
     if (summary?.includes(marker) || next?.includes(marker)) {
@@ -162,4 +169,3 @@ export function validateCaptureInputs(pmemPath: string, summary?: string, next?:
     }
   }
 }
-

@@ -77,9 +77,11 @@ export function newCommand(type: string, title: string, options: NewCommandOptio
     // so reject it instead of silently producing `character.task.foo`.
     const declaredPrefix = [...config.card_types]
       .sort((a, b) => b.length - a.length)
-      .find(cardType => requestedId.startsWith(`${cardType}.`));
+      .find((cardType) => requestedId.startsWith(`${cardType}.`));
     if (declaredPrefix && declaredPrefix !== type) {
-      console.log(`Error: Custom ID type "${declaredPrefix}" does not match requested card type "${type}".`);
+      console.log(
+        `Error: Custom ID type "${declaredPrefix}" does not match requested card type "${type}".`,
+      );
       process.exit(2);
     }
     id = declaredPrefix === type ? requestedId : `${type}.${requestedId}`;
@@ -93,8 +95,8 @@ export function newCommand(type: string, title: string, options: NewCommandOptio
     const escapedType = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const compatiblePattern = `^${escapedType}\\.[a-z0-9][a-z0-9._-]*$`;
     const valid = manifestRecognizesType
-      ? (new RegExp(renderedPattern)).test(id)
-      : (new RegExp(compatiblePattern)).test(id);
+      ? new RegExp(renderedPattern).test(id)
+      : new RegExp(compatiblePattern).test(id);
     if (!valid) {
       console.log(`Error: Custom card ID "${id}" does not match the project naming pattern.`);
       console.log(`Expected: ${manifestRecognizesType ? renderedPattern : compatiblePattern}`);

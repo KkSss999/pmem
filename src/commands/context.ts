@@ -6,7 +6,10 @@ import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 import type { PmemSessionData } from '../types';
 import { findProjectPaths } from '../core/projectRoot';
 
-export async function contextCommand(task: string, options: { budget?: number; format?: string; runtime?: CommandRuntimeOptions }): Promise<void> {
+export async function contextCommand(
+  task: string,
+  options: { budget?: number; format?: string; runtime?: CommandRuntimeOptions },
+): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
@@ -47,7 +50,7 @@ export async function contextCommand(task: string, options: { budget?: number; f
     latest_task: task,
     latest_context_query: task,
     latest_context_cards: result.relevant_memory.map((c: any) => c.id),
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
   };
   try {
     writeFile(sessionPath, JSON.stringify(sessionData, null, 2));
@@ -109,7 +112,9 @@ export async function contextCommand(task: string, options: { budget?: number; f
 
     console.log('## Must Read');
     for (const item of result.must_read) {
-      console.log(`- [${path.basename(item.path)}](file://${path.resolve(item.path)}) — ${item.reason}`);
+      console.log(
+        `- [${path.basename(item.path)}](file://${path.resolve(item.path)}) — ${item.reason}`,
+      );
     }
     console.log('');
 

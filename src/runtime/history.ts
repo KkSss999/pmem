@@ -9,7 +9,11 @@ import type {
 
 const DEFAULT_HISTORY_LIMIT = 100;
 
-export function buildMemoryHistory(memoryId: string, events: readonly MemoryEvent[], options: MemoryHistoryOptions = {}): MemoryHistoryResult {
+export function buildMemoryHistory(
+  memoryId: string,
+  events: readonly MemoryEvent[],
+  options: MemoryHistoryOptions = {},
+): MemoryHistoryResult {
   const from = options.from ? Date.parse(options.from) : Number.NEGATIVE_INFINITY;
   const to = options.to ? Date.parse(options.to) : Number.POSITIVE_INFINITY;
   const limit = normalizeLimit(options.limit);
@@ -20,9 +24,13 @@ export function buildMemoryHistory(memoryId: string, events: readonly MemoryEven
       const timestamp = Date.parse(event.recorded_at || event.occurred_at);
       return timestamp >= from && timestamp <= to;
     })
-    .sort((left, right) => Date.parse(left.event.recorded_at) - Date.parse(right.event.recorded_at)
-      || (left.event.sequence ?? Number.MAX_SAFE_INTEGER) - (right.event.sequence ?? Number.MAX_SAFE_INTEGER)
-      || left.index - right.index)
+    .sort(
+      (left, right) =>
+        Date.parse(left.event.recorded_at) - Date.parse(right.event.recorded_at) ||
+        (left.event.sequence ?? Number.MAX_SAFE_INTEGER) -
+          (right.event.sequence ?? Number.MAX_SAFE_INTEGER) ||
+        left.index - right.index,
+    )
     // Backends may return a bounded latest window. Keep the same defensive
     // rule here so a backend that returns a larger history cannot make the
     // public limit select the oldest entries.
@@ -31,16 +39,27 @@ export function buildMemoryHistory(memoryId: string, events: readonly MemoryEven
   return {
     memoryId,
     entries,
-    ...(entries.some(entry => entry.diffStatus === 'unavailable')
-      ? { warnings: ['Some historical events do not contain before/after snapshots; field-level diff is unavailable.'] }
+    ...(entries.some((entry) => entry.diffStatus === 'unavailable')
+      ? {
+          warnings: [
+            'Some historical events do not contain before/after snapshots; field-level diff is unavailable.',
+          ],
+        }
       : {}),
   };
 }
 
-export function buildMemoryDiff(memoryId: string, events: readonly MemoryEvent[], options: MemoryHistoryOptions = {}): MemoryDiffResult {
+export function buildMemoryDiff(
+  memoryId: string,
+  events: readonly MemoryEvent[],
+  options: MemoryHistoryOptions = {},
+): MemoryDiffResult {
   // Diff is intentionally a two-point view: always use the latest two events,
   // regardless of how many older timeline entries exist.
-  const history = buildMemoryHistory(memoryId, events, { ...options, limit: DEFAULT_HISTORY_LIMIT });
+  const history = buildMemoryHistory(memoryId, events, {
+    ...options,
+    limit: DEFAULT_HISTORY_LIMIT,
+  });
   const previous = history.entries.length > 1 ? history.entries[history.entries.length - 2] : null;
   const current = history.entries.at(-1) ?? null;
   const changes = current?.changes;
@@ -68,7 +87,8 @@ function historyEntry(memoryId: string, event: MemoryEvent): MemoryHistoryEntry 
   };
   const actor = stringValue(payload.actor) ?? stringValue(payload.principal);
   const reason = stringValue(payload.reason) ?? stringValue(payload.summary);
-  const source = stringValue(payload.source) ?? stringValue(payload.source_id) ?? stringValue(payload.file);
+  const source =
+    stringValue(payload.source) ?? stringValue(payload.source_id) ?? stringValue(payload.file);
   if (actor) entry.actor = actor;
   if (reason) entry.reason = reason;
   if (source) entry.source = source;
@@ -80,12 +100,20 @@ function diffChanges(payload: Record<string, unknown>): readonly MemoryDiffChang
   const raw = payload.changes ?? payload.changedFields;
   if (Array.isArray(raw)) {
     const changes = raw
-      .map(item => {
+      .map((item) => {
         if (typeof item === 'string') return { path: item };
         if (!item || typeof item !== 'object') return null;
         const value = item as Record<string, unknown>;
         return typeof value.path === 'string'
-          ? { path: value.path, ...(Object.prototype.hasOwnProperty.call(value, 'before') ? { before: value.before } : {}), ...(Object.prototype.hasOwnProperty.call(value, 'after') ? { after: value.after } : {}) }
+          ? {
+              path: value.path,
+              ...(Object.prototype.hasOwnProperty.call(value, 'before')
+                ? { before: value.before }
+                : {}),
+              ...(Object.prototype.hasOwnProperty.call(value, 'after')
+                ? { after: value.after }
+                : {}),
+            }
           : null;
       })
       .filter((item): item is MemoryDiffChange => item !== null);

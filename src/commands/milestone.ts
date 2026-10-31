@@ -6,7 +6,10 @@ import { openDatabase, createSchema, closeDatabase, insertEdge } from '../core/d
 
 const PMEM_DIR = '.pmem';
 
-export function milestoneCommand(version: string, options: { message?: string; tag?: string } = {}): void {
+export function milestoneCommand(
+  version: string,
+  options: { message?: string; tag?: string } = {},
+): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
 
@@ -37,10 +40,18 @@ export function milestoneCommand(version: string, options: { message?: string; t
   // Check if git tag exists
   let gitInfo = '';
   try {
-    const gitDir = execSync('git rev-parse --git-dir', { cwd, stdio: 'ignore', encoding: 'utf8' }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', {
+      cwd,
+      stdio: 'ignore',
+      encoding: 'utf8',
+    }).trim();
     if (gitDir) {
       try {
-        const tagSha = execSync(`git rev-parse refs/tags/${tag}`, { cwd, stdio: 'pipe', encoding: 'utf8' }).trim();
+        const tagSha = execSync(`git rev-parse refs/tags/${tag}`, {
+          cwd,
+          stdio: 'pipe',
+          encoding: 'utf8',
+        }).trim();
         gitInfo = `\n## Git Tag\n- Tag: \`${tag}\`\n- Commit: \`${tagSha.slice(0, 8)}\``;
       } catch {
         try {
@@ -63,7 +74,9 @@ export function milestoneCommand(version: string, options: { message?: string; t
     process.exit(2);
   }
 
-  atomicWrite(milestoneFile, `---
+  atomicWrite(
+    milestoneFile,
+    `---
 id: ${milestoneId}
 type: milestone
 status: shipped
@@ -81,7 +94,8 @@ Released ${new Date().toISOString().split('T')[0]}.
 ${gitInfo}
 ## Next
 Continue development toward the next milestone.
-`);
+`,
+  );
 
   console.log(`Milestone recorded: ${path.relative(cwd, milestoneFile)}`);
   console.log(`  Version: ${version}`);
@@ -106,15 +120,14 @@ Continue development toward the next milestone.
       // Link to feature cards whose ID contains the version (tightened: match
       // `feature.v<version>` prefix or `v<version_underscored>` segment).
       const versionUnderscored = versionClean.replace(/\./g, '_');
-      const featureCards = db.prepare(
-        `SELECT id FROM cards
+      const featureCards = db
+        .prepare(
+          `SELECT id FROM cards
          WHERE type = 'feature'
            AND (id LIKE ? OR id LIKE ?)
-           AND is_deleted = 0`
-      ).all(
-        `feature.v${versionClean}%`,
-        `%v${versionUnderscored}%`
-      ) as Array<{ id: string }>;
+           AND is_deleted = 0`,
+        )
+        .all(`feature.v${versionClean}%`, `%v${versionUnderscored}%`) as Array<{ id: string }>;
 
       const now = new Date().toISOString();
       for (const fc of featureCards) {
@@ -129,7 +142,9 @@ Continue development toward the next milestone.
         });
       }
       if (featureCards.length > 0) {
-        console.log(`  Linked to ${featureCards.length} feature card(s): ${featureCards.map(f => f.id).join(', ')}`);
+        console.log(
+          `  Linked to ${featureCards.length} feature card(s): ${featureCards.map((f) => f.id).join(', ')}`,
+        );
       }
 
       closeDatabase();
@@ -173,10 +188,7 @@ function registerMilestoneType(manifest: any, config: any, pmemPath: string): vo
     const pattern: string = manifest.card_policy.id_pattern;
     if (!pattern.includes('milestone')) {
       // Insert milestone before the closing parenthesis of the type alternation
-      manifest.card_policy.id_pattern = pattern.replace(
-        /(\([^)]+)\)/,
-        '$1|milestone)'
-      );
+      manifest.card_policy.id_pattern = pattern.replace(/(\([^)]+)\)/, '$1|milestone)');
       changed = true;
     }
   }

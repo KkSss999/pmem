@@ -13,8 +13,10 @@ export interface ParsedIntent {
 }
 
 const CARD_ID_RE = /^[a-z][a-z0-9_]*\.[a-z0-9_.-]+$/;
-const PATH_RE = /^[\w.@-]+(\/[\w.@-]+)+$|^[\w-]+\.(ts|js|tsx|jsx|py|rs|go|java|c|h|cpp|hpp|md|yml|yaml|json|toml)$/;
-const ENUMERATION_RE = /\b(list|listing|browse|show|display|enumerate|every|all|what(?:'s| is| are))\b/i;
+const PATH_RE =
+  /^[\w.@-]+(\/[\w.@-]+)+$|^[\w-]+\.(ts|js|tsx|jsx|py|rs|go|java|c|h|cpp|hpp|md|yml|yaml|json|toml)$/;
+const ENUMERATION_RE =
+  /\b(list|listing|browse|show|display|enumerate|every|all|what(?:'s| is| are))\b/i;
 const ENUMERATION_CJK_RE = /列出|列表|浏览|查看|显示|枚举|所有|全部|有哪些|哪些/;
 const TYPE_ALIASES: Record<string, readonly string[]> = {
   character: ['character', 'characters', '角色', '人物', '角色卡'],
@@ -49,11 +51,16 @@ export function parseIntent(query: string, knownTypes: string[]): ParsedIntent {
   }
 
   for (const type of knownTypes) {
-    const aliases = TYPE_ALIASES[type] ?? [type, type.endsWith('s') ? type.slice(0, -1) : `${type}s`];
-    if (aliases.some(alias => {
-      if (/^[一-鿿]/.test(alias)) return normalized.includes(alias);
-      return tokens.includes(alias.toLowerCase());
-    })) {
+    const aliases = TYPE_ALIASES[type] ?? [
+      type,
+      type.endsWith('s') ? type.slice(0, -1) : `${type}s`,
+    ];
+    if (
+      aliases.some((alias) => {
+        if (/^[一-鿿]/.test(alias)) return normalized.includes(alias);
+        return tokens.includes(alias.toLowerCase());
+      })
+    ) {
       typeHints.push(type);
     }
   }

@@ -25,7 +25,10 @@ export class EventStore {
     this.createSchema();
   }
 
-  append(event: Omit<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'> & Partial<Pick<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'>>): MemoryEvent {
+  append(
+    event: Omit<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'> &
+      Partial<Pick<MemoryEvent, 'id' | 'created_at' | 'occurred_at' | 'recorded_at'>>,
+  ): MemoryEvent {
     const createdAt = event.recorded_at ?? event.created_at ?? new Date().toISOString();
     const complete: MemoryEvent = {
       id: event.id ?? randomUUID(),
@@ -40,33 +43,73 @@ export class EventStore {
     const numericId = Number(complete.id);
     const canUseProvidedId = Number.isInteger(numericId) && numericId > 0;
     const result = canUseProvidedId
-      ? this.db.prepare(
-          'INSERT OR REPLACE INTO events (id, event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(numericId, runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, createdAt, null, 1, complete.type, memoryScopeId(complete.scope), payloadJson, this.expiryFor(complete))
-      : this.db.prepare(
-          'INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(runtimeEventType(complete.type), payloadMemoryId(complete.payload), branchFromScope(complete.scope), payloadJson, createdAt, null, 1, complete.type, memoryScopeId(complete.scope), payloadJson, this.expiryFor(complete));
+      ? this.db
+          .prepare(
+            'INSERT OR REPLACE INTO events (id, event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          )
+          .run(
+            numericId,
+            runtimeEventType(complete.type),
+            payloadMemoryId(complete.payload),
+            branchFromScope(complete.scope),
+            payloadJson,
+            createdAt,
+            null,
+            1,
+            complete.type,
+            memoryScopeId(complete.scope),
+            payloadJson,
+            this.expiryFor(complete),
+          )
+      : this.db
+          .prepare(
+            'INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          )
+          .run(
+            runtimeEventType(complete.type),
+            payloadMemoryId(complete.payload),
+            branchFromScope(complete.scope),
+            payloadJson,
+            createdAt,
+            null,
+            1,
+            complete.type,
+            memoryScopeId(complete.scope),
+            payloadJson,
+            this.expiryFor(complete),
+          );
     return { ...complete, id: String(canUseProvidedId ? numericId : result.lastInsertRowid) };
   }
 
   find(id: string): MemoryEvent | null {
-    const row = this.db.prepare(
-      'SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events WHERE id = ?'
-    ).get(id) as EventRow | undefined;
+    const row = this.db
+      .prepare(
+        'SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events WHERE id = ?',
+      )
+      .get(id) as EventRow | undefined;
     return row ? toEvent(row) : null;
   }
 
   replay(since?: string): MemoryEvent[] {
     const rows = since
-      ? this.db.prepare('SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events WHERE created_at >= ? ORDER BY created_at ASC, rowid ASC').all(since) as EventRow[]
-      : this.db.prepare('SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events ORDER BY created_at ASC, rowid ASC').all() as EventRow[];
+      ? (this.db
+          .prepare(
+            'SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events WHERE created_at >= ? ORDER BY created_at ASC, rowid ASC',
+          )
+          .all(since) as EventRow[])
+      : (this.db
+          .prepare(
+            'SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at FROM events ORDER BY created_at ASC, rowid ASC',
+          )
+          .all() as EventRow[]);
     return rows.map(toEvent);
   }
 
   working(scope: string): WorkingMemory {
     const now = new Date().toISOString();
-    const rows = this.db.prepare(
-      `SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at
+    const rows = this.db
+      .prepare(
+        `SELECT id, event_type, type, memory_id, branch, scope, created_at, payload, payload_json, expires_at
        FROM events
        WHERE scope = ?
          AND (expires_at IS NULL OR expires_at > ?)
@@ -76,23 +119,29 @@ export class EventStore {
            WHERE f.event_type = 'memory.forget.tombstone'
              AND (f.memory_id = events.id OR f.memory_id = events.memory_id OR json_extract(f.payload, '$.target_id') = events.id)
          )
-       ORDER BY created_at ASC, rowid ASC`
-    ).all(scope, now) as EventRow[];
+       ORDER BY created_at ASC, rowid ASC`,
+      )
+      .all(scope, now) as EventRow[];
     const events = rows.map(toEvent);
-    const expiries = rows.map(r => r.expires_at).filter((v): v is string => !!v).sort();
+    const expiries = rows
+      .map((r) => r.expires_at)
+      .filter((v): v is string => !!v)
+      .sort();
     return { scope, events, expires_at: expiries[0] };
   }
 
   expire(): number {
-    return this.db.prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?').run(new Date().toISOString()).changes;
+    return this.db
+      .prepare('DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?')
+      .run(new Date().toISOString()).changes;
   }
 
   mergeBranch(sourceBranch: string, targetBranch: string): number {
     const sourceScope = `branch:${sourceBranch}`;
     const targetScope = `branch:${targetBranch}`;
-    const result = this.db.prepare(
-      'UPDATE events SET scope = ?, branch = ? WHERE scope = ?'
-    ).run(targetScope, targetBranch, sourceScope);
+    const result = this.db
+      .prepare('UPDATE events SET scope = ?, branch = ? WHERE scope = ?')
+      .run(targetScope, targetBranch, sourceScope);
     return result.changes;
   }
 
@@ -116,10 +165,20 @@ export class EventStore {
       CREATE INDEX IF NOT EXISTS idx_events_expires ON events(expires_at);
     `);
     for (const column of [
-      'type TEXT', 'scope TEXT', 'payload_json TEXT', 'expires_at TEXT',
-      'event_type TEXT', 'memory_id TEXT', 'branch TEXT', 'payload TEXT', 'session_id TEXT', 'success INTEGER NOT NULL DEFAULT 1'
+      'type TEXT',
+      'scope TEXT',
+      'payload_json TEXT',
+      'expires_at TEXT',
+      'event_type TEXT',
+      'memory_id TEXT',
+      'branch TEXT',
+      'payload TEXT',
+      'session_id TEXT',
+      'success INTEGER NOT NULL DEFAULT 1',
     ]) {
-      try { this.db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
+      try {
+        this.db.exec(`ALTER TABLE events ADD COLUMN ${column}`);
+      } catch {}
     }
   }
 
@@ -148,7 +207,9 @@ function toEvent(row: EventRow): MemoryEvent {
 function safeJson(value: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : { value: parsed };
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : { value: parsed };
   } catch {
     return { value };
   }

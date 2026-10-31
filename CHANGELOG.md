@@ -2,6 +2,33 @@
 
 All notable changes to pmem are documented here.
 
+## v1.3.6 — Semantic Runtime Footprint and Search Cost (2026-10-31)
+
+### Changed
+
+- Default ONNX quantization for **new** semantic setups moves from `uint8` to `q8` (`onnx/model_quantized.onnx`). Same 113 MB artifact, ~22% higher embedding throughput on CPU. Projects already configured with `uint8` keep working: no re-download, no re-index, no manifest repair.
+- Semantic rebuilds now run in a short-lived child process. `dispose()` releases the pipeline's tokenizer heap but the native arenas stay allocated, so a long-lived host process kept ~440 MB RSS after indexing; process exit is the only way to return it. Set `PMEM_SEMANTIC_INLINE=1` to force in-process rebuilds.
+- Semantic chunk search reads vectors only, ranks, and hydrates the text of returned chunks afterwards instead of materializing every card's text per query. Measured on the same 100k-chunk index and the same top result: 1255 ms → 611 ms per query. The remaining cost is reading ~150 MB of vectors per query; an in-memory flat index is the next step past catalog scale.
+
+### Added
+
+- **ONNX Runtime pruning**: `onnxruntime-node` ships every OS/arch plus the CUDA and TensorRT providers (~548 MB) and `onnxruntime-web` duplicates a build Transformers.js already bundles (~140 MB). The CPU core needs ~45 MB. Semantic setup and rebuild now trim the rest once and record a marker under `~/.pmem-global`. Set `PMEM_ORT_GPU=1` to opt out.
+- `scoreSemanticChunks` / `hydrateSemanticChunks` split ranking from hydration in the semantic lifecycle.
+
+### Toolchain
+
+- **Bun is the package manager**: `bun.lock` replaces `package-lock.json`, `packageManager` pins `bun@1.4.4`, and CI installs with `bun install --frozen-lockfile`. Publishing moves to `bun publish`, which runs `prepublishOnly`.
+- **Oxc is the default lint/format layer**: `bun run lint` (`oxlint`, correctness rules as errors), `bun run format` (`oxfmt`, Prettier-compatible), and `bun run check` for the full gate. `tsc --noEmit` stays the type checker — Oxc has no type checker.
+- `trustedDependencies` allows `better-sqlite3`'s prebuild install only. `onnxruntime-node` is left untrusted on purpose: its postinstall downloads CUDA/TensorRT binaries the CPU runtime never loads, and the pruning step removes them anyway.
+- Repository-wide `oxfmt` pass: 202 files reformatted, no behavioral change.
+- CI is cut to three jobs: `verify` (install, typecheck, lint, format, full test suite), `pack` (pack, tarball content assertions, install the tarball, run the CLI), and `publish`. The Node matrix, the nine E2E script stages, the semantic-runtime smoke job, and the advisory audit step are removed from the default pipeline; the E2E scripts remain available as `bun run test:e2e:*` for manual runs.
+
+### Compatibility
+
+- Markdown cards remain canonical; SQLite, chunks, and vectors remain rebuildable derived data.
+- `SEMANTIC_PIPELINE_VERSION` is unchanged, so existing indexes stay valid.
+- End users can still install with any registry client; `bun add -g pmem-ai@latest` is the documented default and `npm install -g pmem-ai@latest` remains supported.
+
 ## v1.3.5 — Unified Semantic Runtime (2026-10-01)
 
 ### Changed

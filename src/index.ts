@@ -35,7 +35,6 @@ import { semanticCommand } from './commands/semantic';
 import { healthBaselineCommand, healthMigrateCommand } from './commands/health';
 import { maintainCommand } from './commands/maintain';
 
-
 const program = new Command();
 
 program
@@ -58,7 +57,10 @@ program
   .option('-b, --budget <tokens>', 'Token budget for context retrieval', '4000')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action(async (task: string, options) => {
-    await contextCommand(task, { budget: options.budget ? parseInt(options.budget, 10) : undefined, format: options.format });
+    await contextCommand(task, {
+      budget: options.budget ? parseInt(options.budget, 10) : undefined,
+      format: options.format,
+    });
   });
 
 program
@@ -71,12 +73,18 @@ program
   .action(async (query: string, options) => {
     const budget = options.budget === undefined ? undefined : Number(options.budget);
     const maxRecords = options.maxRecords === undefined ? undefined : Number(options.maxRecords);
-    const maxEvidencePerRecord = options.maxEvidencePerRecord === undefined ? undefined : Number(options.maxEvidencePerRecord);
-    if ([budget, maxRecords, maxEvidencePerRecord].some(value => value !== undefined && (!Number.isFinite(value) || value < 0))) {
+    const maxEvidencePerRecord =
+      options.maxEvidencePerRecord === undefined ? undefined : Number(options.maxEvidencePerRecord);
+    if (
+      [budget, maxRecords, maxEvidencePerRecord].some(
+        (value) => value !== undefined && (!Number.isFinite(value) || value < 0),
+      )
+    ) {
       console.error('Error: context-pack numeric options must be finite non-negative numbers.');
       process.exit(2);
     }
-    const format = options.format === 'json' || options.format === 'text' ? options.format : 'compact';
+    const format =
+      options.format === 'json' || options.format === 'text' ? options.format : 'compact';
     await contextPackCommand(query, { budget, maxRecords, maxEvidencePerRecord, format });
   });
 
@@ -112,14 +120,18 @@ program
   .option('-s, --summary <text>', 'Summary of changes')
   .option('-n, --next <text>', 'Recommended next step')
   .option('--full', 'Force a full rebuild of the database index after capture', false)
-  .option('--force', 'Force capture write even if no files changed or diff hash is duplicate', false)
+  .option(
+    '--force',
+    'Force capture write even if no files changed or diff hash is duplicate',
+    false,
+  )
   .action(async (options) => {
     await captureCommand({
       auto: options.auto,
       summary: options.summary,
       next: options.next,
       full: options.full,
-      force: options.force
+      force: options.force,
     });
   });
 
@@ -132,7 +144,6 @@ program
     await forgetCommand(memoryId, { confirm: options.confirm, reason: options.reason });
   });
 
-
 program
   .command('init [project-name]')
   .description('Initialize pmem in the current project')
@@ -141,19 +152,35 @@ program
   .option('--stage <text>', 'Current project stage (non-interactive mode)')
   .option('--next <text>', 'Most important next step (non-interactive mode)')
   .option('--answers <path>', 'Path to JSON answers file for non-interactive init')
-  .option('--domain <type>', 'Domain preset for the project (software, novel, research)', 'software')
-  .action(async (projectName?: string, options?: { guided?: boolean; description?: string; stage?: string; next?: string; answers?: string; domain?: string }) => {
-    const opts = options || {};
-    await initCommand({
-      projectName,
-      guided: opts.guided,
-      description: opts.description,
-      stage: opts.stage,
-      next: opts.next,
-      answers: opts.answers,
-      domain: opts.domain,
-    });
-  });
+  .option(
+    '--domain <type>',
+    'Domain preset for the project (software, novel, research)',
+    'software',
+  )
+  .action(
+    async (
+      projectName?: string,
+      options?: {
+        guided?: boolean;
+        description?: string;
+        stage?: string;
+        next?: string;
+        answers?: string;
+        domain?: string;
+      },
+    ) => {
+      const opts = options || {};
+      await initCommand({
+        projectName,
+        guided: opts.guided,
+        description: opts.description,
+        stage: opts.stage,
+        next: opts.next,
+        answers: opts.answers,
+        domain: opts.domain,
+      });
+    },
+  );
 
 program
   .command('recall')
@@ -168,7 +195,7 @@ program
     await recallCommand(parseInt(options.budget, 10), options.format, options.since, {
       recent: options.recent ? parseInt(options.recent, 10) : undefined,
       noTraces: options.traces === false,
-      mode: ['brief', 'normal', 'deep'].includes(options.mode) ? options.mode : 'normal'
+      mode: ['brief', 'normal', 'deep'].includes(options.mode) ? options.mode : 'normal',
     });
   });
 
@@ -215,17 +242,23 @@ program
 
 program
   .command('relations <id>')
-  .description('List all relations for a card (grouped by direction; useful for too_many_relations triage)')
+  .description(
+    'List all relations for a card (grouped by direction; useful for too_many_relations triage)',
+  )
   .option('-t, --type <type>', 'Filter by edge type (e.g. depends_on)')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
-  .option('--source <source>', 'Filter by edge source (explicit, inferred, mention, manual, all)', 'all')
+  .option(
+    '--source <source>',
+    'Filter by edge source (explicit, inferred, mention, manual, all)',
+    'all',
+  )
   .option('--limit <n>', 'Limit edges per direction (default: all)')
   .action(async (id: string, options) => {
     await relationsCommand(id, {
       type: options.type,
       format: options.format,
       source: options.source,
-      limit: options.limit ? parseInt(options.limit, 10) : undefined
+      limit: options.limit ? parseInt(options.limit, 10) : undefined,
     });
   });
 
@@ -243,8 +276,14 @@ program
   .option('--include-history', 'Include historical dirty flags in suggestion output')
   .option('--accept-edges <ids>', 'Comma-separated edge IDs to accept (upgrade to explicit)')
   .option('--reject-edges <ids>', 'Comma-separated edge IDs to reject (delete)')
-  .option('--refresh-verified <ids>', 'Comma-separated card IDs to refresh last_verified timestamps')
-  .option('--replace-managed-blocks', 'Replace ## Why / ## Needed Context sections in next.md (destructive; default is to preserve)')
+  .option(
+    '--refresh-verified <ids>',
+    'Comma-separated card IDs to refresh last_verified timestamps',
+  )
+  .option(
+    '--replace-managed-blocks',
+    'Replace ## Why / ## Needed Context sections in next.md (destructive; default is to preserve)',
+  )
   .action((options) => {
     updateCommand(options);
   });
@@ -302,7 +341,11 @@ program
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .option('--dry-run', 'Preview discoveries without writing to database')
   .option('--min-confidence <n>', 'Minimum confidence threshold (0-1)', '0.5')
-  .option('--lang <languages>', 'Languages to scan (auto, or comma-separated: nodejs,python,rust,go,cpp,java)', 'auto')
+  .option(
+    '--lang <languages>',
+    'Languages to scan (auto, or comma-separated: nodejs,python,rust,go,cpp,java)',
+    'auto',
+  )
   .option('--pattern-file <path>', 'Path to custom language pattern JSON file')
   .action((options) => {
     discoverCommand({
@@ -327,9 +370,24 @@ program
   .option('--relaxed', 'Temporarily double all card_policy.max_tokens limits')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action((options) => {
-    const only = options.only ? options.only.split(',').map((scope: string) => scope.trim()).filter(Boolean) as VerifyFixScope[] : undefined;
+    const only = options.only
+      ? (options.only
+          .split(',')
+          .map((scope: string) => scope.trim())
+          .filter(Boolean) as VerifyFixScope[])
+      : undefined;
     const maxChanges = options.maxChanges === undefined ? undefined : Number(options.maxChanges);
-    verifyCommand({ fix: options.fix, fixLocks: options.fixLocks, fixStale: options.fixStale, only, dryRun: options.dryRun, maxChanges, confirm: options.confirm, relaxed: options.relaxed, format: options.format });
+    verifyCommand({
+      fix: options.fix,
+      fixLocks: options.fixLocks,
+      fixStale: options.fixStale,
+      only,
+      dryRun: options.dryRun,
+      maxChanges,
+      confirm: options.confirm,
+      relaxed: options.relaxed,
+      format: options.format,
+    });
   });
 
 const health = program
@@ -349,15 +407,20 @@ health
   .option('--apply', 'Apply the migration (default is dry-run)')
   .option('--trust-label <label>', 'Explicit trust label for cards where it is missing')
   .option('--sensitivity <level>', 'Explicit sensitivity for cards where it is missing')
-  .option('--classification-by-type <mappings>', 'Comma-separated mappings such as module=fact,resource=fact')
+  .option(
+    '--classification-by-type <mappings>',
+    'Comma-separated mappings such as module=fact,resource=fact',
+  )
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
-  .action((options) => healthMigrateCommand({
-    apply: options.apply,
-    trustLabel: options.trustLabel,
-    sensitivity: options.sensitivity,
-    classificationByType: options.classificationByType,
-    format: options.format,
-  }));
+  .action((options) =>
+    healthMigrateCommand({
+      apply: options.apply,
+      trustLabel: options.trustLabel,
+      sensitivity: options.sensitivity,
+      classificationByType: options.classificationByType,
+      format: options.format,
+    }),
+  );
 
 program
   .command('maintain')
@@ -410,12 +473,14 @@ program
   .option('--apply-suggestion <id>', 'Apply distillation for a specific target card')
   .option('--suggest-splits', 'Suggest splitting oversized cards')
   .action((options) => {
-    distillCommand({ confirm: options.confirm, applySuggestion: options.applySuggestion, suggestSplits: options.suggestSplits });
+    distillCommand({
+      confirm: options.confirm,
+      applySuggestion: options.applySuggestion,
+      suggestSplits: options.suggestSplits,
+    });
   });
 
-const session = program
-  .command('session')
-  .description('Manage development sessions');
+const session = program.command('session').description('Manage development sessions');
 
 session
   .command('start')
@@ -464,12 +529,18 @@ const semantic = program
 
 semantic
   .command('enable')
-  .description('Download the pinned model, enable semantic retrieval, and build the current project index')
+  .description(
+    'Download the pinned model, enable semantic retrieval, and build the current project index',
+  )
   .option('-y, --yes', 'Confirm the displayed model download without prompting')
   .option('--source <source>', 'Model registry (modelscope or huggingface)', 'modelscope')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action(async (options) => {
-    await semanticCommand('enable', { yes: options.yes, format: options.format, source: options.source });
+    await semanticCommand('enable', {
+      yes: options.yes,
+      format: options.format,
+      source: options.source,
+    });
   });
 
 semantic
@@ -479,7 +550,11 @@ semantic
   .option('--source <source>', 'Model registry (modelscope or huggingface)', 'modelscope')
   .option('-f, --format <format>', 'Output format (compact, json)', 'compact')
   .action(async (options) => {
-    await semanticCommand('setup', { yes: options.yes, format: options.format, source: options.source });
+    await semanticCommand('setup', {
+      yes: options.yes,
+      format: options.format,
+      source: options.source,
+    });
   });
 
 semantic
@@ -535,7 +610,6 @@ program
     });
   });
 
-
 program
   .command('new <type> <title>')
   .description('Create a new memory card with frontmatter template')
@@ -566,9 +640,7 @@ program
     await mcpCommand(options.write);
   });
 
-const moduleCmd = program
-  .command('module')
-  .description('Manage project modules');
+const moduleCmd = program.command('module').description('Manage project modules');
 
 moduleCmd
   .command('infer')
@@ -586,9 +658,7 @@ moduleCmd
     });
   });
 
-const decisionCmd = program
-  .command('decision')
-  .description('Manage project decisions');
+const decisionCmd = program.command('decision').description('Manage project decisions');
 
 decisionCmd
   .command('infer')

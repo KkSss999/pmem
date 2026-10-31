@@ -20,14 +20,18 @@ export const SEMANTIC_TRUSTED_LABELS = new Set([
   'application_trusted',
 ]);
 
-export function semanticTrustExclusionDetail(card: SemanticCardDocument): SemanticTrustExclusionDetail | null {
+export function semanticTrustExclusionDetail(
+  card: SemanticCardDocument,
+): SemanticTrustExclusionDetail | null {
   const label = card.frontmatter?.trust_label;
   if (typeof label !== 'string' || label.trim() === '') return 'missing_trust_label';
   if (!isTrustLabel(label)) return 'invalid_trust_label';
   return SEMANTIC_TRUSTED_LABELS.has(label) ? null : 'non_indexable_trust_label';
 }
 
-export function semanticExclusionReason(card: SemanticCardDocument): SemanticExclusionReason | null {
+export function semanticExclusionReason(
+  card: SemanticCardDocument,
+): SemanticExclusionReason | null {
   if (card.frontmatter?.sensitivity === 'secret') return 'secret';
   if (semanticTrustExclusionDetail(card)) return 'untrusted';
   if (card.isCandidate) return 'candidate';
@@ -40,6 +44,8 @@ export function isSemanticSafeCard(card: SemanticCardDocument): boolean {
   return semanticExclusionReason(card) === null;
 }
 
-export function filterSafeSemanticCards(cards: readonly SemanticCardDocument[]): SemanticCardDocument[] {
+export function filterSafeSemanticCards(
+  cards: readonly SemanticCardDocument[],
+): SemanticCardDocument[] {
   return cards.filter(isSemanticSafeCard);
 }

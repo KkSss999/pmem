@@ -3,7 +3,13 @@
 // This change allows custom domain types (character, chapter, world, arc, ...).
 export type NodeType = string;
 
-export type NodeStatus = 'active' | 'designing' | 'implementing' | 'completed' | 'archived' | 'blocked';
+export type NodeStatus =
+  | 'active'
+  | 'designing'
+  | 'implementing'
+  | 'completed'
+  | 'archived'
+  | 'blocked';
 
 export type CardPriority = 'high' | 'medium' | 'low';
 
@@ -47,7 +53,14 @@ export interface CardFrontmatter {
    * agent_generated = produced by AI agent; tool_observed = extracted from tool output;
    * imported_external = from external source; untrusted_content = potentially unreliable.
    */
-  trust_label?: 'system_trusted' | 'user_confirmed' | 'application_trusted' | 'agent_generated' | 'tool_observed' | 'imported_external' | 'untrusted_content';
+  trust_label?:
+    | 'system_trusted'
+    | 'user_confirmed'
+    | 'application_trusted'
+    | 'agent_generated'
+    | 'tool_observed'
+    | 'imported_external'
+    | 'untrusted_content';
   /**
    * Sensitivity level controlling visibility in recall/context output.
    * secret = never appears in agent context; confidential = limited distribution;

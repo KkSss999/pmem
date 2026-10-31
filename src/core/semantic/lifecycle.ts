@@ -67,21 +67,45 @@ export function createSemanticSchema(db: SemanticDatabase): void {
     CREATE INDEX IF NOT EXISTS idx_semantic_chunks_card_id ON semantic_chunks(card_id);
     CREATE INDEX IF NOT EXISTS idx_semantic_chunks_content_hash ON semantic_chunks(content_hash);
   `);
-  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1'); } catch {}
-  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN build_status TEXT NOT NULL DEFAULT 'complete'"); } catch {}
-  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN failed_card_count INTEGER NOT NULL DEFAULT 0'); } catch {}
-  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN failed_card_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
-  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 1'); } catch {}
-  try { db.exec("ALTER TABLE semantic_meta ADD COLUMN chunk_strategy TEXT NOT NULL DEFAULT 'heading-aware-v1'"); } catch {}
-  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''"); } catch {}
+  try {
+    db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1');
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_meta ADD COLUMN build_status TEXT NOT NULL DEFAULT 'complete'");
+  } catch {}
+  try {
+    db.exec('ALTER TABLE semantic_meta ADD COLUMN failed_card_count INTEGER NOT NULL DEFAULT 0');
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_meta ADD COLUMN failed_card_ids TEXT NOT NULL DEFAULT '[]'");
+  } catch {}
+  try {
+    db.exec('ALTER TABLE semantic_meta ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 1');
+  } catch {}
+  try {
+    db.exec(
+      "ALTER TABLE semantic_meta ADD COLUMN chunk_strategy TEXT NOT NULL DEFAULT 'heading-aware-v1'",
+    );
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''");
+  } catch {}
 }
 
 export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
   createSemanticSchema(db);
-  const meta = db.prepare('SELECT * FROM semantic_meta WHERE id = 1').get() as StoredSemanticMetaRow | undefined;
-  const actual = db.prepare('SELECT COUNT(*) AS count FROM semantic_chunks').get() as { count: number };
-  const cards = db.prepare('SELECT COUNT(DISTINCT card_id) AS count FROM semantic_chunks').get() as { count: number };
+  const meta = db.prepare('SELECT * FROM semantic_meta WHERE id = 1').get() as
+    | StoredSemanticMetaRow
+    | undefined;
+  const actual = db.prepare('SELECT COUNT(*) AS count FROM semantic_chunks').get() as {
+    count: number;
+  };
+  const cards = db
+    .prepare('SELECT COUNT(DISTINCT card_id) AS count FROM semantic_chunks')
+    .get() as { count: number };
   if (!meta) {
     return {
       available: false,
@@ -103,21 +127,21 @@ export function getSemanticStatus(db: SemanticDatabase): SemanticStatus {
   }
   const metadataVersion = meta.metadata_version ?? SEMANTIC_METADATA_VERSION;
   const chunkStrategy = meta.chunk_strategy ?? SEMANTIC_CHUNK_STRATEGY;
-  const compatible = meta.pipeline_version === SEMANTIC_PIPELINE_VERSION
-    && metadataVersion === SEMANTIC_METADATA_VERSION
-    && chunkStrategy === SEMANTIC_CHUNK_STRATEGY;
+  const compatible =
+    meta.pipeline_version === SEMANTIC_PIPELINE_VERSION &&
+    metadataVersion === SEMANTIC_METADATA_VERSION &&
+    chunkStrategy === SEMANTIC_CHUNK_STRATEGY;
   const buildStatus: SemanticBuildStatus = meta.build_status === 'partial' ? 'partial' : 'complete';
   let failedCardIds: string[] = [];
   try {
     const parsed = JSON.parse(meta.failed_card_ids ?? '[]') as unknown;
-    if (Array.isArray(parsed)) failedCardIds = parsed.filter((id): id is string => typeof id === 'string');
+    if (Array.isArray(parsed))
+      failedCardIds = parsed.filter((id): id is string => typeof id === 'string');
   } catch {
     failedCardIds = [];
   }
   return {
-    available: buildStatus === 'complete'
-      && compatible
-      && meta.chunk_count === actual.count,
+    available: buildStatus === 'complete' && compatible && meta.chunk_count === actual.count,
     buildStatus,
     failedCardCount: meta.failed_card_count ?? failedCardIds.length,
     failedCardIds,
@@ -184,10 +208,12 @@ async function embedChunks(
   const prepared: PreparedChunk[] = [];
   for (let offset = 0; offset < chunks.length; offset += batchSize) {
     const batch = chunks.slice(offset, offset + batchSize);
-    const texts = batch.map(chunk => chunk.content);
+    const texts = batch.map((chunk) => chunk.content);
     const vectors = await provider.embedPassages(texts);
     if (vectors.length !== batch.length) {
-      throw new Error(`Embedding provider returned ${vectors.length} vectors for ${batch.length} passages`);
+      throw new Error(
+        `Embedding provider returned ${vectors.length} vectors for ${batch.length} passages`,
+      );
     }
     for (let i = 0; i < batch.length; i++) {
       prepared.push({
@@ -200,11 +226,15 @@ async function embedChunks(
   return prepared;
 }
 
-function indexHash(rows: readonly { chunk_id: string; content_hash: string; context_hash?: string }[]): string {
-  return sha256([...rows]
-    .sort((a, b) => a.chunk_id.localeCompare(b.chunk_id))
-    .map(row => `${row.chunk_id}:${row.content_hash}:${row.context_hash ?? ''}`)
-    .join('\n'));
+function indexHash(
+  rows: readonly { chunk_id: string; content_hash: string; context_hash?: string }[],
+): string {
+  return sha256(
+    [...rows]
+      .sort((a, b) => a.chunk_id.localeCompare(b.chunk_id))
+      .map((row) => `${row.chunk_id}:${row.content_hash}:${row.context_hash ?? ''}`)
+      .join('\n'),
+  );
 }
 
 function refreshMetaFromStoredChunks(
@@ -213,27 +243,59 @@ function refreshMetaFromStoredChunks(
   emptyIdentity?: { modelId: string; revision: string; dimension: number },
   build?: { status: Exclude<SemanticBuildStatus, 'none'>; failedCardIds: readonly string[] },
 ): void {
-  const rows = db.prepare(
-    'SELECT chunk_id, content_hash, context_hash, model_id, model_revision, dimension FROM semantic_chunks ORDER BY chunk_id'
-  ).all() as Array<{ chunk_id: string; content_hash: string; context_hash: string; model_id: string; model_revision: string; dimension: number }>;
-  const existingMeta = db.prepare('SELECT model_id, model_revision, dimension, build_status, failed_card_ids FROM semantic_meta WHERE id = 1').get() as
-    { model_id: string; model_revision: string; dimension: number; build_status?: SemanticBuildStatus; failed_card_ids?: string } | undefined;
-  const buildStatus = build?.status ?? (existingMeta?.build_status === 'partial' ? 'partial' : 'complete');
-  const failedCardIds = [...new Set(build?.failedCardIds ?? (() => {
-    try {
-      const parsed = JSON.parse(existingMeta?.failed_card_ids ?? '[]') as unknown;
-      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
-    } catch {
-      return [];
-    }
-  })())].sort();
+  const rows = db
+    .prepare(
+      'SELECT chunk_id, content_hash, context_hash, model_id, model_revision, dimension FROM semantic_chunks ORDER BY chunk_id',
+    )
+    .all() as Array<{
+    chunk_id: string;
+    content_hash: string;
+    context_hash: string;
+    model_id: string;
+    model_revision: string;
+    dimension: number;
+  }>;
+  const existingMeta = db
+    .prepare(
+      'SELECT model_id, model_revision, dimension, build_status, failed_card_ids FROM semantic_meta WHERE id = 1',
+    )
+    .get() as
+    | {
+        model_id: string;
+        model_revision: string;
+        dimension: number;
+        build_status?: SemanticBuildStatus;
+        failed_card_ids?: string;
+      }
+    | undefined;
+  const buildStatus =
+    build?.status ?? (existingMeta?.build_status === 'partial' ? 'partial' : 'complete');
+  const failedCardIds = [
+    ...new Set(
+      build?.failedCardIds ??
+        (() => {
+          try {
+            const parsed = JSON.parse(existingMeta?.failed_card_ids ?? '[]') as unknown;
+            return Array.isArray(parsed)
+              ? parsed.filter((id): id is string => typeof id === 'string')
+              : [];
+          } catch {
+            return [];
+          }
+        })(),
+    ),
+  ].sort();
   const failedCardIdsJson = JSON.stringify(failedCardIds);
   if (rows.length === 0) {
-    const identity = emptyIdentity ?? (existingMeta ? {
-      modelId: existingMeta.model_id,
-      revision: existingMeta.model_revision,
-      dimension: existingMeta.dimension,
-    } : undefined);
+    const identity =
+      emptyIdentity ??
+      (existingMeta
+        ? {
+            modelId: existingMeta.model_id,
+            revision: existingMeta.model_revision,
+            dimension: existingMeta.dimension,
+          }
+        : undefined);
     if (!identity) {
       db.prepare('DELETE FROM semantic_meta').run();
       return;
@@ -243,8 +305,19 @@ function refreshMetaFromStoredChunks(
         (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
          build_status, failed_card_count, failed_card_ids, metadata_version, chunk_strategy)
       VALUES (1, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
-    `).run(SEMANTIC_PIPELINE_VERSION, identity.modelId, identity.revision, identity.dimension, indexHash([]), builtAt,
-      buildStatus, failedCardIds.length, failedCardIdsJson, SEMANTIC_METADATA_VERSION, SEMANTIC_CHUNK_STRATEGY);
+    `).run(
+      SEMANTIC_PIPELINE_VERSION,
+      identity.modelId,
+      identity.revision,
+      identity.dimension,
+      indexHash([]),
+      builtAt,
+      buildStatus,
+      failedCardIds.length,
+      failedCardIdsJson,
+      SEMANTIC_METADATA_VERSION,
+      SEMANTIC_CHUNK_STRATEGY,
+    );
     return;
   }
   const first = rows[0];
@@ -253,8 +326,20 @@ function refreshMetaFromStoredChunks(
       (id, pipeline_version, model_id, model_revision, dimension, index_content_hash, chunk_count, built_at,
        build_status, failed_card_count, failed_card_ids, metadata_version, chunk_strategy)
     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(SEMANTIC_PIPELINE_VERSION, first.model_id, first.model_revision, first.dimension, indexHash(rows), rows.length, builtAt,
-    buildStatus, failedCardIds.length, failedCardIdsJson, SEMANTIC_METADATA_VERSION, SEMANTIC_CHUNK_STRATEGY);
+  `).run(
+    SEMANTIC_PIPELINE_VERSION,
+    first.model_id,
+    first.model_revision,
+    first.dimension,
+    indexHash(rows),
+    rows.length,
+    builtAt,
+    buildStatus,
+    failedCardIds.length,
+    failedCardIdsJson,
+    SEMANTIC_METADATA_VERSION,
+    SEMANTIC_CHUNK_STRATEGY,
+  );
 }
 
 /**
@@ -274,13 +359,14 @@ export async function rebuildSemanticIndex(
   validateProvider(provider);
   assertUniqueCardIds(documents);
   const batchSize = options.batchSize ?? 32;
-  if (!Number.isInteger(batchSize) || batchSize <= 0) throw new Error('Semantic batchSize must be a positive integer');
+  if (!Number.isInteger(batchSize) || batchSize <= 0)
+    throw new Error('Semantic batchSize must be a positive integer');
 
   const allowlistedDocuments = filterSafeSemanticCards(documents);
-  const safeIds = new Set(allowlistedDocuments.map(document => document.id));
-  const safeDocuments = allowlistedDocuments.map(document => ({
+  const safeIds = new Set(allowlistedDocuments.map((document) => document.id));
+  const safeDocuments = allowlistedDocuments.map((document) => ({
     ...document,
-    relatedCardIds: document.relatedCardIds?.filter(id => safeIds.has(id)),
+    relatedCardIds: document.relatedCardIds?.filter((id) => safeIds.has(id)),
   }));
   const failures: SemanticIndexFailure[] = [];
   const chunkedCards: Array<{ card: SemanticCardDocument; chunks: SemanticChunk[] }> = [];
@@ -291,15 +377,18 @@ export async function rebuildSemanticIndex(
       failures.push({ cardId: card.id, stage: 'chunk', error: error?.message ?? String(error) });
     }
   }
-  const candidateChunks = chunkedCards.flatMap(entry => entry.chunks);
-  const candidateById = new Map(candidateChunks.map(chunk => [chunk.chunkId, chunk]));
+  const candidateChunks = chunkedCards.flatMap((entry) => entry.chunks);
+  const candidateById = new Map(candidateChunks.map((chunk) => [chunk.chunkId, chunk]));
   const existing = db.prepare('SELECT * FROM semantic_chunks').all() as SemanticChunkRow[];
   const priorStatus = getSemanticStatus(db);
-  const compatible = priorStatus.compatible && existing.every(row =>
-    row.model_id === provider.modelId &&
-    row.model_revision === provider.revision &&
-    row.dimension === provider.dimension
-  );
+  const compatible =
+    priorStatus.compatible &&
+    existing.every(
+      (row) =>
+        row.model_id === provider.modelId &&
+        row.model_revision === provider.revision &&
+        row.dimension === provider.dimension,
+    );
   const forceFull = options.mode === 'full' || !compatible;
   const now = (options.now ?? (() => new Date()))().toISOString();
   const reusable = new Map<string, SemanticChunkRow>();
@@ -309,23 +398,29 @@ export async function rebuildSemanticIndex(
       if (desired && desired.contentHash === row.content_hash) reusable.set(row.chunk_id, row);
     }
   }
-  const failedCardIds = new Set(failures.map(failure => failure.cardId));
+  const failedCardIds = new Set(failures.map((failure) => failure.cardId));
   const embedded: PreparedChunk[] = [];
   for (const entry of chunkedCards) {
-    const needsEmbedding = entry.chunks.filter(chunk => !reusable.has(chunk.chunkId));
+    const needsEmbedding = entry.chunks.filter((chunk) => !reusable.has(chunk.chunkId));
     if (needsEmbedding.length === 0) continue;
     try {
-      embedded.push(...await embedChunks(needsEmbedding, provider, batchSize, now));
+      embedded.push(...(await embedChunks(needsEmbedding, provider, batchSize, now)));
     } catch (error: any) {
       failedCardIds.add(entry.card.id);
-      failures.push({ cardId: entry.card.id, stage: 'embed', error: error?.message ?? String(error) });
+      failures.push({
+        cardId: entry.card.id,
+        stage: 'embed',
+        error: error?.message ?? String(error),
+      });
     }
   }
-  const desiredChunks = candidateChunks.filter(chunk => !failedCardIds.has(chunk.cardId));
-  const desiredById = new Map(desiredChunks.map(chunk => [chunk.chunkId, chunk]));
-  const embeddedById = new Map(embedded
-    .filter(item => !failedCardIds.has(item.chunk.cardId))
-    .map(item => [item.chunk.chunkId, item]));
+  const desiredChunks = candidateChunks.filter((chunk) => !failedCardIds.has(chunk.cardId));
+  const desiredById = new Map(desiredChunks.map((chunk) => [chunk.chunkId, chunk]));
+  const embeddedById = new Map(
+    embedded
+      .filter((item) => !failedCardIds.has(item.chunk.cardId))
+      .map((item) => [item.chunk.chunkId, item]),
+  );
   const reusableCommitted = new Map([...reusable].filter(([chunkId]) => desiredById.has(chunkId)));
   const failedIds = [...failedCardIds].sort();
   let chunksDeleted = 0;
@@ -350,7 +445,8 @@ export async function rebuildSemanticIndex(
     for (const chunk of desiredChunks) {
       const prior = reusable.get(chunk.chunkId);
       const fresh = embeddedById.get(chunk.chunkId);
-      if (!prior && !fresh) throw new Error(`No vector available for semantic chunk ${chunk.chunkId}`);
+      if (!prior && !fresh)
+        throw new Error(`No vector available for semantic chunk ${chunk.chunkId}`);
       upsert.run(
         chunk.chunkId,
         chunk.cardId,
@@ -369,17 +465,24 @@ export async function rebuildSemanticIndex(
         now,
       );
     }
-    refreshMetaFromStoredChunks(db, now, {
-      modelId: provider.modelId,
-      revision: provider.revision,
-      dimension: provider.dimension,
-    }, {
-      status: failedIds.length > 0 ? 'partial' : 'complete',
-      failedCardIds: failedIds,
-    });
+    refreshMetaFromStoredChunks(
+      db,
+      now,
+      {
+        modelId: provider.modelId,
+        revision: provider.revision,
+        dimension: provider.dimension,
+      },
+      {
+        status: failedIds.length > 0 ? 'partial' : 'complete',
+        failedCardIds: failedIds,
+      },
+    );
   })();
 
-  const rows = db.prepare('SELECT chunk_id, content_hash, context_hash FROM semantic_chunks ORDER BY chunk_id').all() as Array<{ chunk_id: string; content_hash: string; context_hash: string }>;
+  const rows = db
+    .prepare('SELECT chunk_id, content_hash, context_hash FROM semantic_chunks ORDER BY chunk_id')
+    .all() as Array<{ chunk_id: string; content_hash: string; context_hash: string }>;
   return {
     mode: options.mode,
     cardsSeen: documents.length,
@@ -387,7 +490,9 @@ export async function rebuildSemanticIndex(
     cardsIndexed: safeDocuments.length - failedIds.length,
     cardsFailed: failedIds.length,
     failedCardIds: failedIds,
-    failures: failures.sort((a, b) => a.cardId.localeCompare(b.cardId) || a.stage.localeCompare(b.stage)),
+    failures: failures.sort(
+      (a, b) => a.cardId.localeCompare(b.cardId) || a.stage.localeCompare(b.stage),
+    ),
     buildStatus: failedIds.length > 0 ? 'partial' : 'complete',
     chunksTotal: desiredChunks.length,
     chunksEmbedded: embeddedById.size,
@@ -397,18 +502,32 @@ export async function rebuildSemanticIndex(
   };
 }
 
-/** Linear cosine scan; query vectors are normalized locally before comparison. */
-export function searchSemanticChunks(
+/** A chunk reduced to what ranking needs: no card text is materialized per row. */
+export interface ScoredSemanticChunk {
+  chunk_id: string;
+  card_id: string;
+  similarity: number;
+}
+
+/**
+ * Score every eligible chunk. Vectors are stored normalized, so cosine is a
+ * plain dot product; only the vector blob is read, never the card text.
+ *
+ * shortcut: still O(n) over all vectors because SQLite has no ANN index here.
+ * Promoting chunks into a flat in-memory array is the next step past ~50k chunks.
+ */
+export function scoreSemanticChunks(
   db: SemanticDatabase,
   queryVector: readonly number[],
-  limit: number = 20,
-): SemanticChunkMatch[] {
-  if (!Number.isInteger(limit) || limit <= 0) return [];
+  limit: number = Number.MAX_SAFE_INTEGER,
+): ScoredSemanticChunk[] {
   const status = getSemanticStatus(db);
   if (!status.available || status.dimension === null) return [];
   const query = normalizeVector(queryVector, status.dimension);
-  const rows = db.prepare(`
-    SELECT sc.*
+  const dimension = status.dimension;
+  const rows = db
+    .prepare(`
+    SELECT sc.chunk_id AS chunk_id, sc.card_id AS card_id, sc.vector AS vector
     FROM semantic_chunks sc
     JOIN cards c ON c.id = sc.card_id
     WHERE c.is_deleted = 0
@@ -416,15 +535,52 @@ export function searchSemanticChunks(
       AND COALESCE(c.sensitivity, '') <> 'secret'
       AND c.trust_label IN ('system_trusted', 'user_confirmed', 'application_trusted')
       AND (c.superseded_by IS NULL OR c.superseded_by = '' OR c.superseded_by = '[]')
-  `).all() as SemanticChunkRow[];
-  return rows.map(row => {
-    const vector = decodeVector(row.vector, status.dimension!);
+  `)
+    .all() as Array<{ chunk_id: string; card_id: string; vector: Buffer }>;
+  const scored: ScoredSemanticChunk[] = [];
+  for (const row of rows) {
+    const vector = decodeVector(row.vector, dimension);
     let similarity = 0;
     for (let i = 0; i < query.length; i++) similarity += query[i] * vector[i];
-    return { ...row, similarity };
-  }).filter(row => row.similarity > 0)
-    .sort((a, b) => b.similarity - a.similarity || a.chunk_id.localeCompare(b.chunk_id))
-    .slice(0, limit);
+    if (similarity > 0) scored.push({ chunk_id: row.chunk_id, card_id: row.card_id, similarity });
+  }
+  scored.sort((a, b) => b.similarity - a.similarity || a.chunk_id.localeCompare(b.chunk_id));
+  return limit < scored.length ? scored.slice(0, limit) : scored;
+}
+
+const HYDRATE_BATCH = 256;
+
+/** Load full chunk rows (text, heading path, model identity) for the winners only. */
+export function hydrateSemanticChunks(
+  db: SemanticDatabase,
+  scored: readonly ScoredSemanticChunk[],
+): SemanticChunkMatch[] {
+  if (scored.length === 0) return [];
+  const byId = new Map<string, SemanticChunkRow>();
+  const ids = scored.map((chunk) => chunk.chunk_id);
+  for (let offset = 0; offset < ids.length; offset += HYDRATE_BATCH) {
+    const batch = ids.slice(offset, offset + HYDRATE_BATCH);
+    const rows = db
+      .prepare(
+        `SELECT * FROM semantic_chunks WHERE chunk_id IN (${batch.map(() => '?').join(',')})`,
+      )
+      .all(...batch) as SemanticChunkRow[];
+    for (const row of rows) byId.set(row.chunk_id, row);
+  }
+  return scored.flatMap((chunk) => {
+    const row = byId.get(chunk.chunk_id);
+    return row ? [{ ...row, similarity: chunk.similarity }] : [];
+  });
+}
+
+/** Ranked chunk matches for callers that need the text of every returned chunk. */
+export function searchSemanticChunks(
+  db: SemanticDatabase,
+  queryVector: readonly number[],
+  limit: number = 20,
+): SemanticChunkMatch[] {
+  if (!Number.isInteger(limit) || limit <= 0) return [];
+  return hydrateSemanticChunks(db, scoreSemanticChunks(db, queryVector, limit));
 }
 
 /** Embed an E5 query and return only the best evidence chunk for each parent card. */
@@ -441,7 +597,10 @@ export const SEMANTIC_RELEVANCE_FLOOR = 0.805;
 export const SEMANTIC_HAN_RELEVANCE_FLOOR = 0.765;
 export const SEMANTIC_MIN_TOP_MEDIAN_MARGIN = 0.012;
 
-export function semanticRelevanceGate(scores: readonly number[], queryText = ''): {
+export function semanticRelevanceGate(
+  scores: readonly number[],
+  queryText = '',
+): {
   topSimilarity: number | null;
   medianSimilarity: number | null;
   runnerUpSimilarity: number | null;
@@ -449,27 +608,44 @@ export function semanticRelevanceGate(scores: readonly number[], queryText = '')
   abstainedReason: import('./types').SemanticAbstentionReason | null;
 } {
   if (scores.length === 0) {
-    return { topSimilarity: null, medianSimilarity: null, runnerUpSimilarity: null, cutoff: null, abstainedReason: 'no_positive_similarity' };
+    return {
+      topSimilarity: null,
+      medianSimilarity: null,
+      runnerUpSimilarity: null,
+      cutoff: null,
+      abstainedReason: 'no_positive_similarity',
+    };
   }
   const sorted = [...scores].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
-  const median = sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  const median =
+    sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   const top = sorted[sorted.length - 1];
   const runnerUp = sorted.length > 1 ? sorted[sorted.length - 2] : null;
-  const hanOnlyQuery = /[\u3400-\u9fff]/.test(queryText) && (queryText.match(/[a-z]/gi)?.length ?? 0) < 4;
+  const hanOnlyQuery =
+    /[\u3400-\u9fff]/.test(queryText) && (queryText.match(/[a-z]/gi)?.length ?? 0) < 4;
   const baseFloor = hanOnlyQuery ? SEMANTIC_HAN_RELEVANCE_FLOOR : SEMANTIC_RELEVANCE_FLOOR;
   // In the narrow non-Han boundary band, a lone low-confidence outlier is
   // still OOD noise even if its corpus median happens to be lower.
   const absoluteFloor = !hanOnlyQuery && top < 0.81 && top - median > 0.025 ? 0.81 : baseFloor;
-  const cutoff = sorted.length >= 4
-    ? Math.max(0.75, median + 0.02, top - 0.05)
-    : Math.max(0.75, top - 0.05);
-  const abstainedReason = top < absoluteFloor
-    ? 'below_absolute_floor'
-    : (sorted.length >= 4 && top >= 0.81 && top < 0.825 && top - median < SEMANTIC_MIN_TOP_MEDIAN_MARGIN
-      ? 'flat_score_distribution'
-      : null);
-  return { topSimilarity: top, medianSimilarity: median, runnerUpSimilarity: runnerUp, cutoff, abstainedReason };
+  const cutoff =
+    sorted.length >= 4 ? Math.max(0.75, median + 0.02, top - 0.05) : Math.max(0.75, top - 0.05);
+  const abstainedReason =
+    top < absoluteFloor
+      ? 'below_absolute_floor'
+      : sorted.length >= 4 &&
+          top >= 0.81 &&
+          top < 0.825 &&
+          top - median < SEMANTIC_MIN_TOP_MEDIAN_MARGIN
+        ? 'flat_score_distribution'
+        : null;
+  return {
+    topSimilarity: top,
+    medianSimilarity: median,
+    runnerUpSimilarity: runnerUp,
+    cutoff,
+    abstainedReason,
+  };
 }
 
 /**
@@ -485,51 +661,69 @@ export async function searchSemanticCardsDetailed(
 ): Promise<import('./types').SemanticCardSearchResult> {
   validateProvider(provider);
   const status = getSemanticStatus(db);
-  const empty = (abstainedReason: import('./types').SemanticAbstentionReason): import('./types').SemanticCardSearchResult => ({
+  const empty = (
+    abstainedReason: import('./types').SemanticAbstentionReason,
+  ): import('./types').SemanticCardSearchResult => ({
     matches: [],
     diagnostics: {
-      rawChunkCount: 0, rawCardCount: 0, acceptedCardCount: 0,
-      topSimilarity: null, medianSimilarity: null, runnerUpSimilarity: null, cutoff: null, abstainedReason,
+      rawChunkCount: 0,
+      rawCardCount: 0,
+      acceptedCardCount: 0,
+      topSimilarity: null,
+      medianSimilarity: null,
+      runnerUpSimilarity: null,
+      cutoff: null,
+      abstainedReason,
     },
   });
   if (!status.available) return empty('index_unavailable');
-  if (status.modelId !== provider.modelId || status.revision !== provider.revision || status.dimension !== provider.dimension) {
+  if (
+    status.modelId !== provider.modelId ||
+    status.revision !== provider.revision ||
+    status.dimension !== provider.dimension
+  ) {
     throw new Error('Embedding provider is incompatible with the stored semantic index');
   }
   const vector = await provider.embedQuery(queryText);
-  const chunks = searchSemanticChunks(db, vector, 1_000_000);
+  const chunks = scoreSemanticChunks(db, vector);
   if (chunks.length === 0) return empty('no_positive_similarity');
-  const bestByCard = new Map<string, SemanticChunkMatch>();
+  const bestByCard = new Map<string, ScoredSemanticChunk>();
   for (const chunk of chunks) {
     if (!bestByCard.has(chunk.card_id)) bestByCard.set(chunk.card_id, chunk);
   }
   const best = Array.from(bestByCard.values());
   // Calibrated against the v1.2.1 OOD fixture. E5 cosine has a high baseline;
   // for normal-size corpora the top result must separate from that background.
-  const gate = semanticRelevanceGate(best.map(chunk => chunk.similarity), queryText);
+  const gate = semanticRelevanceGate(
+    best.map((chunk) => chunk.similarity),
+    queryText,
+  );
   const { cutoff, abstainedReason } = gate;
   // The calibrated gate is query-level: either abstain entirely or preserve
   // the established candidate pool for fusion/reranking. Per-card clipping
   // here regresses reranker quality by removing useful contrast candidates.
-  const accepted = abstainedReason ? [] : best.slice(0, limit);
-  return { matches: accepted.map(chunk => ({
-    cardId: chunk.card_id,
-    chunkId: chunk.chunk_id,
-    heading: chunk.heading,
-    headingPath: JSON.parse(chunk.heading_path) as string[],
-    content: chunk.content,
-    context: chunk.context,
-    similarity: chunk.similarity,
-    modelId: chunk.model_id,
-    modelRevision: chunk.model_revision,
-  })), diagnostics: {
-    rawChunkCount: chunks.length,
-    rawCardCount: best.length,
-    acceptedCardCount: accepted.length,
-    topSimilarity: gate.topSimilarity,
-    medianSimilarity: gate.medianSimilarity,
-    runnerUpSimilarity: gate.runnerUpSimilarity,
-    cutoff,
-    abstainedReason,
-  } };
+  const accepted = abstainedReason ? [] : hydrateSemanticChunks(db, best.slice(0, limit));
+  return {
+    matches: accepted.map((chunk) => ({
+      cardId: chunk.card_id,
+      chunkId: chunk.chunk_id,
+      heading: chunk.heading,
+      headingPath: JSON.parse(chunk.heading_path) as string[],
+      content: chunk.content,
+      context: chunk.context,
+      similarity: chunk.similarity,
+      modelId: chunk.model_id,
+      modelRevision: chunk.model_revision,
+    })),
+    diagnostics: {
+      rawChunkCount: chunks.length,
+      rawCardCount: best.length,
+      acceptedCardCount: accepted.length,
+      topSimilarity: gate.topSimilarity,
+      medianSimilarity: gate.medianSimilarity,
+      runnerUpSimilarity: gate.runnerUpSimilarity,
+      cutoff,
+      abstainedReason,
+    },
+  };
 }

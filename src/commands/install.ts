@@ -32,7 +32,9 @@ export function installCommand(options: {
   if (!options.skills && !options.agentRules) {
     console.log('Usage:');
     console.log('  pmem install --skills [--claude] [--codex] [--gemini] [--all]');
-    console.log('  pmem install --agent-rules [--claude] [--codex] [--gemini] [--cursor] [--cline] [--aider] [--windsurf] [--all]');
+    console.log(
+      '  pmem install --agent-rules [--claude] [--codex] [--gemini] [--cursor] [--cline] [--aider] [--windsurf] [--all]',
+    );
     console.log('');
     console.log('Install options:');
     console.log('  --skills        Install global agent skill files');
@@ -97,9 +99,14 @@ export function installCommand(options: {
   }
 }
 
-function resolveTargets(options: { claude?: boolean; codex?: boolean; gemini?: boolean; all?: boolean }): AgentTarget[] {
+function resolveTargets(options: {
+  claude?: boolean;
+  codex?: boolean;
+  gemini?: boolean;
+  all?: boolean;
+}): AgentTarget[] {
   if (options.all) {
-    return AGENT_TARGETS.filter(t => fs.existsSync(t.skillsDir));
+    return AGENT_TARGETS.filter((t) => fs.existsSync(t.skillsDir));
   }
 
   const selected: AgentTarget[] = [];

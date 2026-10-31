@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PMEM=(node "$ROOT/dist/index.js")
 
 cd "$ROOT"
-npm run build >/dev/null
+bun run build >/dev/null
 
 # Test install --skills --claude
 "${PMEM[@]}" install --skills --claude >/dev/null

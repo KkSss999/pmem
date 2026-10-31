@@ -1,6 +1,12 @@
 import * as path from 'path';
 import { fileExists } from '../core/fs';
-import { inferDecisions, writeInferredDecisions, writeDecisionCandidates, InferredDecision, InferredDecisionsDiagnostics } from '../core/decisionInfer';
+import {
+  inferDecisions,
+  writeInferredDecisions,
+  writeDecisionCandidates,
+  InferredDecision,
+  InferredDecisionsDiagnostics,
+} from '../core/decisionInfer';
 
 export interface DecisionInferOptions {
   write?: boolean;

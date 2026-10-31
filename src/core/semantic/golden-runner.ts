@@ -37,13 +37,17 @@ export interface GoldenQualityRun {
   evaluation?: SemanticGoldenEvaluation;
 }
 
-function parseRetrievalCapture(input: GoldenRetrievalCaptureInput): readonly SemanticGoldenRetrieval[] {
+function parseRetrievalCapture(
+  input: GoldenRetrievalCaptureInput,
+): readonly SemanticGoldenRetrieval[] {
   let value: unknown = input;
   if (typeof input === 'string') {
     try {
       value = JSON.parse(input) as unknown;
     } catch (error) {
-      throw new TypeError(`Invalid retrieval capture JSON: ${error instanceof Error ? error.message : String(error)}`);
+      throw new TypeError(
+        `Invalid retrieval capture JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   if (!Array.isArray(value)) throw new TypeError('Retrieval capture must be an array');
@@ -59,7 +63,7 @@ function evaluateFailures(
   options: GoldenEvaluationOptions,
 ): GoldenRunnerFailure[] {
   const failures: GoldenRunnerFailure[] = [];
-  const failedChecks = evaluation.gate.checks.filter(check => !check.passed);
+  const failedChecks = evaluation.gate.checks.filter((check) => !check.passed);
   for (const check of failedChecks) {
     failures.push({
       code: 'QUALITY_THRESHOLD',

@@ -1,7 +1,12 @@
 /** Normalize a vector for storage and cosine-as-dot-product scans. */
-export function normalizeVector(vector: ArrayLike<number>, expectedDimension?: number): Float32Array {
+export function normalizeVector(
+  vector: ArrayLike<number>,
+  expectedDimension?: number,
+): Float32Array {
   if (expectedDimension !== undefined && vector.length !== expectedDimension) {
-    throw new Error(`Embedding dimension mismatch: expected ${expectedDimension}, received ${vector.length}`);
+    throw new Error(
+      `Embedding dimension mismatch: expected ${expectedDimension}, received ${vector.length}`,
+    );
   }
   if (vector.length === 0) throw new Error('Embedding vector must not be empty');
   let squaredNorm = 0;
@@ -28,7 +33,9 @@ export function decodeVector(blob: Buffer, expectedDimension?: number): Float32A
   }
   const dimension = blob.byteLength / Float32Array.BYTES_PER_ELEMENT;
   if (expectedDimension !== undefined && dimension !== expectedDimension) {
-    throw new Error(`Semantic vector BLOB dimension mismatch: expected ${expectedDimension}, received ${dimension}`);
+    throw new Error(
+      `Semantic vector BLOB dimension mismatch: expected ${expectedDimension}, received ${dimension}`,
+    );
   }
   const copy = Buffer.from(blob);
   return new Float32Array(copy.buffer, copy.byteOffset, dimension);
@@ -36,7 +43,9 @@ export function decodeVector(blob: Buffer, expectedDimension?: number): Float32A
 
 export function cosineSimilarity(left: ArrayLike<number>, right: ArrayLike<number>): number {
   if (left.length !== right.length || left.length === 0) {
-    throw new Error(`Cannot compare semantic vectors with dimensions ${left.length} and ${right.length}`);
+    throw new Error(
+      `Cannot compare semantic vectors with dimensions ${left.length} and ${right.length}`,
+    );
   }
   let dot = 0;
   let leftNorm = 0;

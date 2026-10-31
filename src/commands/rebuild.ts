@@ -1,8 +1,39 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { readFile, writeJson, listFiles, ensureDir, fileExists, getFileMtime, withLock, toPosixPath } from '../core/fs';
+import {
+  readFile,
+  writeJson,
+  listFiles,
+  ensureDir,
+  fileExists,
+  getFileMtime,
+  withLock,
+  toPosixPath,
+} from '../core/fs';
 import { loadManifest } from '../core/manifest';
-import { upsertCard, deleteExplicitCardEdges, deleteMentionEdges, deleteInferredCardEdges, deleteOrphanEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath, clearAllTables, getCardHash, closeDatabase, createFTS5, refreshCardFts, deleteCardFts, cardFtsRowExists, clearCardFts, type CardFtsRow } from '../runtime/maintenance';
+import {
+  upsertCard,
+  deleteExplicitCardEdges,
+  deleteMentionEdges,
+  deleteInferredCardEdges,
+  deleteOrphanEdges,
+  insertEdge,
+  deleteCardAliases,
+  insertAlias,
+  deleteCardTags,
+  insertTag,
+  deleteCardPaths,
+  insertPath,
+  clearAllTables,
+  getCardHash,
+  closeDatabase,
+  createFTS5,
+  refreshCardFts,
+  deleteCardFts,
+  cardFtsRowExists,
+  clearCardFts,
+  type CardFtsRow,
+} from '../runtime/maintenance';
 import { openMaintenanceDatabase } from '../runtime/maintenance';
 import { computeCardHashes, tokenCount, sectionCount, computeHash } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
@@ -53,20 +84,30 @@ export function rebuildCommand(options: RebuildOptions = {}): void {
   // `stale_index` warnings. `withLock` is reentrant — when invoked from
   // `pmem update --confirm` (which already holds the lock) it just runs
   // the body without an extra acquire/release round trip.
-  withLock(pmemPath, () => {
-    rebuildLocked(pmemPath, options, project?.projectRoot ?? cwd);
-  }, { timeoutMs: 30000, onTimeout: 'error' });
+  withLock(
+    pmemPath,
+    () => {
+      rebuildLocked(pmemPath, options, project?.projectRoot ?? cwd);
+    },
+    { timeoutMs: 30000, onTimeout: 'error' },
+  );
 }
 
 /**
  * The actual rebuild body, run inside the `.pmem/.lock` critical section
  * (see FIX-1 in `rebuildCommand`).
  */
-function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = process.cwd()): void {
+function rebuildLocked(
+  pmemPath: string,
+  options: RebuildOptions,
+  cwd: string = process.cwd(),
+): void {
   const manifest = loadManifest(pmemPath);
   if (!manifest) {
     if (fileExists(pmemPath)) {
-      console.log('.pmem/manifest.yml not found. Run `pmem init` to regenerate the manifest, or restore it from backup.');
+      console.log(
+        '.pmem/manifest.yml not found. Run `pmem init` to regenerate the manifest, or restore it from backup.',
+      );
     } else {
       console.log('No .pmem directory found. Run `pmem init` first.');
     }
@@ -109,9 +150,10 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     const filesSet = new Set<string>();
     for (const cardGlob of cardGlobs) {
       const globSuffixIndex = cardGlob.indexOf('/**/');
-      const baseDir = globSuffixIndex >= 0
-        ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
-        : path.join(cwd, path.dirname(cardGlob));
+      const baseDir =
+        globSuffixIndex >= 0
+          ? path.join(cwd, cardGlob.substring(0, globSuffixIndex))
+          : path.join(cwd, path.dirname(cardGlob));
       if (fs.existsSync(baseDir)) {
         collectMdFiles(baseDir, filesSet);
       }
@@ -121,20 +163,22 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
     if (fs.existsSync(candidatesDir)) {
       collectMdFiles(candidatesDir, filesSet);
     }
-    cardFiles = Array.from(filesSet).filter(f => {
+    cardFiles = Array.from(filesSet).filter((f) => {
       const rel = path.relative(pmemPath, f);
       return !['index.md', 'state.md', 'next.md'].includes(rel);
     });
   } else {
     // Scan all .md files under .pmem/, excluding non-card files
-    cardFiles = listFiles(pmemPath, /\.md$/).filter(f => {
+    cardFiles = listFiles(pmemPath, /\.md$/).filter((f) => {
       const rel = toPosixPath(path.relative(pmemPath, f));
-      return !['index.md', 'state.md', 'next.md'].includes(rel) &&
-             !rel.startsWith('skills/') &&
-             !rel.startsWith('integrations/') &&
-             !rel.startsWith('summaries/') &&
-             !rel.startsWith('indexes/') &&
-             !rel.startsWith('backups/');
+      return (
+        !['index.md', 'state.md', 'next.md'].includes(rel) &&
+        !rel.startsWith('skills/') &&
+        !rel.startsWith('integrations/') &&
+        !rel.startsWith('summaries/') &&
+        !rel.startsWith('indexes/') &&
+        !rel.startsWith('backups/')
+      );
     });
   }
 
@@ -161,13 +205,19 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
 
   // Parse each file exactly once. The previous two-pass implementation
   // collapsed every parse failure to null and silently skipped it twice.
-  const parsedCardFiles = cardFiles.map(file => ({ file, result: parseCard(file) }));
+  const parsedCardFiles = cardFiles.map((file) => ({ file, result: parseCard(file) }));
   const parseDiagnostics = parsedCardFiles
-    .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: false }> } => !entry.result.ok)
-    .map(entry => entry.result.diagnostic)
+    .filter(
+      (entry): entry is { file: string; result: Extract<CardParseResult, { ok: false }> } =>
+        !entry.result.ok,
+    )
+    .map((entry) => entry.result.diagnostic)
     // Candidate reports are advisory Markdown artifacts, not canonical cards.
-    .filter(diagnostic => !toPosixPath(path.relative(pmemPath, diagnostic.filePath)).startsWith('candidates/'))
-    .filter(diagnostic => !isSingleCard || diagnostic.parsedId === options.card);
+    .filter(
+      (diagnostic) =>
+        !toPosixPath(path.relative(pmemPath, diagnostic.filePath)).startsWith('candidates/'),
+    )
+    .filter((diagnostic) => !isSingleCard || diagnostic.parsedId === options.card);
 
   // Pre-scan all valid card IDs for wikilink validation (so [[card-id]] refs
   // resolve even when the target card hasn't been processed yet).
@@ -194,7 +244,9 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
         dirty: number;
       };
       const activeSessions = db
-        .prepare("SELECT id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty FROM sessions WHERE ended_at IS NULL")
+        .prepare(
+          'SELECT id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty FROM sessions WHERE ended_at IS NULL',
+        )
         .all() as ActiveSessionRow[];
       preservedSessions = activeSessions.length;
 
@@ -214,17 +266,28 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
         updated_at: string | null;
       };
       const allEdges = db
-        .prepare("SELECT from_id, to_id, type, source, confidence, created_at, updated_at FROM edges")
+        .prepare(
+          'SELECT from_id, to_id, type, source, confidence, created_at, updated_at FROM edges',
+        )
         .all() as EdgeSnapshot[];
 
       clearAllTables(db);
 
       if (activeSessions.length > 0) {
         const restore = db.prepare(
-          "INSERT INTO sessions (id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+          'INSERT INTO sessions (id, agent_name, started_at, ended_at, task_summary, base_index_hash, status, dirty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         );
         for (const s of activeSessions) {
-          restore.run(s.id, s.agent_name, s.started_at, s.ended_at, s.task_summary, s.base_index_hash, s.status, s.dirty);
+          restore.run(
+            s.id,
+            s.agent_name,
+            s.started_at,
+            s.ended_at,
+            s.task_summary,
+            s.base_index_hash,
+            s.status,
+            s.dirty,
+          );
         }
       }
 
@@ -273,9 +336,14 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
           existing.body_hash === hashes.bodyHash
         ) {
           // Even if hashes match, backfill updated_at if it's NULL (v0.6.2 time contract)
-          const card = db.prepare('SELECT updated_at FROM cards WHERE file_path = ?').get(relPath) as { updated_at: string | null } | undefined;
+          const card = db
+            .prepare('SELECT updated_at FROM cards WHERE file_path = ?')
+            .get(relPath) as { updated_at: string | null } | undefined;
           if (card && !card.updated_at) {
-            db.prepare('UPDATE cards SET updated_at = ? WHERE file_path = ?').run(resolveUpdatedAt(fm.updated, file), relPath);
+            db.prepare('UPDATE cards SET updated_at = ? WHERE file_path = ?').run(
+              resolveUpdatedAt(fm.updated, file),
+              relPath,
+            );
           }
           // v0.8 FTS backfill: card content unchanged, but its FTS row may
           // not exist yet (table introduced in v0.8). Collect for backfill.
@@ -458,17 +526,21 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   let cleanedStaleCards = 0;
   let invalidatedCards = 0;
   {
-    const invalidFilePaths = new Set(parseDiagnostics.map(diagnostic => toPosixPath(path.relative(cwd, diagnostic.filePath))));
+    const invalidFilePaths = new Set(
+      parseDiagnostics.map((diagnostic) => toPosixPath(path.relative(cwd, diagnostic.filePath))),
+    );
     const cleanupTx = db.transaction(() => {
-      const staleCards = db.prepare("SELECT id, file_path FROM cards WHERE is_deleted = 0").all() as Array<{ id: string; file_path: string }>;
+      const staleCards = db
+        .prepare('SELECT id, file_path FROM cards WHERE is_deleted = 0')
+        .all() as Array<{ id: string; file_path: string }>;
       for (const card of staleCards) {
         const absPath = path.join(cwd, card.file_path);
         const invalid = invalidFilePaths.has(card.file_path);
         if (!fileExists(absPath) || invalid) {
-          db.prepare("UPDATE cards SET is_deleted = 1 WHERE id = ?").run(card.id);
+          db.prepare('UPDATE cards SET is_deleted = 1 WHERE id = ?').run(card.id);
           // Bidirectional edge cleanup — covers both outgoing and incoming edges
           // for the deleted card, matching the verify.ts cleanupMissingCards pattern.
-          db.prepare("DELETE FROM edges WHERE from_id = ? OR to_id = ?").run(card.id, card.id);
+          db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(card.id, card.id);
           deleteCardAliases(db, card.id);
           deleteCardTags(db, card.id);
           deleteCardPaths(db, card.id);
@@ -505,14 +577,16 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
       // Build a set of currently-existing card IDs so the restore loop
       // can skip edges whose endpoints no longer exist.
       const existingCardIds = new Set<string>(
-        (db.prepare("SELECT id FROM cards WHERE is_deleted = 0").all() as Array<{ id: string }>).map(r => r.id)
+        (
+          db.prepare('SELECT id FROM cards WHERE is_deleted = 0').all() as Array<{ id: string }>
+        ).map((r) => r.id),
       );
 
       // Build set of current edge keys: "from_id|to_id|type|source"
       const currentKeys = new Set<string>();
-      const currentEdges = db.prepare(
-        "SELECT from_id, to_id, type, source FROM edges"
-      ).all() as Array<{ from_id: string; to_id: string; type: string; source: string }>;
+      const currentEdges = db
+        .prepare('SELECT from_id, to_id, type, source FROM edges')
+        .all() as Array<{ from_id: string; to_id: string; type: string; source: string }>;
       for (const e of currentEdges) {
         currentKeys.add(`${e.from_id}|${e.to_id}|${e.type}|${e.source}`);
       }
@@ -524,7 +598,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
       const managedSources = new Set(['explicit', 'inferred', 'mention']);
 
       const restoreStmt = db.prepare(
-        "INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        'INSERT OR IGNORE INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       );
       let restoredCount = 0;
       const now = new Date().toISOString();
@@ -537,8 +611,13 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
         const key = `${e.from_id}|${e.to_id}|${e.type}|${e.source}`;
         if (currentKeys.has(key)) continue;
         restoreStmt.run(
-          e.from_id, e.to_id, e.type, e.source, e.confidence,
-          e.created_at ?? now, e.updated_at ?? now
+          e.from_id,
+          e.to_id,
+          e.type,
+          e.source,
+          e.confidence,
+          e.created_at ?? now,
+          e.updated_at ?? now,
         );
         restoredCount++;
       }
@@ -567,7 +646,7 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   }
 
   // Write legacy graph.json for backward compatibility
-  const allContent = cardFiles.map(f => readFile(f) || '').join('');
+  const allContent = cardFiles.map((f) => readFile(f) || '').join('');
   const sourceHash = computeHash(allContent);
 
   const graphIndex: GraphIndex = {
@@ -594,20 +673,28 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
   acknowledgeStatusChanges(
     pmemPath,
     parsedCardFiles
-      .filter((entry): entry is { file: string; result: Extract<CardParseResult, { ok: true }> } => entry.result.ok)
-      .filter(entry => !isSingleCard || entry.result.card.frontmatter.id === options.card)
-      .map(entry => toPosixPath(path.relative(cwd, entry.file))),
+      .filter(
+        (entry): entry is { file: string; result: Extract<CardParseResult, { ok: true }> } =>
+          entry.result.ok,
+      )
+      .filter((entry) => !isSingleCard || entry.result.card.frontmatter.id === options.card)
+      .map((entry) => toPosixPath(path.relative(cwd, entry.file))),
   );
 
   for (const diagnostic of parseDiagnostics) {
-    console.log(`Warning: skipped ${toPosixPath(path.relative(cwd, diagnostic.filePath))}: ${diagnostic.message}`);
+    console.log(
+      `Warning: skipped ${toPosixPath(path.relative(cwd, diagnostic.filePath))}: ${diagnostic.message}`,
+    );
   }
 
   // Output summary
   const preservedParts: string[] = [];
-  if (preservedSessions > 0) preservedParts.push(`${preservedSessions} session${preservedSessions === 1 ? '' : 's'}`);
-  if (preservedEdges > 0) preservedParts.push(`${preservedEdges} edge${preservedEdges === 1 ? '' : 's'}`);
-  const preservedLabel = preservedParts.length > 0 ? ` (preserved ${preservedParts.join(', ')})` : '';
+  if (preservedSessions > 0)
+    preservedParts.push(`${preservedSessions} session${preservedSessions === 1 ? '' : 's'}`);
+  if (preservedEdges > 0)
+    preservedParts.push(`${preservedEdges} edge${preservedEdges === 1 ? '' : 's'}`);
+  const preservedLabel =
+    preservedParts.length > 0 ? ` (preserved ${preservedParts.join(', ')})` : '';
 
   const modeLabel = isFull
     ? `Full rebuild${preservedLabel}`
@@ -616,16 +703,21 @@ function rebuildLocked(pmemPath: string, options: RebuildOptions, cwd: string = 
       : 'Incremental rebuild';
 
   // Count actual edges from the SQLite edges table (includes explicit + inferred + mention)
-  const dbEdgeCount = (db.prepare("SELECT COUNT(*) as cnt FROM edges").get() as { cnt: number }).cnt;
+  const dbEdgeCount = (db.prepare('SELECT COUNT(*) as cnt FROM edges').get() as { cnt: number })
+    .cnt;
 
   if (!options.silent) {
-    console.log(`${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`);
+    console.log(
+      `${modeLabel}: ${processed} cards processed, ${skipped} skipped (hash match), ${updated} updated`,
+    );
     console.log(`Graph: ${nodes.length} nodes, ${dbEdgeCount} edges`);
     if (cleanedStaleCards > 0) {
       console.log(`Cleaned ${cleanedStaleCards} stale card(s) (source files deleted)`);
     }
     if (invalidatedCards > 0) {
-      console.log(`Invalidated ${invalidatedCards} stale indexed card(s) whose source files are invalid`);
+      console.log(
+        `Invalidated ${invalidatedCards} stale indexed card(s) whose source files are invalid`,
+      );
     }
   }
 
@@ -662,7 +754,11 @@ function parseCard(filePath: string): CardParseResult {
   if (!parsed) {
     return {
       ok: false,
-      diagnostic: { filePath, code: 'invalid_frontmatter', message: 'missing or malformed YAML frontmatter' },
+      diagnostic: {
+        filePath,
+        code: 'invalid_frontmatter',
+        message: 'missing or malformed YAML frontmatter',
+      },
     };
   }
 
@@ -671,7 +767,11 @@ function parseCard(filePath: string): CardParseResult {
   if (!parsedId) {
     return {
       ok: false,
-      diagnostic: { filePath, code: 'missing_id', message: 'missing required frontmatter field "id"' },
+      diagnostic: {
+        filePath,
+        code: 'missing_id',
+        message: 'missing required frontmatter field "id"',
+      },
     };
   }
   if (typeof frontmatter.type !== 'string' || !frontmatter.type.trim()) {
@@ -718,7 +818,12 @@ export function extractWikilinks(bodyText: string): string[] {
 }
 
 /** Build legacy GraphEdge entries from a card's frontmatter (for backward-compat graph.json). */
-function collectLegacyEdges(fm: CardFrontmatter, bodyText: string, validCardIds: Set<string>, edges: GraphEdge[]): void {
+function collectLegacyEdges(
+  fm: CardFrontmatter,
+  bodyText: string,
+  validCardIds: Set<string>,
+  edges: GraphEdge[],
+): void {
   if (fm.depends_on) {
     for (const target of fm.depends_on) {
       edges.push({ from: fm.id, to: target, type: 'depends_on' });
@@ -801,16 +906,18 @@ function extractCardSummary(fm: any, bodyText: string): string | null {
 
   const extracted = summaryLines.join('\n').trim();
   if (extracted) {
-    const clean = extracted.split('\n')
-      .map(x => x.trim().replace(/^[-*]\s*/, ''))
+    const clean = extracted
+      .split('\n')
+      .map((x) => x.trim().replace(/^[-*]\s*/, ''))
       .filter(Boolean)[0];
     if (clean) return clean;
   }
 
-  const bodyParagraphs = bodyText.split('\n\n')
-    .map(p => p.trim())
-    .filter(p => p && !p.startsWith('#') && !p.startsWith('<!--'));
-  
+  const bodyParagraphs = bodyText
+    .split('\n\n')
+    .map((p) => p.trim())
+    .filter((p) => p && !p.startsWith('#') && !p.startsWith('<!--'));
+
   if (bodyParagraphs.length > 0) {
     const firstP = bodyParagraphs[0].replace(/[\r\n]+/g, ' ').trim();
     if (firstP.length > 100) {

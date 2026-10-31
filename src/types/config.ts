@@ -32,7 +32,7 @@ export interface EmbeddingConfig {
   /** Registry used only by the explicit setup command to populate the shared model directory. */
   source?: 'modelscope' | 'huggingface' | null;
   /** ONNX quantization selected during the explicit setup step. */
-  dtype?: 'uint8' | null;
+  dtype?: 'q8' | 'uint8' | null;
   /** User-level Transformers.js cache. No download is attempted outside semantic setup. */
   cache_path?: string | null;
   dimension: number | null;

@@ -205,7 +205,11 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
   });
 
   after(() => {
-    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it('reports a new .pmem/**/*.md file as affected_card (reason=new_card) and sets needs_rebuild=true', () => {
@@ -215,25 +219,42 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
     writeFile(newCardPath, cardFile('module.foo', 'module'));
 
     const r = pmem('status --format json', cwd);
-    assert.strictEqual(r.code, 0, `status should exit 0, got: ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+    assert.strictEqual(
+      r.code,
+      0,
+      `status should exit 0, got: ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`,
+    );
 
     const out = JSON.parse(r.stdout);
-    assert.strictEqual(out.needs_rebuild, true, 'needs_rebuild should be true when a new memory file is detected');
+    assert.strictEqual(
+      out.needs_rebuild,
+      true,
+      'needs_rebuild should be true when a new memory file is detected',
+    );
     assert.strictEqual(out.state, 'memory_changes_detected', 'state should reflect memory changes');
 
     // Find the affected card for module.foo
-    const fooCard = (out.affected_cards as Array<{ id: string; reason: string }>)
-      .find((c) => c.id === 'module.foo');
-    assert.ok(fooCard, `affected_cards should contain module.foo, got: ${JSON.stringify(out.affected_cards)}`);
-    assert.strictEqual(fooCard!.reason, 'new_card', `reason should be new_card, got: ${fooCard!.reason}`);
+    const fooCard = (out.affected_cards as Array<{ id: string; reason: string }>).find(
+      (c) => c.id === 'module.foo',
+    );
+    assert.ok(
+      fooCard,
+      `affected_cards should contain module.foo, got: ${JSON.stringify(out.affected_cards)}`,
+    );
+    assert.strictEqual(
+      fooCard!.reason,
+      'new_card',
+      `reason should be new_card, got: ${fooCard!.reason}`,
+    );
 
     // And the change entry must also reference this card
-    const newChange = (out.changes as Array<{ path: string; related_cards: Array<{ card_id: string }> }>)
-      .find((c) => c.path === '.pmem/modules/module.foo.md');
+    const newChange = (
+      out.changes as Array<{ path: string; related_cards: Array<{ card_id: string }> }>
+    ).find((c) => c.path === '.pmem/modules/module.foo.md');
     assert.ok(newChange, `changes[] should contain .pmem/modules/module.foo.md`);
     assert.ok(
       newChange!.related_cards.some((rc) => rc.card_id === 'module.foo'),
-      `change.related_cards should include module.foo, got: ${JSON.stringify(newChange!.related_cards)}`
+      `change.related_cards should include module.foo, got: ${JSON.stringify(newChange!.related_cards)}`,
     );
   });
 
@@ -251,12 +272,24 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
     assert.strictEqual(r.code, 0, `status should exit 0, got: ${r.code}\nstdout: ${r.stdout}`);
 
     const out = JSON.parse(r.stdout);
-    assert.strictEqual(out.needs_rebuild, true, 'needs_rebuild should be true when an existing memory file is modified');
+    assert.strictEqual(
+      out.needs_rebuild,
+      true,
+      'needs_rebuild should be true when an existing memory file is modified',
+    );
 
-    const barCard = (out.affected_cards as Array<{ id: string; reason: string }>)
-      .find((c) => c.id === 'module.bar');
-    assert.ok(barCard, `affected_cards should contain module.bar, got: ${JSON.stringify(out.affected_cards)}`);
-    assert.strictEqual(barCard!.reason, 'modified_card', `reason should be modified_card, got: ${barCard!.reason}`);
+    const barCard = (out.affected_cards as Array<{ id: string; reason: string }>).find(
+      (c) => c.id === 'module.bar',
+    );
+    assert.ok(
+      barCard,
+      `affected_cards should contain module.bar, got: ${JSON.stringify(out.affected_cards)}`,
+    );
+    assert.strictEqual(
+      barCard!.reason,
+      'modified_card',
+      `reason should be modified_card, got: ${barCard!.reason}`,
+    );
   });
 
   it('reports needs_rebuild=false when there are no memory changes', () => {
@@ -279,15 +312,30 @@ describe('pmem status --format json (v0.7.6 U8: memory-change detection)', () =>
     assert.strictEqual(r.code, 0, `status should exit 0, got: ${r.code}\nstdout: ${r.stdout}`);
 
     const out = JSON.parse(r.stdout);
-    assert.strictEqual(out.needs_rebuild, false, 'needs_rebuild should be false when no memory files are new/modified');
-    assert.strictEqual(out.state, 'source_changes_only', 'nonempty unrelated source changes should not be reported as no_changes');
-    assert.strictEqual(out.suggested_action, 'review source changes; no related memory cards found');
+    assert.strictEqual(
+      out.needs_rebuild,
+      false,
+      'needs_rebuild should be false when no memory files are new/modified',
+    );
+    assert.strictEqual(
+      out.state,
+      'source_changes_only',
+      'nonempty unrelated source changes should not be reported as no_changes',
+    );
+    assert.strictEqual(
+      out.suggested_action,
+      'review source changes; no related memory cards found',
+    );
 
     // And no card should be marked as new_card or modified_card.
-    const memChanges = (out.affected_cards as Array<{ reason: string }>)
-      .filter((c) => c.reason === 'new_card' || c.reason === 'modified_card');
-    assert.strictEqual(memChanges.length, 0,
-      `no card should have reason new_card/modified_card, got: ${JSON.stringify(memChanges)}`);
+    const memChanges = (out.affected_cards as Array<{ reason: string }>).filter(
+      (c) => c.reason === 'new_card' || c.reason === 'modified_card',
+    );
+    assert.strictEqual(
+      memChanges.length,
+      0,
+      `no card should have reason new_card/modified_card, got: ${JSON.stringify(memChanges)}`,
+    );
   });
 });
 
@@ -300,11 +348,15 @@ describe('pmem status non-git snapshot reliability (issues #27 and #28)', () => 
     assert.strictEqual(init.code, 0, init.stdout);
 
     const manifestPath = path.join(cwd, '.pmem', 'manifest.yml');
-    fs.appendFileSync(manifestPath, `
+    fs.appendFileSync(
+      manifestPath,
+      `
 change_detection:
   mtime_scan_dirs:
     - .pmem
-`, 'utf8');
+`,
+      'utf8',
+    );
 
     // Establish the v1 snapshot format, then place new files exactly on the
     // persisted boundary. Strict `mtime > checkpoint` used to miss these.
@@ -319,16 +371,27 @@ change_detection:
     fs.utimesSync(decisionPath, boundarySeconds, boundarySeconds);
     const boundary = fs.statSync(chapterPath).mtimeMs;
     assert.strictEqual(fs.statSync(decisionPath).mtimeMs, boundary);
-    fs.writeFileSync(path.join(cwd, '.pmem', '.last-status'), JSON.stringify({
-      version: 1,
-      watermark_ms: boundary,
-      pending: [],
-      acknowledged: [],
-    }, null, 2));
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', '.last-status'),
+      JSON.stringify(
+        {
+          version: 1,
+          watermark_ms: boundary,
+          pending: [],
+          acknowledged: [],
+        },
+        null,
+        2,
+      ),
+    );
   });
 
   after(() => {
-    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it('detects boundary-time cards once across overlapping roots and classifies them as new', () => {
@@ -337,13 +400,21 @@ change_detection:
     const out = JSON.parse(r.stdout);
     assert.strictEqual(out.source, 'mtime');
 
-    const paths = (out.changes as Array<{ path: string }>).map(change => change.path);
-    assert.strictEqual(new Set(paths).size, paths.length, `changed paths must be unique: ${JSON.stringify(paths)}`);
-    assert.strictEqual(paths.filter(path => path === '.pmem/chapters/chapter.ch01.md').length, 1);
-    assert.strictEqual(paths.filter(path => path === '.pmem/decisions/decision.pov.md').length, 1);
+    const paths = (out.changes as Array<{ path: string }>).map((change) => change.path);
+    assert.strictEqual(
+      new Set(paths).size,
+      paths.length,
+      `changed paths must be unique: ${JSON.stringify(paths)}`,
+    );
+    assert.strictEqual(paths.filter((path) => path === '.pmem/chapters/chapter.ch01.md').length, 1);
+    assert.strictEqual(
+      paths.filter((path) => path === '.pmem/decisions/decision.pov.md').length,
+      1,
+    );
 
-    const chapter = (out.affected_cards as Array<{ id: string; reason: string }>)
-      .find(card => card.id === 'chapter.ch01');
+    const chapter = (out.affected_cards as Array<{ id: string; reason: string }>).find(
+      (card) => card.id === 'chapter.ch01',
+    );
     assert.ok(chapter, JSON.stringify(out.affected_cards));
     assert.strictEqual(chapter!.reason, 'new_card');
   });
@@ -352,8 +423,15 @@ change_detection:
     const first = JSON.parse(pmem('status --format json', cwd).stdout);
     const second = JSON.parse(pmem('status --format json', cwd).stdout);
     for (const out of [first, second]) {
-      assert.ok(out.changes.some((change: { path: string }) => change.path === '.pmem/chapters/chapter.ch01.md'));
-      assert.strictEqual(new Set(out.changes.map((change: { path: string }) => change.path)).size, out.changes.length);
+      assert.ok(
+        out.changes.some(
+          (change: { path: string }) => change.path === '.pmem/chapters/chapter.ch01.md',
+        ),
+      );
+      assert.strictEqual(
+        new Set(out.changes.map((change: { path: string }) => change.path)).size,
+        out.changes.length,
+      );
     }
   });
 });
@@ -377,7 +455,11 @@ describe('pmem status legacy non-git compatibility', () => {
   });
 
   after(() => {
-    try { fs.rmSync(cwd, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it('detects a newly created card under resolved v0.6.x directories', () => {
@@ -390,12 +472,16 @@ describe('pmem status legacy non-git compatibility', () => {
     assert.strictEqual(report.source, 'mtime');
     assert.strictEqual(report.needs_rebuild, true, JSON.stringify(report));
     assert.ok(
-      report.changes.some((change: { path: string }) => change.path === '.pmem/modules/module.new.md'),
+      report.changes.some(
+        (change: { path: string }) => change.path === '.pmem/modules/module.new.md',
+      ),
       JSON.stringify(report.changes),
     );
     assert.ok(
-      report.affected_cards.some((card: { id: string; reason: string }) =>
-        card.id === 'module.new' && card.reason === 'new_card'),
+      report.affected_cards.some(
+        (card: { id: string; reason: string }) =>
+          card.id === 'module.new' && card.reason === 'new_card',
+      ),
       JSON.stringify(report.affected_cards),
     );
   });

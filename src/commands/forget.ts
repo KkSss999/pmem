@@ -2,7 +2,10 @@ import * as path from 'path';
 import { fileExists } from '../core/fs';
 import { openCommandRuntime, type CommandRuntimeOptions } from './runtime';
 
-export async function forgetCommand(memoryId: string, options: { reason?: string; confirm?: boolean; runtime?: CommandRuntimeOptions } = {}): Promise<void> {
+export async function forgetCommand(
+  memoryId: string,
+  options: { reason?: string; confirm?: boolean; runtime?: CommandRuntimeOptions } = {},
+): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, '.pmem');
 
@@ -15,7 +18,9 @@ export async function forgetCommand(memoryId: string, options: { reason?: string
     process.exit(2);
   }
   if (!options.confirm) {
-    console.log(`Forget is a durable tombstone operation for ${memoryId}. Re-run with --confirm to apply.`);
+    console.log(
+      `Forget is a durable tombstone operation for ${memoryId}. Re-run with --confirm to apply.`,
+    );
     return;
   }
 

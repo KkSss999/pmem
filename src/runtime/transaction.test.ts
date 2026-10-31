@@ -37,11 +37,21 @@ class RecordingBackend implements MemoryBackend {
   rollbackCount = 0;
   failAppend = false;
 
-  open(_context: BackendOpenContext): void { this.opened = true; }
-  close(): void { this.closed = true; }
-  getRecord(_id: string): null { return null; }
-  query(_query: BackendQuery): MemoryQueryResult { return { records: [] }; }
-  search(_request: MemorySearchRequest): MemorySearchResult { return { hits: [] }; }
+  open(_context: BackendOpenContext): void {
+    this.opened = true;
+  }
+  close(): void {
+    this.closed = true;
+  }
+  getRecord(_id: string): null {
+    return null;
+  }
+  query(_query: BackendQuery): MemoryQueryResult {
+    return { records: [] };
+  }
+  search(_request: MemorySearchRequest): MemorySearchResult {
+    return { hits: [] };
+  }
   beginTransaction(_options?: BackendTransactionOptions): BackendTransaction {
     this.beginCount++;
     const owner = this;
@@ -59,8 +69,12 @@ class RecordingBackend implements MemoryBackend {
       removeRelation: async () => undefined,
       upsertSearchDocument: async () => undefined,
       query: async (_query: BackendQuery): Promise<MemoryQueryResult> => ({ records: [] }),
-      commit: async () => { owner.commitCount++; },
-      rollback: async () => { owner.rollbackCount++; },
+      commit: async () => {
+        owner.commitCount++;
+      },
+      rollback: async () => {
+        owner.rollbackCount++;
+      },
     };
   }
 }
@@ -110,7 +124,10 @@ test('Pmem rolls back an injected backend transaction when append fails', async 
   backend.failAppend = true;
   const memory = await Pmem.open({ root, backend });
   try {
-    await assert.rejects(() => memory.observe({ summary: 'must rollback' }), /injected append failure/);
+    await assert.rejects(
+      () => memory.observe({ summary: 'must rollback' }),
+      /injected append failure/,
+    );
     assert.equal(backend.beginCount, 1);
     assert.equal(backend.commitCount, 0);
     assert.equal(backend.rollbackCount, 1);

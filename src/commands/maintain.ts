@@ -73,7 +73,7 @@ export interface MaintainCommandDependencies {
 type UnknownRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): UnknownRecord {
-  return value !== null && typeof value === 'object' ? value as UnknownRecord : {};
+  return value !== null && typeof value === 'object' ? (value as UnknownRecord) : {};
 }
 
 function firstNumber(value: UnknownRecord, keys: string[]): number | null {
@@ -92,7 +92,8 @@ function firstString(value: UnknownRecord, keys: string[]): string | null {
 
 function firstStringArray(value: UnknownRecord, keys: string[]): string[] {
   for (const key of keys) {
-    if (Array.isArray(value[key])) return value[key].filter((item): item is string => typeof item === 'string');
+    if (Array.isArray(value[key]))
+      return value[key].filter((item): item is string => typeof item === 'string');
   }
   return [];
 }
@@ -100,13 +101,25 @@ function firstStringArray(value: UnknownRecord, keys: string[]): string[] {
 function semanticSnapshot(value: unknown, enabled: boolean): MaintainSemanticSnapshot {
   const record = asRecord(value);
   const failedCardIds = firstStringArray(record, ['failedCardIds', 'failed_card_ids']);
-  const cardsFailed = firstNumber(record, ['cardsFailed', 'failedCardCount', 'failed_card_count']) ?? failedCardIds.length;
+  const cardsFailed =
+    firstNumber(record, ['cardsFailed', 'failedCardCount', 'failed_card_count']) ??
+    failedCardIds.length;
   return {
     status: 'completed',
     enabled,
     available: typeof record.available === 'boolean' ? record.available : null,
-    indexedCards: firstNumber(record, ['indexedCards', 'indexed_cards', 'cardCount', 'cardsIndexed']),
-    indexedChunks: firstNumber(record, ['indexedChunks', 'indexed_chunks', 'chunkCount', 'chunksTotal']),
+    indexedCards: firstNumber(record, [
+      'indexedCards',
+      'indexed_cards',
+      'cardCount',
+      'cardsIndexed',
+    ]),
+    indexedChunks: firstNumber(record, [
+      'indexedChunks',
+      'indexed_chunks',
+      'chunkCount',
+      'chunksTotal',
+    ]),
     cardsFailed,
     buildStatus: firstString(record, ['buildStatus', 'build_status']),
     failedCardIds,
@@ -115,12 +128,18 @@ function semanticSnapshot(value: unknown, enabled: boolean): MaintainSemanticSna
 
 function semanticFailure(snapshot: MaintainSemanticSnapshot): string | null {
   if (snapshot.available === false) return 'Semantic index is not available after rebuild.';
-  if (snapshot.buildStatus === 'partial' || snapshot.cardsFailed > 0 || snapshot.failedCardIds.length > 0) {
+  if (
+    snapshot.buildStatus === 'partial' ||
+    snapshot.cardsFailed > 0 ||
+    snapshot.failedCardIds.length > 0
+  ) {
     return `Semantic index is partial; failed card(s): ${snapshot.failedCardIds.join(', ') || snapshot.cardsFailed}.`;
   }
   if (snapshot.buildStatus === 'none') return 'Semantic index has no completed build.';
-  if (snapshot.indexedCards === 0 || snapshot.indexedChunks === 0) return 'Semantic index contains 0 cards or chunks.';
-  if (snapshot.indexedCards === null || snapshot.indexedChunks === null) return 'Semantic index readiness could not be verified.';
+  if (snapshot.indexedCards === 0 || snapshot.indexedChunks === 0)
+    return 'Semantic index contains 0 cards or chunks.';
+  if (snapshot.indexedCards === null || snapshot.indexedChunks === null)
+    return 'Semantic index readiness could not be verified.';
   return null;
 }
 
@@ -128,20 +147,25 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function captureSemanticCommand(
-  action: 'rebuild' | 'status',
-  pmemPath: string,
-): Promise<unknown> {
+function captureSemanticCommand(action: 'rebuild' | 'status', pmemPath: string): Promise<unknown> {
   let parsed: unknown;
-  return semanticCommand(action, {
-    cwd: path.dirname(pmemPath),
-    format: 'json',
-    full: action === 'rebuild',
-  }, {
-    log: (line) => {
-      try { parsed = JSON.parse(line); } catch { /* compact diagnostics are not part of the API */ }
+  return semanticCommand(
+    action,
+    {
+      cwd: path.dirname(pmemPath),
+      format: 'json',
+      full: action === 'rebuild',
     },
-  }).then(() => parsed ?? {});
+    {
+      log: (line) => {
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          /* compact diagnostics are not part of the API */
+        }
+      },
+    },
+  ).then(() => parsed ?? {});
 }
 
 function defaultSemanticRunner(): MaintainSemanticRunner {
@@ -161,10 +185,15 @@ function defaultSemanticRunner(): MaintainSemanticRunner {
   };
 }
 
-function migrationOptions(options: MaintainCommandOptions, cwd: string, apply: boolean): HealthMigrationOptions {
-  const classificationByType = typeof options.classificationByType === 'string'
-    ? parseClassificationByType(options.classificationByType)
-    : options.classificationByType;
+function migrationOptions(
+  options: MaintainCommandOptions,
+  cwd: string,
+  apply: boolean,
+): HealthMigrationOptions {
+  const classificationByType =
+    typeof options.classificationByType === 'string'
+      ? parseClassificationByType(options.classificationByType)
+      : options.classificationByType;
   return {
     apply,
     cwd,
@@ -174,17 +203,28 @@ function migrationOptions(options: MaintainCommandOptions, cwd: string, apply: b
   };
 }
 
-function emit(result: MaintainResult, format: MaintainFormat, log: (message: string) => void): void {
+function emit(
+  result: MaintainResult,
+  format: MaintainFormat,
+  log: (message: string) => void,
+): void {
   if (format === 'json') {
     log(JSON.stringify(result, null, 2));
     return;
   }
   log(`Maintain ${result.status} (${result.phase}).`);
   if (result.migration) {
-    log(`Migration: ${result.migration.scanned} scanned, ${result.migration.changed} change(s), ${result.migration.unresolved} unresolved.`);
+    log(
+      `Migration: ${result.migration.scanned} scanned, ${result.migration.changed} change(s), ${result.migration.unresolved} unresolved.`,
+    );
     for (const card of result.migration.cards) {
-      const fields = Object.entries(card.add).map(([key, value]) => `${key}=${value}`).join(', ') || 'none';
-      const unresolved = card.unresolved.length ? `; unresolved: ${card.unresolved.join(', ')}` : '';
+      const fields =
+        Object.entries(card.add)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(', ') || 'none';
+      const unresolved = card.unresolved.length
+        ? `; unresolved: ${card.unresolved.join(', ')}`
+        : '';
       log(`  ${card.id}: ${fields}${unresolved}`);
     }
   }
@@ -194,7 +234,11 @@ function emit(result: MaintainResult, format: MaintainFormat, log: (message: str
   for (const instruction of result.recovery) log(`Recovery: ${instruction}`);
 }
 
-function baseResult(options: MaintainCommandOptions, project: MaintainResult['project'], dryRun: boolean): MaintainResult {
+function baseResult(
+  options: MaintainCommandOptions,
+  project: MaintainResult['project'],
+  dryRun: boolean,
+): MaintainResult {
   return {
     status: dryRun ? 'dry-run' : 'failed',
     phase: 'preflight',
@@ -236,7 +280,9 @@ export async function maintainCommand(
 
   if (!paths || !fileExists(paths.pmemPath)) {
     result.status = 'failed';
-    result.errors.push(`No .pmem directory found from ${path.resolve(start)}. Run \`pmem init\` first.`);
+    result.errors.push(
+      `No .pmem directory found from ${path.resolve(start)}. Run \`pmem init\` first.`,
+    );
     result.phase = 'preflight';
     emit(result, options.format ?? 'compact', log);
     return result;
@@ -259,14 +305,19 @@ export async function maintainCommand(
   if (!dryRun && options.yes !== true) {
     result.status = 'cancelled';
     result.phase = 'preflight';
-    result.errors.push('Repair requires --yes in the callable non-interactive API; no changes were made.');
+    result.errors.push(
+      'Repair requires --yes in the callable non-interactive API; no changes were made.',
+    );
     emit(result, options.format ?? 'compact', log);
     return result;
   }
 
   const migration = dependencies.planHealthMigration ?? planHealthMigration;
   try {
-    result.migration = migration(paths.pmemPath, migrationOptions(options, paths.projectRoot, false));
+    result.migration = migration(
+      paths.pmemPath,
+      migrationOptions(options, paths.projectRoot, false),
+    );
   } catch (error) {
     result.errors.push(errorMessage(error));
     emit(result, options.format ?? 'compact', log);
@@ -280,8 +331,12 @@ export async function maintainCommand(
 
   if (result.migration.unresolved > 0) {
     result.phase = 'migration';
-    result.errors.push(`Migration has ${result.migration.unresolved} unresolved card(s); provide explicit trust, sensitivity, and classification choices.`);
-    result.recovery.push('Re-run with --format json to review migration.cards, then provide the missing choices before --repair --yes.');
+    result.errors.push(
+      `Migration has ${result.migration.unresolved} unresolved card(s); provide explicit trust, sensitivity, and classification choices.`,
+    );
+    result.recovery.push(
+      'Re-run with --format json to review migration.cards, then provide the missing choices before --repair --yes.',
+    );
     emit(result, options.format ?? 'compact', log);
     return result;
   }
@@ -318,7 +373,9 @@ export async function maintainCommand(
     result.rebuild.status = 'failed';
     result.rebuild.error = errorMessage(error);
     result.errors.push(errorMessage(error));
-    result.recovery.push('Markdown rollback was delegated to the existing health migration backup/rollback path; inspect the backup and run `pmem rebuild` if needed.');
+    result.recovery.push(
+      'Markdown rollback was delegated to the existing health migration backup/rollback path; inspect the backup and run `pmem rebuild` if needed.',
+    );
     emit(result, options.format ?? 'compact', log);
     return result;
   }
@@ -328,13 +385,22 @@ export async function maintainCommand(
     try {
       const rebuildResult = await semantic.rebuild(paths.pmemPath);
       const statusResult = await semantic.status(paths.pmemPath);
-      const snapshot = semanticSnapshot({ ...asRecord(rebuildResult), ...asRecord(statusResult) }, true);
+      const snapshot = semanticSnapshot(
+        { ...asRecord(rebuildResult), ...asRecord(statusResult) },
+        true,
+      );
       const failure = semanticFailure(snapshot);
-      result.semantic = { ...snapshot, status: failure ? 'failed' : 'completed', error: failure ?? undefined };
+      result.semantic = {
+        ...snapshot,
+        status: failure ? 'failed' : 'completed',
+        error: failure ?? undefined,
+      };
       if (failure) {
         result.phase = 'semantic';
         result.errors.push(failure);
-        result.recovery.push('Cross-stage rollback is not available after semantic index commit; restore the reported migration backup if Markdown rollback is required, then run `pmem rebuild` and `pmem semantic rebuild --full`.');
+        result.recovery.push(
+          'Cross-stage rollback is not available after semantic index commit; restore the reported migration backup if Markdown rollback is required, then run `pmem rebuild` and `pmem semantic rebuild --full`.',
+        );
         emit(result, options.format ?? 'compact', log);
         return result;
       }
@@ -343,7 +409,9 @@ export async function maintainCommand(
       result.semantic.status = 'failed';
       result.semantic.error = errorMessage(error);
       result.errors.push(errorMessage(error));
-      result.recovery.push('Cross-stage rollback is not available after ordinary rebuild; inspect migration.backup_path, then run `pmem rebuild` and `pmem semantic rebuild --full` after recovery.');
+      result.recovery.push(
+        'Cross-stage rollback is not available after ordinary rebuild; inspect migration.backup_path, then run `pmem rebuild` and `pmem semantic rebuild --full` after recovery.',
+      );
       emit(result, options.format ?? 'compact', log);
       return result;
     }

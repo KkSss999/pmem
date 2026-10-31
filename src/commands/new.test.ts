@@ -190,7 +190,10 @@ describe('pmem new (CLI) — old project (no schema)', () => {
     it(`rejects ${badType} (exit 2, old project VALID_TYPES guard)`, () => {
       const r = pmem(`new ${badType} "Test"`, cwd);
       assert.strictEqual(r.code, 2, `expected exit 2 for ${badType}, got ${r.code}`);
-      assert.ok(r.stdout.includes(`Invalid card type "${badType}"`), `stdout should mention Invalid card type`);
+      assert.ok(
+        r.stdout.includes(`Invalid card type "${badType}"`),
+        `stdout should mention Invalid card type`,
+      );
     });
   }
 
@@ -201,7 +204,7 @@ describe('pmem new (CLI) — old project (no schema)', () => {
     // File must exist under modules/
     const modulesDir = path.join(cwd, '.pmem', 'modules');
     const files = fs.readdirSync(modulesDir);
-    const cardFile = files.find(f => f.startsWith('module.'));
+    const cardFile = files.find((f) => f.startsWith('module.'));
     assert.ok(cardFile, `expected a module.*.md file in modules/, found: ${files.join(', ')}`);
     assert.match(cardFile!, /^module\.core_module_\d{8}\.md$/, 'default ID remains date-stamped');
     const content = fs.readFileSync(path.join(modulesDir, cardFile!), 'utf8');
@@ -216,7 +219,9 @@ describe('pmem new (CLI) — custom schema with character', () => {
 
   before(() => {
     fs.mkdirSync(path.join(cwd, '.pmem'), { recursive: true });
-    writeManifest(path.join(cwd, '.pmem'), `
+    writeManifest(
+      path.join(cwd, '.pmem'),
+      `
 schema:
   card_types:
     - character
@@ -230,7 +235,8 @@ schema:
     decision: decisions
     trace: traces
     integration: integrations
-`);
+`,
+    );
   });
 
   after(() => {
@@ -243,8 +249,11 @@ schema:
     assert.ok(r.stdout.includes('Created character card'), `stdout: ${r.stdout}`);
     const charactersDir = path.join(cwd, '.pmem', 'characters');
     const files = fs.readdirSync(charactersDir);
-    const cardFile = files.find(f => f.startsWith('character.'));
-    assert.ok(cardFile, `expected a character.*.md file in characters/, found: ${files.join(', ')}`);
+    const cardFile = files.find((f) => f.startsWith('character.'));
+    assert.ok(
+      cardFile,
+      `expected a character.*.md file in characters/, found: ${files.join(', ')}`,
+    );
     const content = fs.readFileSync(path.join(charactersDir, cardFile!), 'utf8');
     assert.ok(content.includes('type: character'), 'frontmatter should contain type: character');
   });
@@ -265,7 +274,10 @@ schema:
   });
 
   it('uses explicit trust metadata for structured cards and never promotes traces', () => {
-    const decision = fs.readFileSync(path.join(cwd, '.pmem', 'characters', 'character.protagonist.md'), 'utf8');
+    const decision = fs.readFileSync(
+      path.join(cwd, '.pmem', 'characters', 'character.protagonist.md'),
+      'utf8',
+    );
     assert.match(decision, /^trust_label: user_confirmed$/m);
     const r = pmem('new trace "Agent trace" --id trace.agent_trace', cwd);
     assert.strictEqual(r.code, 0, `expected trace creation to succeed: ${r.stdout}`);
@@ -308,5 +320,7 @@ schema:
 
 // Clean up temp root after all tests
 after(() => {
-  try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+  try {
+    fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+  } catch {}
 });

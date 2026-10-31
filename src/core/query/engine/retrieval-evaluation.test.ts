@@ -2,7 +2,15 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import Database from 'better-sqlite3';
-import { createFTS5, createSchema, insertAlias, insertPath, insertTag, refreshCardFts, upsertCard } from '../../db';
+import {
+  createFTS5,
+  createSchema,
+  insertAlias,
+  insertPath,
+  insertTag,
+  refreshCardFts,
+  upsertCard,
+} from '../../db';
 import type { CardRow } from '../../../types';
 import { parseIntent } from './intent';
 import { generateCandidates } from './candidates';
@@ -48,7 +56,10 @@ interface EvaluationReport {
     query_count: number;
     success_count: number;
     success_rate: number;
-    by_kind: Record<'id' | 'title' | 'path', { query_count: number; success_count: number; success_rate: number }>;
+    by_kind: Record<
+      'id' | 'title' | 'path',
+      { query_count: number; success_count: number; success_rate: number }
+    >;
   };
   latency_ms: {
     sample_count: number;
@@ -121,12 +132,14 @@ function makeDb(cards: FixtureCard[]): Database.Database {
 function rankedIds(db: Database.Database, query: string): string[] {
   const intent = parseIntent(query, KNOWN_TYPES);
   const candidates = generateCandidates(db, intent);
-  return fuseAndScore(candidates, { now: NOW, dirtyCardIds: new Set() }).map(result => result.card.id);
+  return fuseAndScore(candidates, { now: NOW, dirtyCardIds: new Set() }).map(
+    (result) => result.card.id,
+  );
 }
 
 function rankOfAny(ids: string[], relevantIds: string[]): number {
   const relevant = new Set(relevantIds);
-  const index = ids.findIndex(id => relevant.has(id));
+  const index = ids.findIndex((id) => relevant.has(id));
   return index < 0 ? 0 : index + 1;
 }
 
@@ -145,7 +158,10 @@ function queryMetrics(db: Database.Database, queries: FixtureQuery[]): SliceMetr
   };
 }
 
-function exactMetrics(db: Database.Database, cards: FixtureCard[]): EvaluationReport['exact_query_success'] {
+function exactMetrics(
+  db: Database.Database,
+  cards: FixtureCard[],
+): EvaluationReport['exact_query_success'] {
   const byKind = {
     id: { query_count: cards.length, success_count: 0, success_rate: 0 },
     title: { query_count: cards.length, success_count: 0, success_rate: 0 },
@@ -156,10 +172,16 @@ function exactMetrics(db: Database.Database, cards: FixtureCard[]): EvaluationRe
     if (rankedIds(db, card.title)[0] === card.id) byKind.title.success_count += 1;
     if (rankedIds(db, card.source_path)[0] === card.id) byKind.path.success_count += 1;
   }
-  for (const value of Object.values(byKind)) value.success_rate = round(value.success_count / value.query_count);
+  for (const value of Object.values(byKind))
+    value.success_rate = round(value.success_count / value.query_count);
   const queryCount = cards.length * 3;
   const successCount = Object.values(byKind).reduce((sum, value) => sum + value.success_count, 0);
-  return { query_count: queryCount, success_count: successCount, success_rate: round(successCount / queryCount), by_kind: byKind };
+  return {
+    query_count: queryCount,
+    success_count: successCount,
+    success_rate: round(successCount / queryCount),
+    by_kind: byKind,
+  };
 }
 
 function evaluate(): EvaluationReport {
@@ -175,9 +197,18 @@ function evaluate(): EvaluationReport {
     }
     timings.sort((a, b) => a - b);
     const slices = {
-      zh: queryMetrics(db, queries.filter(query => query.slice === 'zh')),
-      en: queryMetrics(db, queries.filter(query => query.slice === 'en')),
-      code_path_mixed: queryMetrics(db, queries.filter(query => query.slice === 'code_path_mixed')),
+      zh: queryMetrics(
+        db,
+        queries.filter((query) => query.slice === 'zh'),
+      ),
+      en: queryMetrics(
+        db,
+        queries.filter((query) => query.slice === 'en'),
+      ),
+      code_path_mixed: queryMetrics(
+        db,
+        queries.filter((query) => query.slice === 'code_path_mixed'),
+      ),
     };
     const overall = queryMetrics(db, queries);
     return {
@@ -203,18 +234,26 @@ function evaluate(): EvaluationReport {
 describe('v1.1.1 locked retrieval evaluation', () => {
   it('locks at least 30 v1.2 hard negatives with explicit distractors', () => {
     assert.ok(hardNegatives.queries.length >= 30);
-    assert.equal(new Set(hardNegatives.queries.map(query => query.id)).size, hardNegatives.queries.length);
+    assert.equal(
+      new Set(hardNegatives.queries.map((query) => query.id)).size,
+      hardNegatives.queries.length,
+    );
     for (const query of hardNegatives.queries) {
       assert.ok(query.relevant_ids.length > 0);
       assert.ok(query.distractor_ids.length > 0);
-      assert.ok(query.distractor_ids.every(id => !query.relevant_ids.includes(id)));
+      assert.ok(query.distractor_ids.every((id) => !query.relevant_ids.includes(id)));
     }
   });
   it('keeps the corpus versioned and evenly split across all required slices', () => {
     assert.equal(fixture.queries.length, 60);
-    assert.equal(new Set(fixture.queries.map(query => query.id)).size, 60);
+    assert.equal(new Set(fixture.queries.map((query) => query.id)).size, 60);
     assert.deepEqual(
-      Object.fromEntries(['zh', 'en', 'code_path_mixed'].map(slice => [slice, fixture.queries.filter(query => query.slice === slice).length])),
+      Object.fromEntries(
+        ['zh', 'en', 'code_path_mixed'].map((slice) => [
+          slice,
+          fixture.queries.filter((query) => query.slice === slice).length,
+        ]),
+      ),
       { zh: 20, en: 20, code_path_mixed: 20 },
     );
     assert.equal(fixture.fixture_version, baseline.fixture_version);

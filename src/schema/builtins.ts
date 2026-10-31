@@ -29,7 +29,14 @@ export const EVENT_SCHEMA: MemorySchema = Object.freeze({
     { name: 'created_at', type: 'date', required: true },
     { name: 'record_id', type: 'id', nullable: true },
   ]),
-  metadata: { source: 'builtin', strict: false, description: 'An append-only memory lifecycle event.' },
+  metadata: {
+    source: 'builtin',
+    strict: false,
+    description: 'An append-only memory lifecycle event.',
+  },
 });
 
-export const BUILTIN_SCHEMAS: readonly MemorySchema[] = Object.freeze([MEMORY_SCHEMA, EVENT_SCHEMA]);
+export const BUILTIN_SCHEMAS: readonly MemorySchema[] = Object.freeze([
+  MEMORY_SCHEMA,
+  EVENT_SCHEMA,
+]);

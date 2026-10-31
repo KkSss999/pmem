@@ -5,20 +5,22 @@
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/';
 
 function hasVersion(result, version) {
-  return result.status === 200
-    && typeof result.body === 'object'
-    && result.body !== null
-    && typeof result.body.versions === 'object'
-    && result.body.versions !== null
-    && Object.prototype.hasOwnProperty.call(result.body.versions, version);
+  return (
+    result.status === 200 &&
+    typeof result.body === 'object' &&
+    result.body !== null &&
+    typeof result.body.versions === 'object' &&
+    result.body.versions !== null &&
+    Object.prototype.hasOwnProperty.call(result.body.versions, version)
+  );
 }
 
 function assertExpectedStatus(result, label) {
   if (result.status !== 200 && result.status !== 404) {
-    const detail = typeof result.body === 'string'
-      ? result.body
-      : JSON.stringify(result.body);
-    throw new Error(`${label} registry lookup returned HTTP ${result.status}: ${detail.slice(0, 500)}`);
+    const detail = typeof result.body === 'string' ? result.body : JSON.stringify(result.body);
+    throw new Error(
+      `${label} registry lookup returned HTTP ${result.status}: ${detail.slice(0, 500)}`,
+    );
   }
 }
 
@@ -81,7 +83,7 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch(error => {
+  main().catch((error) => {
     console.error(error.message);
     process.exitCode = 2;
   });

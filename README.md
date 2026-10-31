@@ -31,7 +31,7 @@
 Coding agents can read a repository, but they do not reliably retain its decisions, active work, or the reason a change was made. PMEM gives the project a durable, queryable memory layer so the next session starts with context instead of archaeology.
 
 ```bash
-npm install -g pmem-ai@latest
+bun add -g pmem-ai@latest   # or: npm install -g pmem-ai@latest
 pmem context "implement auth"
 ```
 
@@ -115,7 +115,8 @@ It is **not** a vector database, MCP server platform, graph UI, or remote multi-
 ### Recommended entry point — one CLI for every user
 
 ```bash
-npm install -g pmem-ai@latest
+bun add -g pmem-ai@latest
+# npm install -g pmem-ai@latest also works
 pmem --version
 ```
 
@@ -155,9 +156,9 @@ is unavailable, retrieval continues through the deterministic engine.
 ```bash
 git clone https://github.com/KkSss999/pmem.git
 cd pmem
-npm install
-npm run build
-npm link
+bun install
+bun run build
+bun link
 ```
 
 ### Installing Agent Skills
@@ -817,7 +818,7 @@ Fresh v1.2 projects create this index during `pmem init`. The manual command is 
 ### Semantic Runtime Cannot Load
 
 ```bash
-npm install -g pmem-ai@latest
+bun add -g pmem-ai@latest
 pmem semantic setup --yes
 pmem semantic rebuild
 ```
@@ -867,9 +868,9 @@ For local development:
 ```bash
 git clone https://github.com/KkSss999/pmem.git
 cd pmem
-npm install
-npm run build
-npm test
+bun install
+bun run build
+bun run test
 ```
 
 ## License

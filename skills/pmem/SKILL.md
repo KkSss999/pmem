@@ -12,7 +12,7 @@ allowed-tools: Bash(pmem:*)
 
 ```bash
 # Install the complete pmem CLI and local semantic runtime
-npm install -g pmem-ai@latest
+bun add -g pmem-ai@latest
 
 # First time in a project: init also builds the first local index
 pmem init my-project
@@ -53,7 +53,7 @@ review-heavy maintenance.
 
 | Install | User outcome |
 |---|---|
-| `npm install -g pmem-ai@latest` | Markdown, SQLite/FTS, graph and semantic retrieval, health, MCP, and SDK |
+| `bun add -g pmem-ai@latest` (or `npm install -g pmem-ai@latest`) | Markdown, SQLite/FTS, graph and semantic retrieval, health, MCP, and SDK |
 
 The local model and per-project semantic index are prepared only through
 `pmem semantic setup` / `pmem semantic rebuild`. If either is unavailable,

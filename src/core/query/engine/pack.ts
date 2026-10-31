@@ -11,14 +11,14 @@ export interface PackItemL2 {
 }
 
 export interface PackInput {
-  l0: string[];            // project one-liner, stage, focus, next — never trimmed
-  l1: string[];            // foundation/decision compressed summaries
-  l2: PackItemL2[];        // query-relevant card summaries, sorted by score desc
-  l3: string[];            // read-if-needed paths
+  l0: string[]; // project one-liner, stage, focus, next — never trimmed
+  l1: string[]; // foundation/decision compressed summaries
+  l2: PackItemL2[]; // query-relevant card summaries, sorted by score desc
+  l3: string[]; // read-if-needed paths
 }
 
 export interface PackOptions {
-  budget: number;          // approx token budget
+  budget: number; // approx token budget
   mode?: RecallMode;
 }
 
@@ -59,7 +59,8 @@ export function pack(input: PackInput, opts: PackOptions): PackedOutput {
       lines.push('');
       for (const item of l2Items) {
         const score = item.score !== undefined ? ` (${item.score})` : '';
-        const reasons = item.reasons && item.reasons.length > 0 ? ` [${item.reasons.join(', ')}]` : '';
+        const reasons =
+          item.reasons && item.reasons.length > 0 ? ` [${item.reasons.join(', ')}]` : '';
         const stale = item.stale ? ' ⚠stale' : '';
         lines.push(`- ${item.id}${score}${reasons}${stale}`);
         if (l2WithSummary && item.summary) lines.push(`  ${item.summary}`);

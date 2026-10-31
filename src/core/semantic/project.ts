@@ -19,7 +19,9 @@ function parseSupersededBy(value: string | string[] | null | undefined): string[
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) && parsed.every(item => typeof item === 'string') ? parsed : undefined;
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : undefined;
   } catch {
     return [value];
   }
@@ -32,7 +34,9 @@ export function loadSemanticProjectDocuments(pmemPath: string): SemanticCardDocu
     createSchema(db);
     const projectRoot = path.dirname(pmemPath);
     const rows = db.prepare('SELECT * FROM cards').all() as CardRow[];
-    const aliasesQuery = db.prepare('SELECT alias FROM aliases WHERE card_id = ? ORDER BY normalized_alias');
+    const aliasesQuery = db.prepare(
+      'SELECT alias FROM aliases WHERE card_id = ? ORDER BY normalized_alias',
+    );
     const tagsQuery = db.prepare('SELECT tag FROM tags WHERE card_id = ? ORDER BY normalized_tag');
     const pathsQuery = db.prepare('SELECT path FROM paths WHERE card_id = ? ORDER BY path');
     const relatedQuery = db.prepare(`
@@ -51,12 +55,14 @@ export function loadSemanticProjectDocuments(pmemPath: string): SemanticCardDocu
         title: row.title,
         summary: row.summary,
         body: parsed?.body ?? '',
-        aliases: (aliasesQuery.all(row.id) as Array<{ alias: string }>).map(item => item.alias),
-        tags: (tagsQuery.all(row.id) as Array<{ tag: string }>).map(item => item.tag),
-        sourceFiles: (pathsQuery.all(row.id) as Array<{ path: string }>).map(item => item.path),
+        aliases: (aliasesQuery.all(row.id) as Array<{ alias: string }>).map((item) => item.alias),
+        tags: (tagsQuery.all(row.id) as Array<{ tag: string }>).map((item) => item.tag),
+        sourceFiles: (pathsQuery.all(row.id) as Array<{ path: string }>).map((item) => item.path),
         frontmatter: {
-          trust_label: frontmatter.trust_label ?? row.trust_label as CardFrontmatter['trust_label'],
-          sensitivity: frontmatter.sensitivity ?? row.sensitivity as CardFrontmatter['sensitivity'],
+          trust_label:
+            frontmatter.trust_label ?? (row.trust_label as CardFrontmatter['trust_label']),
+          sensitivity:
+            frontmatter.sensitivity ?? (row.sensitivity as CardFrontmatter['sensitivity']),
           superseded_by: frontmatter.superseded_by ?? parseSupersededBy(row.superseded_by),
         },
         isCandidate: row.is_candidate !== 0,
@@ -65,11 +71,13 @@ export function loadSemanticProjectDocuments(pmemPath: string): SemanticCardDocu
     }
     // Relationship labels are contextual embedding input too. Only expose
     // neighbors that independently pass the same source-level allowlist.
-    const safeIds = new Set(documents.filter(isSemanticSafeCard).map(document => document.id));
+    const safeIds = new Set(documents.filter(isSemanticSafeCard).map((document) => document.id));
     for (const document of documents) {
-      document.relatedCardIds = (relatedQuery.all(document.id, document.id, document.id) as Array<{ card_id: string }>)
-        .map(item => item.card_id)
-        .filter(id => safeIds.has(id));
+      document.relatedCardIds = (
+        relatedQuery.all(document.id, document.id, document.id) as Array<{ card_id: string }>
+      )
+        .map((item) => item.card_id)
+        .filter((id) => safeIds.has(id));
     }
     return documents;
   } finally {
@@ -82,7 +90,9 @@ export function getSemanticProjectStatus(pmemPath: string): SemanticProjectStatu
   try {
     createSchema(db);
     const status = getSemanticStatus(db);
-    const count = db.prepare('SELECT COUNT(DISTINCT card_id) AS count FROM semantic_chunks').get() as { count: number };
+    const count = db
+      .prepare('SELECT COUNT(DISTINCT card_id) AS count FROM semantic_chunks')
+      .get() as { count: number };
     return { ...status, cardCount: count.count };
   } finally {
     closeDatabase(db);
@@ -104,7 +114,9 @@ export async function rebuildSemanticProject(
       beforeCommit: () => {
         const currentHash = semanticDocumentsHash(loadSemanticProjectDocuments(pmemPath));
         if (currentHash !== snapshotHash) {
-          throw new Error('Semantic source snapshot changed during rebuild; no index changes were committed. Re-run `pmem semantic rebuild`.');
+          throw new Error(
+            'Semantic source snapshot changed during rebuild; no index changes were committed. Re-run `pmem semantic rebuild`.',
+          );
         }
       },
     });
@@ -116,21 +128,23 @@ export async function rebuildSemanticProject(
 function semanticDocumentsHash(documents: readonly SemanticCardDocument[]): string {
   const canonical = [...documents]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map(document => JSON.stringify({
-      id: document.id,
-      type: document.type ?? null,
-      status: document.status ?? null,
-      title: document.title,
-      summary: document.summary ?? null,
-      body: document.body,
-      aliases: document.aliases ?? [],
-      tags: document.tags ?? [],
-      sourceFiles: document.sourceFiles ?? [],
-      relatedCardIds: document.relatedCardIds ?? [],
-      frontmatter: document.frontmatter ?? null,
-      isCandidate: document.isCandidate ?? false,
-      isDeleted: document.isDeleted ?? false,
-    }))
+    .map((document) =>
+      JSON.stringify({
+        id: document.id,
+        type: document.type ?? null,
+        status: document.status ?? null,
+        title: document.title,
+        summary: document.summary ?? null,
+        body: document.body,
+        aliases: document.aliases ?? [],
+        tags: document.tags ?? [],
+        sourceFiles: document.sourceFiles ?? [],
+        relatedCardIds: document.relatedCardIds ?? [],
+        frontmatter: document.frontmatter ?? null,
+        isCandidate: document.isCandidate ?? false,
+        isDeleted: document.isDeleted ?? false,
+      }),
+    )
     .join('\n');
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }

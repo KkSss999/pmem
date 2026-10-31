@@ -6,9 +6,19 @@ export interface GitStatusChange {
 export function getCurrentBranch(cwd: string = process.cwd()): string | null {
   try {
     const { execSync } = require('child_process') as typeof import('child_process');
-    const branch = execSync('git branch --show-current', { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim();
+    const branch = execSync('git branch --show-current', {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).trim();
     if (branch) return branch;
-    const commit = execSync('git rev-parse --short HEAD', { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }).trim();
+    const commit = execSync('git rev-parse --short HEAD', {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).trim();
     return commit ? `detached:${commit}` : null;
   } catch {
     return null;

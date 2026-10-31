@@ -17,7 +17,8 @@ function openSqliteDatabase(pmemPath: string): Database.Database {
     return db;
   } catch (err: any) {
     if (err?.code === 'SQLITE_NOTADB') {
-      const msg = `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
+      const msg =
+        `.pmem/pmem.db exists but is not a valid SQLite database.\n` +
         `Back up the file if needed, then run: pmem rebuild --full`;
       throw new Error(msg);
     }
@@ -42,7 +43,9 @@ export function openOwnedDatabase(pmemPath: string): Database.Database {
 
 export function closeDatabase(db?: Database.Database): void {
   if (db) {
-    try { db.close(); } catch {}
+    try {
+      db.close();
+    } catch {}
     if (db === _db) _db = null;
     return;
   }
@@ -212,23 +215,43 @@ export function createSchema(db: Database.Database): void {
   `);
 
   for (const column of [
-    'event_type TEXT', 'memory_id TEXT', 'branch TEXT', 'payload TEXT',
-    'session_id TEXT', 'success INTEGER NOT NULL DEFAULT 1',
-    'type TEXT', 'scope TEXT', 'payload_json TEXT', 'expires_at TEXT'
+    'event_type TEXT',
+    'memory_id TEXT',
+    'branch TEXT',
+    'payload TEXT',
+    'session_id TEXT',
+    'success INTEGER NOT NULL DEFAULT 1',
+    'type TEXT',
+    'scope TEXT',
+    'payload_json TEXT',
+    'expires_at TEXT',
   ]) {
-    try { db.exec(`ALTER TABLE events ADD COLUMN ${column}`); } catch {}
+    try {
+      db.exec(`ALTER TABLE events ADD COLUMN ${column}`);
+    } catch {}
   }
 
-  try { db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1'); } catch {}
-  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''"); } catch {}
-  try { db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''"); } catch {}
+  try {
+    db.exec('ALTER TABLE semantic_meta ADD COLUMN pipeline_version INTEGER NOT NULL DEFAULT 1');
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_chunks ADD COLUMN context TEXT NOT NULL DEFAULT ''");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE semantic_chunks ADD COLUMN context_hash TEXT NOT NULL DEFAULT ''");
+  } catch {}
 
   // v1.1: agent-trust columns on existing cards tables (idempotent).
   for (const column of [
-    'confidence REAL', 'superseded_by TEXT', 'classification TEXT',
-    'trust_label TEXT', 'sensitivity TEXT'
+    'confidence REAL',
+    'superseded_by TEXT',
+    'classification TEXT',
+    'trust_label TEXT',
+    'sensitivity TEXT',
   ]) {
-    try { db.exec(`ALTER TABLE cards ADD COLUMN ${column}`); } catch {}
+    try {
+      db.exec(`ALTER TABLE cards ADD COLUMN ${column}`);
+    } catch {}
   }
 
   setSchemaVersion(db, CORE_SCHEMA_VERSION);
@@ -236,7 +259,9 @@ export function createSchema(db: Database.Database): void {
 
 export function hasFTS5(db: Database.Database): boolean {
   try {
-    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_test USING fts5(content); DROP TABLE IF EXISTS _fts5_test;");
+    db.exec(
+      'CREATE VIRTUAL TABLE IF NOT EXISTS _fts5_test USING fts5(content); DROP TABLE IF EXISTS _fts5_test;',
+    );
     return true;
   } catch {
     return false;
@@ -259,9 +284,9 @@ export function createFTS5(db: Database.Database): void {
 
 export function ftsTableExists(db: Database.Database): boolean {
   try {
-    const row = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_fts'"
-    ).get();
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'card_fts'")
+      .get();
     return !!row;
   } catch {
     return false;
@@ -281,8 +306,15 @@ export function refreshCardFts(db: Database.Database, card: CardFtsRow): void {
   if (!ftsTableExists(db)) return;
   db.prepare('DELETE FROM card_fts WHERE card_id = ?').run(card.id);
   db.prepare(
-    'INSERT INTO card_fts (card_id, title, summary, body, aliases, tags) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(card.id, card.title, card.summary ?? '', card.body, card.aliases.join(' '), card.tags.join(' '));
+    'INSERT INTO card_fts (card_id, title, summary, body, aliases, tags) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(
+    card.id,
+    card.title,
+    card.summary ?? '',
+    card.body,
+    card.aliases.join(' '),
+    card.tags.join(' '),
+  );
 }
 
 export function deleteCardFts(db: Database.Database, cardId: string): void {
@@ -303,7 +335,9 @@ export function clearCardFts(db: Database.Database): void {
 
 export function getSchemaVersion(db: Database.Database): string | null {
   try {
-    const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as
+      | { value: string }
+      | undefined;
     return row?.value ?? null;
   } catch {
     return null;
@@ -311,7 +345,9 @@ export function getSchemaVersion(db: Database.Database): string | null {
 }
 
 export function setSchemaVersion(db: Database.Database, version: string): void {
-  db.prepare("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', ?)").run(version);
+  db.prepare("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', ?)").run(
+    version,
+  );
 }
 
 // Bulk insert helpers using transactions
@@ -319,7 +355,9 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
 export function upsertCard(db: Database.Database, card: import('../types').CardRow): void {
   // Normalize superseded_by (array in frontmatter) to a JSON string for storage.
   const supersededBy = Array.isArray(card.superseded_by)
-    ? (card.superseded_by.length > 0 ? JSON.stringify(card.superseded_by) : null)
+    ? card.superseded_by.length > 0
+      ? JSON.stringify(card.superseded_by)
+      : null
     : (card.superseded_by ?? null);
   // Build an explicit param object so new/optional columns default to null
   // rather than throwing on callers that don't set them.
@@ -362,7 +400,7 @@ export function upsertCard(db: Database.Database, card: import('../types').CardR
 }
 
 export function deleteCardEdges(db: Database.Database, cardId: string): void {
-  db.prepare("DELETE FROM edges WHERE from_id = ?").run(cardId);
+  db.prepare('DELETE FROM edges WHERE from_id = ?').run(cardId);
 }
 
 export function deleteExplicitCardEdges(db: Database.Database, cardId: string): void {
@@ -399,32 +437,49 @@ export function insertEdge(db: Database.Database, edge: import('../types').EdgeR
 }
 
 export function deleteCardAliases(db: Database.Database, cardId: string): void {
-  db.prepare("DELETE FROM aliases WHERE card_id = ?").run(cardId);
+  db.prepare('DELETE FROM aliases WHERE card_id = ?').run(cardId);
 }
 
-export function insertAlias(db: Database.Database, cardId: string, alias: string, language?: string): void {
+export function insertAlias(
+  db: Database.Database,
+  cardId: string,
+  alias: string,
+  language?: string,
+): void {
   const normalized = alias.toLowerCase().trim();
-  db.prepare("INSERT OR IGNORE INTO aliases (card_id, alias, normalized_alias, language) VALUES (?, ?, ?, ?)")
-    .run(cardId, alias, normalized, language ?? null);
+  db.prepare(
+    'INSERT OR IGNORE INTO aliases (card_id, alias, normalized_alias, language) VALUES (?, ?, ?, ?)',
+  ).run(cardId, alias, normalized, language ?? null);
 }
 
 export function deleteCardTags(db: Database.Database, cardId: string): void {
-  db.prepare("DELETE FROM tags WHERE card_id = ?").run(cardId);
+  db.prepare('DELETE FROM tags WHERE card_id = ?').run(cardId);
 }
 
 export function insertTag(db: Database.Database, cardId: string, tag: string): void {
   const normalized = tag.toLowerCase().trim();
-  db.prepare("INSERT OR IGNORE INTO tags (card_id, tag, normalized_tag) VALUES (?, ?, ?)")
-    .run(cardId, tag, normalized);
+  db.prepare('INSERT OR IGNORE INTO tags (card_id, tag, normalized_tag) VALUES (?, ?, ?)').run(
+    cardId,
+    tag,
+    normalized,
+  );
 }
 
 export function deleteCardPaths(db: Database.Database, cardId: string): void {
-  db.prepare("DELETE FROM paths WHERE card_id = ?").run(cardId);
+  db.prepare('DELETE FROM paths WHERE card_id = ?').run(cardId);
 }
 
-export function insertPath(db: Database.Database, cardId: string, filePath: string, relation: string): void {
-  db.prepare("INSERT OR IGNORE INTO paths (card_id, path, relation) VALUES (?, ?, ?)")
-    .run(cardId, filePath, relation);
+export function insertPath(
+  db: Database.Database,
+  cardId: string,
+  filePath: string,
+  relation: string,
+): void {
+  db.prepare('INSERT OR IGNORE INTO paths (card_id, path, relation) VALUES (?, ?, ?)').run(
+    cardId,
+    filePath,
+    relation,
+  );
 }
 
 export function clearAllTables(db: Database.Database): void {
@@ -443,36 +498,53 @@ export function clearAllTables(db: Database.Database): void {
   `);
 }
 
-export function getCardHash(db: Database.Database, filePath: string): { file_hash: string; frontmatter_hash: string; body_hash: string } | null {
-  const row = db.prepare("SELECT file_hash, frontmatter_hash, body_hash FROM cards WHERE file_path = ?").get(filePath) as
-    { file_hash: string; frontmatter_hash: string; body_hash: string } | undefined;
+export function getCardHash(
+  db: Database.Database,
+  filePath: string,
+): { file_hash: string; frontmatter_hash: string; body_hash: string } | null {
+  const row = db
+    .prepare('SELECT file_hash, frontmatter_hash, body_hash FROM cards WHERE file_path = ?')
+    .get(filePath) as
+    | { file_hash: string; frontmatter_hash: string; body_hash: string }
+    | undefined;
   return row ?? null;
 }
 
 // === P1: dirty_flags helpers ===
 
-export function insertDirtyFlag(db: Database.Database, scope: string, target: string, reason: string, sessionId?: string): void {
+export function insertDirtyFlag(
+  db: Database.Database,
+  scope: string,
+  target: string,
+  reason: string,
+  sessionId?: string,
+): void {
   db.prepare(
-    "INSERT INTO dirty_flags (scope, target, reason, created_at, session_id) VALUES (?, ?, ?, ?, ?)"
+    'INSERT INTO dirty_flags (scope, target, reason, created_at, session_id) VALUES (?, ?, ?, ?, ?)',
   ).run(scope, target, reason, new Date().toISOString(), sessionId ?? null);
 }
 
 export function resolveDirtyFlags(db: Database.Database, scope?: string, target?: string): number {
   const now = new Date().toISOString();
   if (scope && target) {
-    return db.prepare(
-      "UPDATE dirty_flags SET resolved_at = ? WHERE scope = ? AND target = ? AND resolved_at IS NULL"
-    ).run(now, scope, target).changes;
+    return db
+      .prepare(
+        'UPDATE dirty_flags SET resolved_at = ? WHERE scope = ? AND target = ? AND resolved_at IS NULL',
+      )
+      .run(now, scope, target).changes;
   }
-  return db.prepare(
-    "UPDATE dirty_flags SET resolved_at = ? WHERE resolved_at IS NULL"
-  ).run(now).changes;
+  return db.prepare('UPDATE dirty_flags SET resolved_at = ? WHERE resolved_at IS NULL').run(now)
+    .changes;
 }
 
-export function getUnresolvedDirtyFlags(db: Database.Database): Array<{ scope: string; target: string; reason: string; created_at: string }> {
-  return db.prepare(
-    "SELECT scope, target, reason, created_at FROM dirty_flags WHERE resolved_at IS NULL ORDER BY created_at DESC"
-  ).all() as Array<{ scope: string; target: string; reason: string; created_at: string }>;
+export function getUnresolvedDirtyFlags(
+  db: Database.Database,
+): Array<{ scope: string; target: string; reason: string; created_at: string }> {
+  return db
+    .prepare(
+      'SELECT scope, target, reason, created_at FROM dirty_flags WHERE resolved_at IS NULL ORDER BY created_at DESC',
+    )
+    .all() as Array<{ scope: string; target: string; reason: string; created_at: string }>;
 }
 
 export interface DirtyFlagDetailed {
@@ -485,37 +557,59 @@ export interface DirtyFlagDetailed {
 }
 
 export function getUnresolvedDirtyFlagsDetailed(db: Database.Database): DirtyFlagDetailed[] {
-  return db.prepare(
-    "SELECT id, scope, target, reason, created_at, session_id FROM dirty_flags WHERE resolved_at IS NULL ORDER BY created_at DESC"
-  ).all() as DirtyFlagDetailed[];
+  return db
+    .prepare(
+      'SELECT id, scope, target, reason, created_at, session_id FROM dirty_flags WHERE resolved_at IS NULL ORDER BY created_at DESC',
+    )
+    .all() as DirtyFlagDetailed[];
 }
 
 // === P1: sessions helpers ===
 
 export function startSession(db: Database.Database, id: string, agentName?: string): void {
   db.prepare(
-    "INSERT OR REPLACE INTO sessions (id, agent_name, started_at, status, dirty) VALUES (?, ?, ?, 'active', 0)"
+    "INSERT OR REPLACE INTO sessions (id, agent_name, started_at, status, dirty) VALUES (?, ?, ?, 'active', 0)",
   ).run(id, agentName ?? null, new Date().toISOString());
 }
 
-export function endSession(db: Database.Database, id: string, status?: string, taskSummary?: string): void {
-  db.prepare(
-    "UPDATE sessions SET ended_at = ?, status = ?, task_summary = ? WHERE id = ?"
-  ).run(new Date().toISOString(), status ?? 'completed', taskSummary ?? null, id);
+export function endSession(
+  db: Database.Database,
+  id: string,
+  status?: string,
+  taskSummary?: string,
+): void {
+  db.prepare('UPDATE sessions SET ended_at = ?, status = ?, task_summary = ? WHERE id = ?').run(
+    new Date().toISOString(),
+    status ?? 'completed',
+    taskSummary ?? null,
+    id,
+  );
 }
 
-export function getActiveSession(db: Database.Database): { id: string; agent_name: string | null; started_at: string } | null {
-  const row = db.prepare(
-    "SELECT id, agent_name, started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
-  ).get() as { id: string; agent_name: string | null; started_at: string } | undefined;
+export function getActiveSession(
+  db: Database.Database,
+): { id: string; agent_name: string | null; started_at: string } | null {
+  const row = db
+    .prepare(
+      'SELECT id, agent_name, started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1',
+    )
+    .get() as { id: string; agent_name: string | null; started_at: string } | undefined;
   return row ?? null;
 }
 
 // === P1: update_log helpers ===
 
-export function insertUpdateLog(db: Database.Database, action: string, summary?: string, sessionId?: string, affectedCards?: string[], success?: boolean, error?: string): void {
+export function insertUpdateLog(
+  db: Database.Database,
+  action: string,
+  summary?: string,
+  sessionId?: string,
+  affectedCards?: string[],
+  success?: boolean,
+  error?: string,
+): void {
   db.prepare(
-    "INSERT INTO update_log (action, summary, session_id, created_at, affected_cards, affected_paths, success, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    'INSERT INTO update_log (action, summary, session_id, created_at, affected_cards, affected_paths, success, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   ).run(
     action,
     summary ?? null,
@@ -524,7 +618,7 @@ export function insertUpdateLog(db: Database.Database, action: string, summary?:
     affectedCards ? JSON.stringify(affectedCards) : null,
     null,
     success !== false ? 1 : 0,
-    error ?? null
+    error ?? null,
   );
 }
 
@@ -551,40 +645,62 @@ export interface RuntimeEventRow {
 
 export function insertRuntimeEvent(db: Database.Database, event: RuntimeEventInput): number {
   const payload = event.payload === undefined ? null : JSON.stringify(event.payload);
-  const result = db.prepare(
-    "INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(
-    event.eventType,
-    event.memoryId ?? null,
-    event.branch ?? null,
-    payload,
-    new Date().toISOString(),
-    event.sessionId ?? null,
-    event.success === false ? 0 : 1,
-    toMemoryEventTypeForCore(event.eventType),
-    event.branch ? `branch:${event.branch}` : 'project',
-    payload,
-    null
-  );
+  const result = db
+    .prepare(
+      'INSERT INTO events (event_type, memory_id, branch, payload, created_at, session_id, success, type, scope, payload_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      event.eventType,
+      event.memoryId ?? null,
+      event.branch ?? null,
+      payload,
+      new Date().toISOString(),
+      event.sessionId ?? null,
+      event.success === false ? 0 : 1,
+      toMemoryEventTypeForCore(event.eventType),
+      event.branch ? `branch:${event.branch}` : 'project',
+      payload,
+      null,
+    );
   return Number(result.lastInsertRowid);
 }
 
-export function getRecentRuntimeEvents(db: Database.Database, limit: number = 10): RuntimeEventRow[] {
-  return db.prepare(
-    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success, scope FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?"
-  ).all(limit) as RuntimeEventRow[];
+export function getRecentRuntimeEvents(
+  db: Database.Database,
+  limit: number = 10,
+): RuntimeEventRow[] {
+  return db
+    .prepare(
+      "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success, scope FROM events ORDER BY CASE WHEN event_type = 'memory.capture.committed' THEN 0 ELSE 1 END ASC, created_at DESC, rowid DESC LIMIT ?",
+    )
+    .all(limit) as RuntimeEventRow[];
 }
 
-export function getRuntimeEventsForMemory(db: Database.Database, memoryId: string): RuntimeEventRow[] {
-  return db.prepare(
-    "SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, rowid DESC"
-  ).all(memoryId) as RuntimeEventRow[];
+export function getRuntimeEventsForMemory(
+  db: Database.Database,
+  memoryId: string,
+): RuntimeEventRow[] {
+  return db
+    .prepare(
+      'SELECT id, event_type, memory_id, branch, payload, created_at, session_id, success FROM events WHERE memory_id = ? ORDER BY created_at DESC, rowid DESC',
+    )
+    .all(memoryId) as RuntimeEventRow[];
 }
 
-export function getRecentUpdateLogs(db: Database.Database, limit: number = 10): Array<{ action: string; summary: string | null; created_at: string; success: number }> {
-  return db.prepare(
-    "SELECT action, summary, created_at, success FROM update_log ORDER BY created_at DESC LIMIT ?"
-  ).all(limit) as Array<{ action: string; summary: string | null; created_at: string; success: number }>;
+export function getRecentUpdateLogs(
+  db: Database.Database,
+  limit: number = 10,
+): Array<{ action: string; summary: string | null; created_at: string; success: number }> {
+  return db
+    .prepare(
+      'SELECT action, summary, created_at, success FROM update_log ORDER BY created_at DESC LIMIT ?',
+    )
+    .all(limit) as Array<{
+    action: string;
+    summary: string | null;
+    created_at: string;
+    success: number;
+  }>;
 }
 
 // === v0.6.3: Inferred edge CRUD ===
@@ -594,23 +710,23 @@ export function deleteInferredEdges(db: Database.Database): number {
 }
 
 export function getInferredEdges(db: Database.Database): EdgeRow[] {
-  return db.prepare(
-    "SELECT * FROM edges WHERE source = 'inferred' ORDER BY confidence DESC"
-  ).all() as EdgeRow[];
+  return db
+    .prepare("SELECT * FROM edges WHERE source = 'inferred' ORDER BY confidence DESC")
+    .all() as EdgeRow[];
 }
 
 export function getEdgesForCard(
   db: Database.Database,
   cardId: string,
-  source?: 'explicit' | 'inferred' | 'mention'
+  source?: 'explicit' | 'inferred' | 'mention',
 ): EdgeRow[] {
-  let query = "SELECT * FROM edges WHERE (from_id = ? OR to_id = ?)";
+  let query = 'SELECT * FROM edges WHERE (from_id = ? OR to_id = ?)';
   const params: unknown[] = [cardId, cardId];
   if (source) {
-    query += " AND source = ?";
+    query += ' AND source = ?';
     params.push(source);
   }
-  query += " ORDER BY confidence DESC";
+  query += ' ORDER BY confidence DESC';
   return db.prepare(query).all(...params) as EdgeRow[];
 }
 
@@ -618,30 +734,32 @@ export function updateEdgeSource(
   db: Database.Database,
   edgeIds: number[],
   newSource: 'explicit' | 'inferred',
-  newConfidence: number
+  newConfidence: number,
 ): number {
   if (edgeIds.length === 0) return 0;
   const placeholders = edgeIds.map(() => '?').join(',');
-  return db.prepare(
-    `UPDATE edges SET source = ?, confidence = ?, updated_at = ? WHERE id IN (${placeholders})`
-  ).run(newSource, newConfidence, new Date().toISOString(), ...edgeIds).changes;
+  return db
+    .prepare(
+      `UPDATE edges SET source = ?, confidence = ?, updated_at = ? WHERE id IN (${placeholders})`,
+    )
+    .run(newSource, newConfidence, new Date().toISOString(), ...edgeIds).changes;
 }
 
 export function deleteEdgesByIds(db: Database.Database, edgeIds: number[]): number {
   if (edgeIds.length === 0) return 0;
   const placeholders = edgeIds.map(() => '?').join(',');
-  return db.prepare(
-    `DELETE FROM edges WHERE id IN (${placeholders})`
-  ).run(...edgeIds).changes;
+  return db.prepare(`DELETE FROM edges WHERE id IN (${placeholders})`).run(...edgeIds).changes;
 }
 
 export function getOrphanEdges(db: Database.Database): EdgeRow[] {
-  return db.prepare(`
+  return db
+    .prepare(`
     SELECT e.* FROM edges e
     LEFT JOIN cards c1 ON e.from_id = c1.id
     LEFT JOIN cards c2 ON e.to_id = c2.id
     WHERE c1.id IS NULL OR c2.id IS NULL
-  `).all() as EdgeRow[];
+  `)
+    .all() as EdgeRow[];
 }
 
 /**
@@ -653,11 +771,13 @@ export function getOrphanEdges(db: Database.Database): EdgeRow[] {
  * inspection.
  */
 export function deleteOrphanEdges(db: Database.Database): number {
-  return db.prepare(`
+  return db
+    .prepare(`
     DELETE FROM edges
     WHERE from_id NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
        OR to_id   NOT IN (SELECT id FROM cards WHERE is_deleted = 0)
-  `).run().changes;
+  `)
+    .run().changes;
 }
 
 export interface ForgetResult {
@@ -667,9 +787,15 @@ export interface ForgetResult {
   message: string;
 }
 
-export function forgetMemory(db: Database.Database, memoryId: string, options: { reason?: string; branch?: string | null; sessionId?: string | null } = {}): ForgetResult {
+export function forgetMemory(
+  db: Database.Database,
+  memoryId: string,
+  options: { reason?: string; branch?: string | null; sessionId?: string | null } = {},
+): ForgetResult {
   const tx = db.transaction((): ForgetResult => {
-    const card = db.prepare("SELECT id, is_deleted FROM cards WHERE id = ?").get(memoryId) as { id: string; is_deleted: number } | undefined;
+    const card = db.prepare('SELECT id, is_deleted FROM cards WHERE id = ?').get(memoryId) as
+      | { id: string; is_deleted: number }
+      | undefined;
     if (!card) {
       return { success: false, memoryId, message: `Memory not found: ${memoryId}` };
     }
@@ -685,8 +811,11 @@ export function forgetMemory(db: Database.Database, memoryId: string, options: {
       return { success: true, memoryId, eventId, message: `Memory already forgotten: ${memoryId}` };
     }
 
-    db.prepare("UPDATE cards SET is_deleted = 1, updated_at = ? WHERE id = ?").run(new Date().toISOString(), memoryId);
-    db.prepare("DELETE FROM edges WHERE from_id = ? OR to_id = ?").run(memoryId, memoryId);
+    db.prepare('UPDATE cards SET is_deleted = 1, updated_at = ? WHERE id = ?').run(
+      new Date().toISOString(),
+      memoryId,
+    );
+    db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(memoryId, memoryId);
     deleteCardAliases(db, memoryId);
     deleteCardTags(db, memoryId);
     deleteCardPaths(db, memoryId);

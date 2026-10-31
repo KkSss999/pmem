@@ -44,7 +44,13 @@ export interface RecallQueryResult {
   mustRead: string[];
   dirty_flags_count: number;
   recent_updates: Array<{ action: string; summary: string | null; created_at: string }>;
-  recent_events?: Array<{ event_type: string; memory_id: string | null; branch: string | null; created_at: string; payload: string | null }>;
+  recent_events?: Array<{
+    event_type: string;
+    memory_id: string | null;
+    branch: string | null;
+    created_at: string;
+    payload: string | null;
+  }>;
   active_modules: string[];
   active_foundation: string[];
 
@@ -95,16 +101,19 @@ export interface RecallQueryResult {
   };
 }
 
-export function recallQuery(pmemPath: string, options?: {
-  budget?: number;
-  since?: string;
-  recent?: number;
-  noTraces?: boolean;
-  db?: Database.Database;
-  cwd?: string;
-  /** v1.1: when set, scoped events not visible to this principal are filtered out. */
-  principal?: string;
-}): RecallQueryResult {
+export function recallQuery(
+  pmemPath: string,
+  options?: {
+    budget?: number;
+    since?: string;
+    recent?: number;
+    noTraces?: boolean;
+    db?: Database.Database;
+    cwd?: string;
+    /** v1.1: when set, scoped events not visible to this principal are filtered out. */
+    principal?: string;
+  },
+): RecallQueryResult {
   const cwd = options?.cwd ?? process.cwd();
   const indexContent = readFile(path.join(pmemPath, 'index.md'));
   const stateContent = readFile(path.join(pmemPath, 'state.md'));
@@ -192,8 +201,9 @@ export function recallQuery(pmemPath: string, options?: {
   const traceDir = path.join(pmemPath, 'traces');
   if (!options?.noTraces && fileExists(traceDir)) {
     try {
-      const traceFiles = fs.readdirSync(traceDir)
-        .filter(f => f.endsWith('.md'))
+      const traceFiles = fs
+        .readdirSync(traceDir)
+        .filter((f) => f.endsWith('.md'))
         .sort((a, b) => b.localeCompare(a)); // Newest first
 
       const limit = options?.recent !== undefined ? options.recent : 5;
@@ -213,7 +223,7 @@ export function recallQuery(pmemPath: string, options?: {
               what_changed: parsed.whatChanged,
               decisions: parsed.decisions,
               architecture_notes: parsed.architectureNotes,
-              next: parsed.next
+              next: parsed.next,
             });
           }
         }
@@ -228,7 +238,7 @@ export function recallQuery(pmemPath: string, options?: {
     result.mustRead.push('.pmem/next.md');
     // Synthesize context summary from traces
     if (result.recent_traces && result.recent_traces.length > 0) {
-      result.context_summary = result.recent_traces.map(t => t.summary);
+      result.context_summary = result.recent_traces.map((t) => t.summary);
     } else {
       result.context_summary = [result.focus];
     }
@@ -243,30 +253,42 @@ export function recallQuery(pmemPath: string, options?: {
     if (options?.since) {
       sinceThreshold = parseSince(options.since);
       if (sinceThreshold === null) {
-        throw new Error(`Invalid --since format: "${options.since}". Use <N>h, <N>d, or <N>w (e.g. 24h, 7d, 1w).`);
+        throw new Error(
+          `Invalid --since format: "${options.since}". Use <N>h, <N>d, or <N>w (e.g. 24h, 7d, 1w).`,
+        );
       }
     }
 
     const activeCardsRaw = sinceThreshold
-      ? db.prepare(
-          "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0 AND updated_at >= ?"
-        ).all(sinceThreshold) as CardRow[]
-      : db.prepare(
-          "SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0"
-        ).all() as CardRow[];
+      ? (db
+          .prepare(
+            'SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0 AND updated_at >= ?',
+          )
+          .all(sinceThreshold) as CardRow[])
+      : (db
+          .prepare('SELECT * FROM cards WHERE is_deleted = 0 AND is_candidate = 0')
+          .all() as CardRow[]);
     // v1.1: never surface secret-sensitivity cards (even their file paths) in recall.
-    const activeCards = activeCardsRaw.filter(c => (c as any).sensitivity !== 'secret');
+    const activeCards = activeCardsRaw.filter((c) => (c as any).sensitivity !== 'secret');
 
-    const foundationalCards = activeCards.filter(c => foundationalTypes.includes(c.type));
-    result.active_foundation = foundationalCards.map(c => c.file_path);
+    const foundationalCards = activeCards.filter((c) => foundationalTypes.includes(c.type));
+    result.active_foundation = foundationalCards.map((c) => c.file_path);
     result.active_modules = result.active_foundation;
 
-    const foundationIds = new Set(foundationalCards.map(card => card.id));
+    const foundationIds = new Set(foundationalCards.map((card) => card.id));
     const recentCards = [...activeCards]
-      .filter(card => !foundationIds.has(card.id))
-      .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? '') || a.id.localeCompare(b.id))
+      .filter((card) => !foundationIds.has(card.id))
+      .sort(
+        (a, b) =>
+          (b.updated_at ?? '').localeCompare(a.updated_at ?? '') || a.id.localeCompare(b.id),
+      )
       .slice(0, 10);
-    const content = packContentSummaries(pmemPath, foundationalCards, recentCards, options?.budget ?? 2000);
+    const content = packContentSummaries(
+      pmemPath,
+      foundationalCards,
+      recentCards,
+      options?.budget ?? 2000,
+    );
     result.foundation_summaries = content.foundation;
     result.recent_summaries = content.recent;
     result.content_budget = content.budget;
@@ -277,24 +299,30 @@ export function recallQuery(pmemPath: string, options?: {
       result.mustRead.push(card.file_path);
     }
 
-    const dirtyFlagResult = db.prepare(
-      "SELECT COUNT(*) as count FROM dirty_flags WHERE resolved_at IS NULL"
-    ).get() as { count: number };
+    const dirtyFlagResult = db
+      .prepare('SELECT COUNT(*) as count FROM dirty_flags WHERE resolved_at IS NULL')
+      .get() as { count: number };
     result.dirty_flags_count = dirtyFlagResult.count;
 
-    const recentUpdates = db.prepare(
-      "SELECT action, summary, created_at FROM update_log ORDER BY created_at DESC LIMIT 5"
-    ).all() as Array<{ action: string; summary: string | null; created_at: string }>;
+    const recentUpdates = db
+      .prepare(
+        'SELECT action, summary, created_at FROM update_log ORDER BY created_at DESC LIMIT 5',
+      )
+      .all() as Array<{ action: string; summary: string | null; created_at: string }>;
     result.recent_updates = recentUpdates;
 
     const currentBranch = getCurrentBranch(cwd);
     const principal = options?.principal;
     result.recent_events = getRecentRuntimeEvents(db, 20)
-      .filter(e => !e.branch || !currentBranch || e.branch === currentBranch)
+      .filter((e) => !e.branch || !currentBranch || e.branch === currentBranch)
       // v1.1: enforce namespace isolation on scoped events when a principal is given.
-      .filter(e => !principal || isScopeVisible(e.scope ?? (e.branch ? `branch:${e.branch}` : 'project'), principal))
+      .filter(
+        (e) =>
+          !principal ||
+          isScopeVisible(e.scope ?? (e.branch ? `branch:${e.branch}` : 'project'), principal),
+      )
       .slice(0, 5)
-      .map(e => ({
+      .map((e) => ({
         event_type: e.event_type,
         memory_id: e.memory_id,
         branch: e.branch,
@@ -303,20 +331,24 @@ export function recallQuery(pmemPath: string, options?: {
       }));
 
     // Load active architecture modules
-    const modules = db.prepare(
-      "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'module' AND is_deleted = 0 AND is_candidate = 0"
-    ).all() as Array<TrustCardRow>;
+    const modules = db
+      .prepare(
+        "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'module' AND is_deleted = 0 AND is_candidate = 0",
+      )
+      .all() as Array<TrustCardRow>;
 
     result.architecture = modules
-      .filter(m => m.sensitivity !== 'secret')
-      .map(m => {
-        const paths = db.prepare("SELECT path FROM paths WHERE card_id = ? AND relation = 'source_file'").all(m.id) as Array<{ path: string }>;
+      .filter((m) => m.sensitivity !== 'secret')
+      .map((m) => {
+        const paths = db
+          .prepare("SELECT path FROM paths WHERE card_id = ? AND relation = 'source_file'")
+          .all(m.id) as Array<{ path: string }>;
         return {
           id: m.id,
           title: m.title,
           summary: m.summary,
           file_path: m.file_path,
-          source_files: paths.map(p => p.path),
+          source_files: paths.map((p) => p.path),
           confidence: m.confidence,
           superseded_by: m.superseded_by,
           classification: m.classification,
@@ -326,13 +358,15 @@ export function recallQuery(pmemPath: string, options?: {
       });
 
     // Load active decisions
-    const decs = db.prepare(
-      "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'decision' AND is_deleted = 0 AND is_candidate = 0"
-    ).all() as Array<TrustCardRow>;
+    const decs = db
+      .prepare(
+        "SELECT id, title, summary, file_path, confidence, superseded_by, classification, trust_label, sensitivity FROM cards WHERE type = 'decision' AND is_deleted = 0 AND is_candidate = 0",
+      )
+      .all() as Array<TrustCardRow>;
 
     result.decisions = decs
-      .filter(d => d.sensitivity !== 'secret')
-      .map(d => ({
+      .filter((d) => d.sensitivity !== 'secret')
+      .map((d) => ({
         id: d.id,
         title: d.title,
         summary: d.summary,
@@ -343,14 +377,13 @@ export function recallQuery(pmemPath: string, options?: {
         trust_label: d.trust_label,
         sensitivity: d.sensitivity,
       }));
-
   } catch (err: any) {
     // DB error fallback
   }
 
   // Synthesize context summary from traces
   if (result.recent_traces && result.recent_traces.length > 0) {
-    result.context_summary = result.recent_traces.map(t => t.summary);
+    result.context_summary = result.recent_traces.map((t) => t.summary);
   } else {
     result.context_summary = [result.focus];
   }
@@ -383,10 +416,14 @@ function parseSince(since: string): string | null {
   if (!match) return null;
   const value = parseInt(match[1], 10);
   const unit = match[2];
-  const ms = unit === 'h' ? value * 3600000
-           : unit === 'd' ? value * 86400000
-           : unit === 'w' ? value * 604800000
-           : 0;
+  const ms =
+    unit === 'h'
+      ? value * 3600000
+      : unit === 'd'
+        ? value * 86400000
+        : unit === 'w'
+          ? value * 604800000
+          : 0;
   if (ms === 0) return null;
   return new Date(Date.now() - ms).toISOString();
 }
@@ -449,17 +486,21 @@ function summarizeCard(pmemPath: string, card: CardRow): RecallContentSummary {
       const body = source.replace(/^---\n[\s\S]*?\n---\n?/, '');
       const paragraphs = body
         .split(/\n\s*\n/)
-        .map(part => sanitizeContent(part.replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '')))
+        .map((part) => sanitizeContent(part.replace(/^#+\s*/gm, '').replace(/^[-*]\s+/gm, '')))
         .filter(Boolean);
-      const paragraph = paragraphs.find(part => part !== card.title) ?? paragraphs[0];
-      if (paragraph) result.snippet = paragraph.length > 420 ? `${paragraph.slice(0, 417).trimEnd()}...` : paragraph;
+      const paragraph = paragraphs.find((part) => part !== card.title) ?? paragraphs[0];
+      if (paragraph)
+        result.snippet =
+          paragraph.length > 420 ? `${paragraph.slice(0, 417).trimEnd()}...` : paragraph;
     }
   }
   return result;
 }
 
-const SENSITIVE_VALUE_RE = /(\b(?:api[-_ ]?key|secret(?:[-_ ]?key)?|password|passwd|token|authorization|bearer)\s*[:=]\s*["'`]?)([^\s,;"'`]+)/gi;
-const KNOWN_TOKEN_RE = /\b(?:sk|rk)-[A-Za-z0-9]{16,}\b|\bgh[pousr]_[A-Za-z0-9_]{20,}\b|\bAKIA[0-9A-Z]{16}\b/g;
+const SENSITIVE_VALUE_RE =
+  /(\b(?:api[-_ ]?key|secret(?:[-_ ]?key)?|password|passwd|token|authorization|bearer)\s*[:=]\s*["'`]?)([^\s,;"'`]+)/gi;
+const KNOWN_TOKEN_RE =
+  /\b(?:sk|rk)-[A-Za-z0-9]{16,}\b|\bgh[pousr]_[A-Za-z0-9_]{20,}\b|\bAKIA[0-9A-Z]{16}\b/g;
 
 function sanitizeContent(value: string): string {
   return value

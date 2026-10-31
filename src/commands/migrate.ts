@@ -1,7 +1,27 @@
 import * as path from 'path';
-import { loadManifest, saveManifest, getDefaultManifest, getDefaultManifestV03 } from '../core/manifest';
+import {
+  loadManifest,
+  saveManifest,
+  getDefaultManifest,
+  getDefaultManifestV03,
+} from '../core/manifest';
 import { ensureDir, copyFile, readFile, writeFile, atomicWrite, listFiles } from '../core/fs';
-import { openMaintenanceDatabase, createSchema, createFTS5, setSchemaVersion, closeDatabase, upsertCard, deleteCardEdges, insertEdge, deleteCardAliases, insertAlias, deleteCardTags, insertTag, deleteCardPaths, insertPath } from '../runtime/maintenance';
+import {
+  openMaintenanceDatabase,
+  createSchema,
+  createFTS5,
+  setSchemaVersion,
+  closeDatabase,
+  upsertCard,
+  deleteCardEdges,
+  insertEdge,
+  deleteCardAliases,
+  insertAlias,
+  deleteCardTags,
+  insertTag,
+  deleteCardPaths,
+  insertPath,
+} from '../runtime/maintenance';
 import { computeCardHashes, tokenCount, sectionCount } from '../core/hash';
 import { parseFrontmatter } from '../core/yaml';
 import { Manifest, ManifestV03, MigrationRecord, CardRow, CardFrontmatter } from '../types';
@@ -104,7 +124,8 @@ function executeMigration(pmemPath: string, manifest: Manifest, from: string, to
 
     // Preserve user-customized fields from old manifest
     if (manifest.project?.name) newManifest.project.name = manifest.project.name;
-    if (manifest.integrations?.active) newManifest.integrations.active = manifest.integrations.active;
+    if (manifest.integrations?.active)
+      newManifest.integrations.active = manifest.integrations.active;
 
     // Record migration
     const migrationRecord: MigrationRecord = {
@@ -183,7 +204,10 @@ function migrate02to03(pmemPath: string, manifest: Manifest): void {
   console.log('  Legacy JSON indexes retained at .pmem/indexes/');
 }
 
-function populateSqliteFromCards(pmemPath: string, db: import('../runtime/maintenance').MaintenanceDatabase): void {
+function populateSqliteFromCards(
+  pmemPath: string,
+  db: import('../runtime/maintenance').MaintenanceDatabase,
+): void {
   const cardFiles = listFiles(pmemPath, /\.md$/);
   const now = new Date().toISOString();
   let cardCount = 0;
@@ -192,7 +216,12 @@ function populateSqliteFromCards(pmemPath: string, db: import('../runtime/mainte
   const migrateAll = db.transaction(() => {
     for (const file of cardFiles) {
       // Skip files in backups/, indexes/, integrations/
-      if (file.includes('/backups/') || file.includes('/indexes/') || file.includes('/integrations/')) continue;
+      if (
+        file.includes('/backups/') ||
+        file.includes('/indexes/') ||
+        file.includes('/integrations/')
+      )
+        continue;
 
       const content = readFile(file);
       if (!content) continue;
@@ -205,10 +234,12 @@ function populateSqliteFromCards(pmemPath: string, db: import('../runtime/mainte
       const cardType: string = typeof data.type === 'string' ? data.type : 'module';
       const status: string | null = typeof data.status === 'string' ? data.status : null;
       const priority: string | null = typeof data.priority === 'string' ? data.priority : null;
-      const schemaVer: string | null = typeof data.schema_version === 'string' ? data.schema_version : null;
+      const schemaVer: string | null =
+        typeof data.schema_version === 'string' ? data.schema_version : null;
       const cardVer: number = typeof data.version === 'number' ? data.version : 1;
       const updatedAt: string | null = typeof data.updated === 'string' ? data.updated : null;
-      const lastVerifiedAt: string | null = typeof data.last_verified === 'string' ? data.last_verified : null;
+      const lastVerifiedAt: string | null =
+        typeof data.last_verified === 'string' ? data.last_verified : null;
 
       // Extract title from first # heading in body
       let title: string = id;
@@ -349,7 +380,8 @@ function addSchemaVersionToCards(pmemPath: string): void {
 
   for (const file of cardFiles) {
     // Skip files in backups/, indexes/, integrations/
-    if (file.includes('/backups/') || file.includes('/indexes/') || file.includes('/integrations/')) continue;
+    if (file.includes('/backups/') || file.includes('/indexes/') || file.includes('/integrations/'))
+      continue;
 
     let content = readFile(file);
     if (!content) continue;
@@ -376,7 +408,7 @@ function addSchemaVersionToCards(pmemPath: string): void {
 
 function countCards(pmemPath: string): number {
   const cardFiles = listFiles(pmemPath, /\.md$/);
-  return cardFiles.filter(f =>
-    !f.includes('/backups/') && !f.includes('/indexes/') && !f.includes('/integrations/')
+  return cardFiles.filter(
+    (f) => !f.includes('/backups/') && !f.includes('/indexes/') && !f.includes('/integrations/'),
   ).length;
 }

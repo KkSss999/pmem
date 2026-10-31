@@ -90,11 +90,7 @@ export interface ContextPackEvidence {
 }
 
 export type ContextPackOmissionKind = 'record' | 'evidence' | 'query';
-export type ContextPackOmissionReason =
-  | 'budget'
-  | 'duplicate'
-  | 'invalid'
-  | 'orphaned-record';
+export type ContextPackOmissionReason = 'budget' | 'duplicate' | 'invalid' | 'orphaned-record';
 
 export interface ContextPackOmission {
   kind: ContextPackOmissionKind;

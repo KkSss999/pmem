@@ -41,7 +41,11 @@ export type {
   MemoryHistoryResult,
 } from '../runtime';
 export { applyRepairPlan, buildRepairPlan } from '../runtime';
-export { createRollbackCheckpoint, restoreRollbackCheckpoint, validateRollbackCheckpoint } from '../runtime';
+export {
+  createRollbackCheckpoint,
+  restoreRollbackCheckpoint,
+  validateRollbackCheckpoint,
+} from '../runtime';
 export type {
   RepairApplyFailure,
   RepairApplyResult,
@@ -117,11 +121,7 @@ export type {
   GoldenRunnerStatus,
   GoldenRetrievalCaptureInput,
 } from '../core/semantic';
-export {
-  createDefaultRetrieverRegistry,
-  createQueryPlan,
-  RetrieverRegistry,
-} from '../query';
+export { createDefaultRetrieverRegistry, createQueryPlan, RetrieverRegistry } from '../query';
 export type {
   QueryExecutionResult,
   QueryPlan,

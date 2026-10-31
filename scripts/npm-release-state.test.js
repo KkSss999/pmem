@@ -2,24 +2,17 @@
 
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
-const {
-  classifyRegistryState,
-  hasVersion,
-  packagePath,
-} = require('./npm-release-state');
+const { classifyRegistryState, hasVersion, packagePath } = require('./npm-release-state');
 
 const documentWith = (...versions) => ({
   status: 200,
-  body: { versions: Object.fromEntries(versions.map(version => [version, { version }])) },
+  body: { versions: Object.fromEntries(versions.map((version) => [version, { version }])) },
 });
 const notFound = { status: 404, body: { error: 'Not found' } };
 
 describe('npm release registry state', () => {
   it('reports public only when the exact version is on the public read side', () => {
-    assert.equal(
-      classifyRegistryState(documentWith('1.2.0'), notFound, '1.2.0'),
-      'public',
-    );
+    assert.equal(classifyRegistryState(documentWith('1.2.0'), notFound, '1.2.0'), 'public');
   });
 
   it('reports accepted_pending when publish reached the write side but public reads still return 404', () => {

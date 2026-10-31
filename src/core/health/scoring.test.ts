@@ -9,7 +9,12 @@ function issue(type: string, severity: VerifyIssue['severity'], cardId?: string)
 
 describe('v1.2 health scoring', () => {
   it('keeps one-warning compatibility at 95', () => {
-    const result = buildVerifyResult([issue('card_too_large', 'warning', 'task.large')], null, 'missing', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [issue('card_too_large', 'warning', 'task.large')],
+      null,
+      'missing',
+      '/tmp/baseline',
+    );
     assert.equal(result.score, 95);
     assert.equal(result.overall_score, 95);
     assert.equal(result.change_score, null);
@@ -22,16 +27,27 @@ describe('v1.2 health scoring', () => {
   });
 
   it('exposes additive conflict, stability, and quality lenses without changing the overall score', () => {
-    const result = buildVerifyResult([
-      issue('conflicting_classifications', 'warning', 'decision.auth'),
-      issue('stale_memory', 'warning', 'module.runtime'),
-      issue('card_too_large', 'warning', 'module.large'),
-    ], null, 'missing', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [
+        issue('conflicting_classifications', 'warning', 'decision.auth'),
+        issue('stale_memory', 'warning', 'module.runtime'),
+        issue('card_too_large', 'warning', 'module.large'),
+      ],
+      null,
+      'missing',
+      '/tmp/baseline',
+    );
 
     assert.equal(result.score, 85);
     assert.equal(result.overall_score, 85);
     assert.deepEqual(Object.keys(result.dimensions).sort(), [
-      'conflict', 'correctness', 'freshness', 'metadata', 'quality', 'semantic_readiness', 'stability',
+      'conflict',
+      'correctness',
+      'freshness',
+      'metadata',
+      'quality',
+      'semantic_readiness',
+      'stability',
     ]);
     assert.equal(result.dimensions.conflict.issue_count, 1);
     assert.equal(result.dimensions.conflict.score, 95);
@@ -45,7 +61,9 @@ describe('v1.2 health scoring', () => {
   });
 
   it('uses diminishing capped penalties for large historical debt', () => {
-    const issues = Array.from({ length: 100 }, (_, index) => issue('stale_memory', 'warning', `module.${index}`));
+    const issues = Array.from({ length: 100 }, (_, index) =>
+      issue('stale_memory', 'warning', `module.${index}`),
+    );
     const result = buildVerifyResult(issues, null, 'missing', '/tmp/baseline');
     assert.equal(result.score, 80);
     assert.ok(result.score > 0);
@@ -69,9 +87,21 @@ describe('v1.2 health scoring', () => {
       schema_version: 1 as const,
       created_at: new Date(0).toISOString(),
       project: 'fixture',
-      entries: [{ fingerprint: oldAggregated.fingerprint!, severity: 'warning' as const, dimension: oldAggregated.dimension!, evidence_count: 1 }],
+      entries: [
+        {
+          fingerprint: oldAggregated.fingerprint!,
+          severity: 'warning' as const,
+          dimension: oldAggregated.dimension!,
+          evidence_count: 1,
+        },
+      ],
     };
-    const result = buildVerifyResult([old, issue('card_too_large', 'warning', 'task.new')], baseline, 'loaded', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [old, issue('card_too_large', 'warning', 'task.new')],
+      baseline,
+      'loaded',
+      '/tmp/baseline',
+    );
     assert.equal(result.change_score, 95);
     assert.equal(result.baseline.historical, 1);
     assert.equal(result.baseline.new, 1);
@@ -82,26 +112,44 @@ describe('v1.2 health scoring', () => {
       schema_version: 1 as const,
       created_at: new Date(0).toISOString(),
       project: 'fixture',
-      entries: [{ fingerprint: 'orphan_edges:global', severity: 'warning' as const, dimension: 'correctness' as const, evidence_count: 1 }],
+      entries: [
+        {
+          fingerprint: 'orphan_edges:global',
+          severity: 'warning' as const,
+          dimension: 'correctness' as const,
+          evidence_count: 1,
+        },
+      ],
     };
-    const result = buildVerifyResult([
-      { ...issue('orphan_edges', 'warning'), evidence_count: 100 },
-    ], baseline, 'loaded', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [{ ...issue('orphan_edges', 'warning'), evidence_count: 100 }],
+      baseline,
+      'loaded',
+      '/tmp/baseline',
+    );
     assert.equal(result.change_score, 95);
     assert.equal(result.baseline.historical, 0);
     assert.equal(result.baseline.new, 1);
   });
 
   it('keeps error pass/fail semantics', () => {
-    const result = buildVerifyResult([issue('corrupt_database', 'error')], null, 'missing', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [issue('corrupt_database', 'error')],
+      null,
+      'missing',
+      '/tmp/baseline',
+    );
     assert.equal(result.passed, false);
     assert.equal(result.score, 70);
   });
 
   it('prefers an explicit new dimension over the legacy type mapping', () => {
-    const result = buildVerifyResult([
-      { ...issue('new_conflict_rule', 'warning', 'memory.a'), dimension: 'conflict' },
-    ], null, 'missing', '/tmp/baseline');
+    const result = buildVerifyResult(
+      [{ ...issue('new_conflict_rule', 'warning', 'memory.a'), dimension: 'conflict' }],
+      null,
+      'missing',
+      '/tmp/baseline',
+    );
     assert.equal(result.dimensions.conflict.issue_count, 1);
     assert.equal(result.dimensions.conflict.score, 95);
   });

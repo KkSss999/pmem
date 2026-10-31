@@ -6,7 +6,9 @@ import * as path from 'node:path';
 import { readHealthBaseline, writeHealthBaseline } from './baseline';
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
 
 describe('health baseline', () => {
   it('is missing until explicitly written and round-trips accepted issues', () => {
@@ -15,7 +17,19 @@ describe('health baseline', () => {
     const pmemPath = path.join(root, '.pmem');
     fs.mkdirSync(pmemPath);
     assert.equal(readHealthBaseline(pmemPath).status, 'missing');
-    writeHealthBaseline(pmemPath, [{ severity: 'warning', type: 'stale_memory', card_id: 'module.core', message: 'x', fix: 'x' }], new Date('2026-01-01T00:00:00Z'));
+    writeHealthBaseline(
+      pmemPath,
+      [
+        {
+          severity: 'warning',
+          type: 'stale_memory',
+          card_id: 'module.core',
+          message: 'x',
+          fix: 'x',
+        },
+      ],
+      new Date('2026-01-01T00:00:00Z'),
+    );
     const loaded = readHealthBaseline(pmemPath);
     assert.equal(loaded.status, 'loaded');
     assert.equal(loaded.value?.entries.length, 1);
@@ -40,7 +54,10 @@ describe('health baseline', () => {
     fs.mkdirSync(source);
     fs.mkdirSync(target);
     writeHealthBaseline(source, []);
-    fs.copyFileSync(path.join(source, 'health-baseline.json'), path.join(target, 'health-baseline.json'));
+    fs.copyFileSync(
+      path.join(source, 'health-baseline.json'),
+      path.join(target, 'health-baseline.json'),
+    );
     assert.equal(readHealthBaseline(target).status, 'invalid');
   });
 });

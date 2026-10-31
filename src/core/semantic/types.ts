@@ -5,6 +5,13 @@ export const DEFAULT_MAX_MODEL_TOKENS = 512;
 export const DEFAULT_CHUNK_TOKEN_BUDGET = 480;
 export const SEMANTIC_PIPELINE_VERSION = 2;
 
+/**
+ * ONNX quantization artifact for the pinned model. `q8` is the default since
+ * v1.3.6; `uint8` stays supported so existing project caches keep working
+ * without a re-download or a re-index.
+ */
+export type SemanticDtype = 'q8' | 'uint8';
+
 export type SemanticBuildStatus = 'none' | 'complete' | 'partial';
 
 export interface SemanticCardDocument {

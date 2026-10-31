@@ -23,17 +23,40 @@ function makeProject(): { root: string; pmemPath: string } {
 
 function card(id: string, sensitivity: string | null): CardRow {
   return {
-    id, type: 'decision', title: `Title ${id}`, status: 'active', priority: null,
-    file_path: `.pmem/decisions/${id}.md`, summary: `s ${id}`, schema_version: null, card_version: 1,
-    created_at: null, updated_at: new Date().toISOString(), last_verified_at: null,
-    file_hash: `h-${id}`, frontmatter_hash: `fm-${id}`, body_hash: `b-${id}`,
-    token_count: 1, section_count: 1, is_deleted: 0, is_candidate: 0, sensitivity,
+    id,
+    type: 'decision',
+    title: `Title ${id}`,
+    status: 'active',
+    priority: null,
+    file_path: `.pmem/decisions/${id}.md`,
+    summary: `s ${id}`,
+    schema_version: null,
+    card_version: 1,
+    created_at: null,
+    updated_at: new Date().toISOString(),
+    last_verified_at: null,
+    file_hash: `h-${id}`,
+    frontmatter_hash: `fm-${id}`,
+    body_hash: `b-${id}`,
+    token_count: 1,
+    section_count: 1,
+    is_deleted: 0,
+    is_candidate: 0,
+    sensitivity,
   } as CardRow;
 }
 
 function edge(from: string, to: string): EdgeRow {
   const now = new Date().toISOString();
-  return { from_id: from, to_id: to, type: 'relates_to', source: 'explicit', confidence: 1.0, created_at: now, updated_at: now } as EdgeRow;
+  return {
+    from_id: from,
+    to_id: to,
+    type: 'relates_to',
+    source: 'explicit',
+    confidence: 1.0,
+    created_at: now,
+    updated_at: now,
+  } as EdgeRow;
 }
 
 describe('related secret-sensitivity filtering', () => {
@@ -57,11 +80,16 @@ describe('related secret-sensitivity filtering', () => {
     insertEdge(db, edge('decision.main', 'decision.secret'));
 
     const result = relatedQuery(pmemPath, 'decision.main', { db });
-    const allTargets = Object.values(result.edges_by_type).flat().map(e => e.target_id);
+    const allTargets = Object.values(result.edges_by_type)
+      .flat()
+      .map((e) => e.target_id);
     assert.ok(allTargets.includes('decision.public'), 'public target present');
     assert.ok(!allTargets.includes('decision.secret'), 'secret target must be omitted');
     // secret title must not appear anywhere in the serialized result
-    assert.ok(!JSON.stringify(result).includes('Title decision.secret'), 'secret title must not leak');
+    assert.ok(
+      !JSON.stringify(result).includes('Title decision.secret'),
+      'secret title must not leak',
+    );
     assert.strictEqual(result.total_edges, 1, 'total_edges counts only visible edges');
     db.close();
   });

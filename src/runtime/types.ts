@@ -1,15 +1,44 @@
 import * as path from 'path';
 import type { ContextPack, PackContextOptions } from '../context-pack';
-import type { MemoryBackend, MemoryDiffResult, MemoryEvent, MemoryEventType, MemoryHistoryOptions, MemoryHistoryResult, MemorySchemaRegistry } from './model';
+import type {
+  MemoryBackend,
+  MemoryDiffResult,
+  MemoryEvent,
+  MemoryEventType,
+  MemoryHistoryOptions,
+  MemoryHistoryResult,
+  MemorySchemaRegistry,
+} from './model';
 import type { QueryExecutionResult, QueryPlan } from '../query';
 
 // Keep the historical runtime import path stable while the canonical model
 // lives in a backend-neutral module.
-export type { MemoryBackend, MemoryDiffChange, MemoryDiffResult, MemoryDiffStatus, MemoryEvent, MemoryEventType, MemoryHistoryEntry, MemoryHistoryOptions, MemoryHistoryResult, MemorySchemaRegistry } from './model';
+export type {
+  MemoryBackend,
+  MemoryDiffChange,
+  MemoryDiffResult,
+  MemoryDiffStatus,
+  MemoryEvent,
+  MemoryEventType,
+  MemoryHistoryEntry,
+  MemoryHistoryOptions,
+  MemoryHistoryResult,
+  MemorySchemaRegistry,
+} from './model';
 
 /** Runtime has no built-in product/domain presets; extensions may name one. */
 export type RuntimePreset = string & {};
-export type MemoryScopeKind = 'system' | 'user' | 'application' | 'workspace' | 'agent' | 'task' | 'session' | 'private' | 'shared' | (string & {});
+export type MemoryScopeKind =
+  | 'system'
+  | 'user'
+  | 'application'
+  | 'workspace'
+  | 'agent'
+  | 'task'
+  | 'session'
+  | 'private'
+  | 'shared'
+  | (string & {});
 
 export interface NamespaceAddress {
   systemId?: string;
@@ -46,10 +75,18 @@ export interface RuntimeConfig {
 }
 
 export type MemoryCapability =
-  | 'memory.read' | 'memory.search' | 'memory.observe'
-  | 'memory.propose' | 'memory.commit' | 'memory.amend'
-  | 'memory.supersede' | 'memory.forget' | 'memory.purge'
-  | 'memory.share' | 'memory.export' | 'memory.admin';
+  | 'memory.read'
+  | 'memory.search'
+  | 'memory.observe'
+  | 'memory.propose'
+  | 'memory.commit'
+  | 'memory.amend'
+  | 'memory.supersede'
+  | 'memory.forget'
+  | 'memory.purge'
+  | 'memory.share'
+  | 'memory.export'
+  | 'memory.admin';
 
 export interface CapabilitySet {
   principal: string;
@@ -89,7 +126,12 @@ export interface RuntimeLegacyAdapter {
   expireEvents(): void;
   mergeBranchMemory(sourceBranch: string, targetBranch: string): number;
   /** Best-effort post-write incremental semantic maintenance. */
-  refreshSemanticIndex?(mode: 'full' | 'incremental'): Promise<{ status: 'ready' | 'unavailable' | 'degraded'; indexedCards?: number; indexedChunks?: number; reason?: string }>;
+  refreshSemanticIndex?(mode: 'full' | 'incremental'): Promise<{
+    status: 'ready' | 'unavailable' | 'degraded';
+    indexedCards?: number;
+    indexedChunks?: number;
+    reason?: string;
+  }>;
 }
 
 // Legacy response DTOs remain intentionally opaque to the canonical Runtime.

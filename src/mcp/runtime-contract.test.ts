@@ -21,11 +21,16 @@ describe('MCP canonical Runtime boundary', () => {
     const registry = new SchemaRegistry();
     // SchemaRegistry.register() returns `this` for fluent registration; the
     // Runtime port only needs the read-only resolve/list surface here.
-    const schema = { resolve: (ref: { id: string; version: string }) => registry.resolve(ref), list: () => registry.list() };
+    const schema = {
+      resolve: (ref: { id: string; version: string }) => registry.resolve(ref),
+      list: () => registry.list(),
+    };
     const runtime = await Pmem.open({ root, backend, schema });
     try {
       assert.equal(runtime.backend, backend);
-      const response = await handleMcpTool(runtime, 'readonly', 'pmem_ask', { query: 'canonical boundary' });
+      const response = await handleMcpTool(runtime, 'readonly', 'pmem_ask', {
+        query: 'canonical boundary',
+      });
       assert.equal(response.isError, undefined);
       assert.equal(response.content[0]?.type, 'text');
       assert.match(response.content[0]?.text ?? '', /canonical boundary/);

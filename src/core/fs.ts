@@ -113,7 +113,9 @@ export function acquireLock(lockPath: string, timeoutMs: number = 3000): boolean
       }
       // Active lock, wait and retry
       const waitUntil = Date.now() + 50 + Math.random() * 50;
-      while (Date.now() < waitUntil) { /* spin */ }
+      while (Date.now() < waitUntil) {
+        /* spin */
+      }
     }
   }
   return false;
@@ -259,7 +261,11 @@ export function getLockAge(lockPath: string): number | null {
 }
 
 // NEW: Get lock status for diagnostics
-export function getLockStatus(lockPath: string): { exists: boolean; stale: boolean; age: number | null } {
+export function getLockStatus(lockPath: string): {
+  exists: boolean;
+  stale: boolean;
+  age: number | null;
+} {
   const age = getLockAge(lockPath);
   if (age === null) return { exists: false, stale: false, age: null };
   return { exists: true, stale: age > 60000, age };
@@ -268,7 +274,10 @@ export function getLockStatus(lockPath: string): { exists: boolean; stale: boole
 // v0.6.4 polish 6: Richer lock info for doctor output (age in seconds, owner PID, stale flag).
 // PID is read from a `pid` file inside the lock directory if present (added in v0.6.4).
 // Older pmem versions that did not write the pid file will report owner_pid = null.
-export function getLockInfo(lockPath: string, staleAfterMs: number = 60000): {
+export function getLockInfo(
+  lockPath: string,
+  staleAfterMs: number = 60000,
+): {
   exists: boolean;
   is_stale: boolean;
   age_seconds: number | null;
@@ -277,7 +286,13 @@ export function getLockInfo(lockPath: string, staleAfterMs: number = 60000): {
 } {
   const age = getLockAge(lockPath);
   if (age === null) {
-    return { exists: false, is_stale: false, age_seconds: null, owner_pid: null, stale_threshold_seconds: Math.round(staleAfterMs / 1000) };
+    return {
+      exists: false,
+      is_stale: false,
+      age_seconds: null,
+      owner_pid: null,
+      stale_threshold_seconds: Math.round(staleAfterMs / 1000),
+    };
   }
   let owner_pid: number | null = null;
   const pidFile = path.join(lockPath, 'pid');

@@ -23,17 +23,40 @@ function makeProject(): string {
 
 function card(id: string, sensitivity: string | null, type = 'decision'): CardRow {
   return {
-    id, type, title: `Title ${id}`, status: 'active', priority: null,
-    file_path: `.pmem/decisions/${id}.md`, summary: `s ${id}`, schema_version: null, card_version: 1,
-    created_at: null, updated_at: new Date().toISOString(), last_verified_at: null,
-    file_hash: `h-${id}`, frontmatter_hash: `fm-${id}`, body_hash: `b-${id}`,
-    token_count: 1, section_count: 1, is_deleted: 0, is_candidate: 0, sensitivity,
+    id,
+    type,
+    title: `Title ${id}`,
+    status: 'active',
+    priority: null,
+    file_path: `.pmem/decisions/${id}.md`,
+    summary: `s ${id}`,
+    schema_version: null,
+    card_version: 1,
+    created_at: null,
+    updated_at: new Date().toISOString(),
+    last_verified_at: null,
+    file_hash: `h-${id}`,
+    frontmatter_hash: `fm-${id}`,
+    body_hash: `b-${id}`,
+    token_count: 1,
+    section_count: 1,
+    is_deleted: 0,
+    is_candidate: 0,
+    sensitivity,
   } as CardRow;
 }
 
 function edge(from: string, to: string, type = 'depends_on'): EdgeRow {
   const now = new Date().toISOString();
-  return { from_id: from, to_id: to, type, source: 'explicit', confidence: 1.0, created_at: now, updated_at: now } as EdgeRow;
+  return {
+    from_id: from,
+    to_id: to,
+    type,
+    source: 'explicit',
+    confidence: 1.0,
+    created_at: now,
+    updated_at: now,
+  } as EdgeRow;
 }
 
 /** Run fn with cwd set to `dir`, capturing console.log output; always restores cwd. */
@@ -41,7 +64,9 @@ function captureInDir(dir: string, fn: () => void): string {
   const lines: string[] = [];
   const origLog = console.log;
   const origCwd = process.cwd();
-  console.log = (...args: unknown[]) => { lines.push(args.map(String).join(' ')); };
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(' '));
+  };
   // traceCommand uses the legacy openDatabase() singleton and never closes it;
   // reset it around each run so tests don't reuse a prior test's DB handle.
   closeDatabase();
@@ -67,7 +92,10 @@ describe('pmem trace (graph) secret-sensitivity filtering', () => {
     const out = captureInDir(root, () => traceCommand('decision.secret'));
     assert.match(out, /not found/);
     assert.ok(!out.includes('Title decision.secret'), 'secret title must not leak');
-    assert.ok(!out.includes('.pmem/decisions/decision.secret.md'), 'secret file path must not leak');
+    assert.ok(
+      !out.includes('.pmem/decisions/decision.secret.md'),
+      'secret file path must not leak',
+    );
     fs.rmSync(root, { recursive: true, force: true });
   });
 

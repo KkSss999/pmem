@@ -27,7 +27,7 @@ export async function captureCommand(options: {
       summary: options.summary,
       next: options.next,
       full: options.full,
-      force: options.force
+      force: options.force,
     });
 
     if (!result.success) {
@@ -46,11 +46,15 @@ export async function captureCommand(options: {
       // Auto-distill suggestion
       const distillDb = openDatabase(pmemPath);
       try {
-        const traceRow = distillDb.prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0").get() as { count: number };
+        const traceRow = distillDb
+          .prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0")
+          .get() as { count: number };
         const traceCount = traceRow?.count ?? 0;
         const urgency = getDistillUrgency(traceCount);
         if (urgency !== 'none') {
-          console.log(`ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`);
+          console.log(
+            `ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`,
+          );
         }
       } catch {
         // Silently ignore DB errors — distill is a suggestion only

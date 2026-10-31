@@ -53,11 +53,7 @@ describe('parseSimpleYaml', () => {
   });
 
   it('parses nested objects', () => {
-    const yaml = [
-      'person:',
-      '  name: John',
-      '  age: 30',
-    ].join('\n');
+    const yaml = ['person:', '  name: John', '  age: 30'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result, {
       person: { name: 'John', age: 30 },
@@ -65,11 +61,7 @@ describe('parseSimpleYaml', () => {
   });
 
   it('parses list items', () => {
-    const yaml = [
-      'tags:',
-      '  - tag1',
-      '  - tag2',
-    ].join('\n');
+    const yaml = ['tags:', '  - tag1', '  - tag2'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result, {
       tags: ['tag1', 'tag2'],
@@ -77,12 +69,7 @@ describe('parseSimpleYaml', () => {
   });
 
   it('parses list items with single nesting level', () => {
-    const yaml = [
-      'tags:',
-      '  - dev',
-      '  - js',
-      '  - ops',
-    ].join('\n');
+    const yaml = ['tags:', '  - dev', '  - js', '  - ops'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result, {
       tags: ['dev', 'js', 'ops'],
@@ -106,41 +93,25 @@ describe('parseSimpleYaml', () => {
   });
 
   it('parses depends_on with empty inline array', () => {
-    const yaml = [
-      'id: test.id',
-      'depends_on: []',
-    ].join('\n');
+    const yaml = ['id: test.id', 'depends_on: []'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result.depends_on, []);
   });
 
   it('parses depends_on with items via list syntax', () => {
-    const yaml = [
-      'depends_on:',
-      '  - card-a',
-      '  - card-b',
-    ].join('\n');
+    const yaml = ['depends_on:', '  - card-a', '  - card-b'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result.depends_on, ['card-a', 'card-b']);
   });
 
   it('handles Chinese text in values', () => {
-    const yaml = [
-      'aliases:',
-      '  - 项目入口',
-      '  - 主模块',
-    ].join('\n');
+    const yaml = ['aliases:', '  - 项目入口', '  - 主模块'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result.aliases, ['项目入口', '主模块']);
   });
 
   it('handles tags with mixed Chinese and English', () => {
-    const yaml = [
-      'tags:',
-      '  - 核心',
-      '  - frontend',
-      '  - 关键路径',
-    ].join('\n');
+    const yaml = ['tags:', '  - 核心', '  - frontend', '  - 关键路径'].join('\n');
     const result = parseSimpleYaml(yaml);
     assert.deepStrictEqual(result.tags, ['核心', 'frontend', '关键路径']);
   });
@@ -175,13 +146,7 @@ describe('parseFrontmatter', () => {
   });
 
   it('handles frontmatter with empty body', () => {
-    const content = [
-      '---',
-      'id: card.2',
-      'type: task',
-      '---',
-      '',
-    ].join('\n');
+    const content = ['---', 'id: card.2', 'type: task', '---', ''].join('\n');
     const result = parseFrontmatter(content);
     assert.ok(result !== null);
     assert.strictEqual(result!.data.id, 'card.2');

@@ -27,12 +27,17 @@ export function conservativeTokenCount(value: string): number {
 
 function resolveContentBudget(options: ChunkingOptions): number {
   const maxTokens = options.maxTokens ?? DEFAULT_MAX_MODEL_TOKENS;
-  const reservedTokens = options.reservedTokens ?? (DEFAULT_MAX_MODEL_TOKENS - DEFAULT_CHUNK_TOKEN_BUDGET);
+  const reservedTokens =
+    options.reservedTokens ?? DEFAULT_MAX_MODEL_TOKENS - DEFAULT_CHUNK_TOKEN_BUDGET;
   if (!Number.isInteger(maxTokens) || maxTokens < 2 || maxTokens > DEFAULT_MAX_MODEL_TOKENS) {
-    throw new Error(`Semantic maxTokens must be an integer between 2 and ${DEFAULT_MAX_MODEL_TOKENS}`);
+    throw new Error(
+      `Semantic maxTokens must be an integer between 2 and ${DEFAULT_MAX_MODEL_TOKENS}`,
+    );
   }
   if (!Number.isInteger(reservedTokens) || reservedTokens < 0 || reservedTokens >= maxTokens) {
-    throw new Error('Semantic reservedTokens must be a non-negative integer smaller than maxTokens');
+    throw new Error(
+      'Semantic reservedTokens must be a non-negative integer smaller than maxTokens',
+    );
   }
   return maxTokens - reservedTokens;
 }
@@ -117,7 +122,8 @@ function splitWithinBudget(value: string, maxBytes: number): string[] {
   let remaining = value.trim();
   while (remaining) {
     const hardEnd = takeUtf8Prefix(remaining, maxBytes);
-    if (hardEnd === 0) throw new Error('Semantic chunk budget is too small for one UTF-8 character');
+    if (hardEnd === 0)
+      throw new Error('Semantic chunk budget is too small for one UTF-8 character');
     const splitAt = chooseSplitPoint(remaining, hardEnd);
     const part = remaining.slice(0, splitAt).trim();
     if (part) parts.push(part);
@@ -126,18 +132,26 @@ function splitWithinBudget(value: string, maxBytes: number): string[] {
   return parts;
 }
 
-function contextPrefix(card: SemanticCardDocument, section: MarkdownSection, budget: number): string {
+function contextPrefix(
+  card: SemanticCardDocument,
+  section: MarkdownSection,
+  budget: number,
+): string {
   const separator = section.body ? '\n\n' : '';
   const firstBodySymbol = section.body ? Array.from(section.body)[0] : undefined;
   const minimumBodyBytes = firstBodySymbol ? conservativeTokenCount(firstBodySymbol) : 0;
-  const maxPrefixBytes = budget - conservativeTokenCount(`passage: ${separator}`) - minimumBodyBytes;
+  const maxPrefixBytes =
+    budget - conservativeTokenCount(`passage: ${separator}`) - minimumBodyBytes;
   const fields = [
     { label: 'Title', value: card.title, weight: 0.5 },
-    ...(section.headingPath.length > 0 ? [{ label: 'Section', value: section.headingPath.join(' > '), weight: 0.35 }] : []),
+    ...(section.headingPath.length > 0
+      ? [{ label: 'Section', value: section.headingPath.join(' > '), weight: 0.35 }]
+      : []),
     ...(card.summary?.trim() ? [{ label: 'Summary', value: card.summary, weight: 0.15 }] : []),
   ];
-  const overhead = fields.reduce((total, field) => total + conservativeTokenCount(`${field.label}: `), 0)
-    + Math.max(0, fields.length - 1);
+  const overhead =
+    fields.reduce((total, field) => total + conservativeTokenCount(`${field.label}: `), 0) +
+    Math.max(0, fields.length - 1);
   const valueBudget = maxPrefixBytes - overhead;
   if (valueBudget < fields.length || maxPrefixBytes <= 0) {
     throw new Error(`Semantic metadata for card ${card.id} cannot fit the configured chunk budget`);
@@ -146,23 +160,29 @@ function contextPrefix(card: SemanticCardDocument, section: MarkdownSection, bud
   let remainingBudget = valueBudget;
   const totalWeight = fields.reduce((total, field) => total + field.weight, 0);
   const lines = fields.map((field, index) => {
-    const share = index === fields.length - 1
-      ? remainingBudget
-      : Math.max(1, Math.floor(valueBudget * field.weight / totalWeight));
+    const share =
+      index === fields.length - 1
+        ? remainingBudget
+        : Math.max(1, Math.floor((valueBudget * field.weight) / totalWeight));
     const fieldBudget = Math.min(192, share);
     remainingBudget -= fieldBudget;
     return `${field.label}: ${truncateUtf8(field.value.trim().replace(/\s+/g, ' '), fieldBudget)}`;
   });
   const prefix = lines.join('\n');
   const bounded = truncateUtf8(prefix, maxPrefixBytes);
-  if (!bounded) throw new Error(`Semantic metadata for card ${card.id} cannot fit the configured chunk budget`);
+  if (!bounded)
+    throw new Error(`Semantic metadata for card ${card.id} cannot fit the configured chunk budget`);
   return bounded;
 }
 
 function compactContextLine(card: SemanticCardDocument): string | null {
   const normalized = (values: readonly string[] | undefined, maxItems: number): string[] =>
-    [...new Set((values ?? []).map(value => value.trim()).filter(Boolean))].sort().slice(0, maxItems);
-  const sourceNames = normalized(card.sourceFiles, 4).map(value => value.split('/').filter(Boolean).pop() ?? value);
+    [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))]
+      .sort()
+      .slice(0, maxItems);
+  const sourceNames = normalized(card.sourceFiles, 4).map(
+    (value) => value.split('/').filter(Boolean).pop() ?? value,
+  );
   const parts = [
     ...(card.type?.trim() ? [card.type.trim()] : []),
     ...normalized(card.aliases, 4),
@@ -177,7 +197,10 @@ function compactContextLine(card: SemanticCardDocument): string | null {
 }
 
 /** Deterministically split one card into stable, heading-aware E5 passages. */
-export function chunkCard(card: SemanticCardDocument, options: ChunkingOptions = {}): SemanticChunk[] {
+export function chunkCard(
+  card: SemanticCardDocument,
+  options: ChunkingOptions = {},
+): SemanticChunk[] {
   const budget = resolveContentBudget(options);
   const sections = parseSections(card.body);
   if (sections.length === 0 && (card.title.trim() || card.summary?.trim())) {
@@ -189,8 +212,10 @@ export function chunkCard(card: SemanticCardDocument, options: ChunkingOptions =
     const prefix = contextPrefix(card, section, budget);
     const separator = section.body ? '\n\n' : '';
     const fixedBytes = conservativeTokenCount(`passage: ${prefix}${separator}`);
-    if (fixedBytes >= budget && section.body) throw new Error(`Semantic metadata for card ${card.id} cannot leave room for body content`);
-    if (fixedBytes > budget) throw new Error(`Semantic metadata for card ${card.id} exceeds the chunk token budget`);
+    if (fixedBytes >= budget && section.body)
+      throw new Error(`Semantic metadata for card ${card.id} cannot leave room for body content`);
+    if (fixedBytes > budget)
+      throw new Error(`Semantic metadata for card ${card.id} exceeds the chunk token budget`);
     const bodies = section.body ? splitWithinBudget(section.body, budget - fixedBytes) : [''];
     for (const bodyPart of bodies) {
       const content = `${prefix}${bodyPart ? `\n\n${bodyPart}` : ''}`;
@@ -201,7 +226,8 @@ export function chunkCard(card: SemanticCardDocument, options: ChunkingOptions =
       const headingKey = section.headingPath.join(' > ');
       const chunkId = `${card.id}:${sha256(`${card.id}\0${headingKey}\0${ordinal}\0${contentHash}`).slice(0, 24)}`;
       const estimatedTokens = conservativeTokenCount(`passage: ${content}`);
-      if (estimatedTokens > budget) throw new Error(`Semantic chunk ${chunkId} exceeds the token budget`);
+      if (estimatedTokens > budget)
+        throw new Error(`Semantic chunk ${chunkId} exceeds the token budget`);
       chunks.push({
         chunkId,
         cardId: card.id,

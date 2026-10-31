@@ -1,12 +1,37 @@
 import * as path from 'path';
-import { readFile, writeFile, atomicWrite, acquireLock, releaseLock, fileExists, ensureDir } from '../core/fs';
+import {
+  readFile,
+  writeFile,
+  atomicWrite,
+  acquireLock,
+  releaseLock,
+  fileExists,
+  ensureDir,
+} from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
-import { insertDirtyFlag, resolveDirtyFlags, getUnresolvedDirtyFlags, getUnresolvedDirtyFlagsDetailed, insertUpdateLog, getRecentUpdateLogs, getActiveSession, getInferredEdges, updateEdgeSource, deleteEdgesByIds, closeDatabase } from '../runtime/maintenance';
+import {
+  insertDirtyFlag,
+  resolveDirtyFlags,
+  getUnresolvedDirtyFlags,
+  getUnresolvedDirtyFlagsDetailed,
+  insertUpdateLog,
+  getRecentUpdateLogs,
+  getActiveSession,
+  getInferredEdges,
+  updateEdgeSource,
+  deleteEdgesByIds,
+  closeDatabase,
+} from '../runtime/maintenance';
 import { openMaintenanceDatabase, type MaintenanceDatabase } from '../runtime/maintenance';
 import type { DirtyFlagDetailed } from '../runtime/maintenance';
 import { checkStaleMemory } from '../core/consistency';
-import type { AggregatedSuggestion, SuggestSummary, SuggestGroups, ConsistencyIssue } from '../types';
+import type {
+  AggregatedSuggestion,
+  SuggestSummary,
+  SuggestGroups,
+  ConsistencyIssue,
+} from '../types';
 
 import { writeManagedNext } from '../core/next';
 import { acknowledgeStatusChanges, statusQuery } from '../core/query/status';
@@ -67,7 +92,13 @@ export function updateCommand(options: {
 
   // --confirm or --force: write changes
   if (options.confirm || options.force) {
-    confirmUpdate(pmemPath, options.summary, options.next, options.refreshVerified, options.replaceManagedBlocks);
+    confirmUpdate(
+      pmemPath,
+      options.summary,
+      options.next,
+      options.refreshVerified,
+      options.replaceManagedBlocks,
+    );
     return;
   }
 
@@ -77,7 +108,7 @@ export function updateCommand(options: {
 
 export function markDirtyCommand(
   reason: string,
-  options: { auto?: boolean; cardIds?: string[]; format?: string } = {}
+  options: { auto?: boolean; cardIds?: string[]; format?: string } = {},
 ): void {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
@@ -85,24 +116,32 @@ export function markDirtyCommand(
 
   if (!fileExists(pmemPath)) {
     if (format === 'json') {
-      console.log(JSON.stringify({
-        command: 'mark-dirty',
-        state: 'no_pmem',
-        message: 'No .pmem directory found. Run `pmem init` first.',
-        changed_files: [],
-        marked_card_ids: [],
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            command: 'mark-dirty',
+            state: 'no_pmem',
+            message: 'No .pmem directory found. Run `pmem init` first.',
+            changed_files: [],
+            marked_card_ids: [],
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log('No .pmem directory found. Run `pmem init` first.');
     }
     return;
   }
 
-  const nextActions = [{
-    command: 'pmem update --suggest --format json',
-    reason: 'Scan for suggestions regardless',
-    blocking: false,
-  }];
+  const nextActions = [
+    {
+      command: 'pmem update --suggest --format json',
+      reason: 'Scan for suggestions regardless',
+      blocking: false,
+    },
+  ];
 
   // --card <id>: explicitly mark specific cards as dirty
   if (options.cardIds && options.cardIds.length > 0) {
@@ -119,7 +158,9 @@ export function markDirtyCommand(
       const notFoundIds: string[] = [];
 
       for (const cardId of options.cardIds) {
-        const card = db.prepare('SELECT id FROM cards WHERE id = ? AND is_deleted = 0').get(cardId) as { id: string } | undefined;
+        const card = db
+          .prepare('SELECT id FROM cards WHERE id = ? AND is_deleted = 0')
+          .get(cardId) as { id: string } | undefined;
         if (card) {
           insertDirtyFlag(db, 'card', cardId, reason, activeSession?.id);
           markedIds.push(cardId);
@@ -148,14 +189,20 @@ export function markDirtyCommand(
       closeDatabase();
 
       if (format === 'json') {
-        console.log(JSON.stringify({
-          command: 'mark-dirty',
-          state: 'marked_dirty',
-          reason,
-          marked_card_ids: markedIds,
-          not_found_ids: notFoundIds,
-          next_actions: nextActions,
-        }, null, 2));
+        console.log(
+          JSON.stringify(
+            {
+              command: 'mark-dirty',
+              state: 'marked_dirty',
+              reason,
+              marked_card_ids: markedIds,
+              not_found_ids: notFoundIds,
+              next_actions: nextActions,
+            },
+            null,
+            2,
+          ),
+        );
       }
 
       return;
@@ -172,7 +219,7 @@ export function markDirtyCommand(
       try {
         const db = openMaintenanceDatabase(pmemPath);
         const status = statusQuery(pmemPath, { cwd, db });
-        const changedFiles = status.changes.map(change => change.path);
+        const changedFiles = status.changes.map((change) => change.path);
 
         const activeSession = getActiveSession(db);
         const dirtyCards: string[] = [];
@@ -182,7 +229,13 @@ export function markDirtyCommand(
           for (const related of change.related_cards) {
             if (related.match_type !== 'exact') continue;
             if (!dirtyCards.includes(related.card_id)) {
-              insertDirtyFlag(db, 'card', related.card_id, 'file_changed: ' + change.path, activeSession?.id);
+              insertDirtyFlag(
+                db,
+                'card',
+                related.card_id,
+                'file_changed: ' + change.path,
+                activeSession?.id,
+              );
               dirtyCards.push(related.card_id);
             }
             acknowledgedPaths.add(change.path);
@@ -197,13 +250,19 @@ export function markDirtyCommand(
           // changes before this mutation runs.
           acknowledgeStatusChanges(pmemPath, [...acknowledgedPaths]);
           if (format === 'json') {
-            console.log(JSON.stringify({
-              command: 'mark-dirty --auto',
-              state: 'marked_dirty',
-              changed_files: changedFiles,
-              marked_card_ids: dirtyCards,
-              next_actions: nextActions,
-            }, null, 2));
+            console.log(
+              JSON.stringify(
+                {
+                  command: 'mark-dirty --auto',
+                  state: 'marked_dirty',
+                  changed_files: changedFiles,
+                  marked_card_ids: dirtyCards,
+                  next_actions: nextActions,
+                },
+                null,
+                2,
+              ),
+            );
           } else {
             console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
           }
@@ -212,23 +271,35 @@ export function markDirtyCommand(
           // No-op case: changed files exist but none map to known cards.
           // Exit 0 (NOT process.exit(1)) so documented `&&` chains keep running.
           if (format === 'json') {
-            console.log(JSON.stringify({
-              command: 'mark-dirty --auto',
-              state: 'no_related_cards',
-              changed_files: changedFiles,
-              marked_card_ids: [],
-              next_actions: nextActions,
-            }, null, 2));
+            console.log(
+              JSON.stringify(
+                {
+                  command: 'mark-dirty --auto',
+                  state: 'no_related_cards',
+                  changed_files: changedFiles,
+                  marked_card_ids: [],
+                  next_actions: nextActions,
+                },
+                null,
+                2,
+              ),
+            );
           } else {
             console.log('No related cards found for changed files.');
-            console.log('(If files changed were only .pmem/**/*.md or outside pmem scope, this is expected.)');
+            console.log(
+              '(If files changed were only .pmem/**/*.md or outside pmem scope, this is expected.)',
+            );
           }
           return;
         }
       } catch (err) {
-        try { closeDatabase(); } catch {}
+        try {
+          closeDatabase();
+        } catch {}
         console.error('Could not auto-detect changed files.');
-        console.error('Run `pmem status` to check change detection, or `pmem update --confirm` to manually record changes.');
+        console.error(
+          'Run `pmem status` to check change detection, or `pmem update --confirm` to manually record changes.',
+        );
         process.exit(2);
       }
     }
@@ -249,18 +320,26 @@ export function markDirtyCommand(
     saveManifest(pmemPath, manifest);
 
     if (format === 'json') {
-      console.log(JSON.stringify({
-        command: 'mark-dirty',
-        state: 'marked_dirty',
-        reason,
-        since: timestamp,
-        next_actions: nextActions,
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            command: 'mark-dirty',
+            state: 'marked_dirty',
+            reason,
+            since: timestamp,
+            next_actions: nextActions,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log(`Memory marked as dirty.`);
       console.log(`  Reason: ${reason}`);
       console.log(`  Since: ${timestamp}`);
-      console.log(`\nRun \`pmem update --auto\` to detect changes or \`pmem update --confirm\` to record them.`);
+      console.log(
+        `\nRun \`pmem update --auto\` to detect changes or \`pmem update --confirm\` to record them.`,
+      );
     }
   }
 
@@ -352,7 +431,9 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
         console.log('\nRecent update activity:');
         for (const log of recentLogs) {
           const icon = log.success ? '✓' : '✗';
-          console.log(`  ${icon} [${log.created_at.slice(0, 16)}] ${log.action}${log.summary ? ': ' + log.summary.slice(0, 60) : ''}`);
+          console.log(
+            `  ${icon} [${log.created_at.slice(0, 16)}] ${log.action}${log.summary ? ': ' + log.summary.slice(0, 60) : ''}`,
+          );
         }
       }
       closeDatabase();
@@ -362,11 +443,19 @@ function autoUpdate(pmemPath: string, manifest: unknown): void {
   }
 }
 
-function confirmUpdate(pmemPath: string, summary?: string, next?: string, refreshVerified?: string, replaceManagedBlocks?: boolean): void {
+function confirmUpdate(
+  pmemPath: string,
+  summary?: string,
+  next?: string,
+  refreshVerified?: string,
+  replaceManagedBlocks?: boolean,
+): void {
   const lockPath = path.join(pmemPath, '.lock');
   if (!acquireLock(lockPath)) {
     console.log('Failed to acquire pmem lock after 3s.');
-    console.log('  The lock at .pmem/.lock may be held by another pmem process, or a stale lock from a previous crash.');
+    console.log(
+      '  The lock at .pmem/.lock may be held by another pmem process, or a stale lock from a previous crash.',
+    );
     console.log('  → Run: pmem verify --fix-locks  (to check and clean stale locks)');
     console.log('  → Or:  pmem doctor              (to diagnose lock status)');
     console.log('  If no other pmem process is running, delete .pmem/.lock manually.');
@@ -396,14 +485,16 @@ function confirmUpdate(pmemPath: string, summary?: string, next?: string, refres
 
       // Find the next trace number
       const fs = require('fs');
-      const existingTraces = fs.readdirSync(traceDir)
-        .filter((f: string) => f.startsWith(today))
-        .length;
+      const existingTraces = fs
+        .readdirSync(traceDir)
+        .filter((f: string) => f.startsWith(today)).length;
 
       const traceNum = String(existingTraces + 1).padStart(3, '0');
       const traceFile = path.join(traceDir, `${today}-${traceNum}.md`);
 
-      atomicWrite(traceFile, `---
+      atomicWrite(
+        traceFile,
+        `---
 id: trace.${today}-${traceNum}
 type: trace
 created: ${today}
@@ -416,7 +507,8 @@ ${summary}
 
 ## Next
 ${next || 'Continue as planned.'}
-`);
+`,
+      );
       console.log(`Trace written: traces/${today}-${traceNum}.md`);
 
       // SQLite: resolve dirty flags and log the update (additive)
@@ -426,7 +518,14 @@ ${next || 'Continue as planned.'}
           const db = openMaintenanceDatabase(pmemPath);
           const activeSession = getActiveSession(db);
           resolveDirtyFlags(db, 'project', '.pmem');
-          insertUpdateLog(db, 'confirm_update', summary, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+          insertUpdateLog(
+            db,
+            'confirm_update',
+            summary,
+            activeSession?.id,
+            [`trace.${today}-${traceNum}`],
+            true,
+          );
           closeDatabase();
           sqliteLogged = true;
         } catch {
@@ -454,14 +553,19 @@ ${next || 'Continue as planned.'}
     // MUST run BEFORE rebuildCommand() so the updated frontmatter
     // is picked up by the rebuild and SQLite hashes stay in sync.
     if (refreshVerified) {
-      const cardIds = refreshVerified.split(',').map(s => s.trim()).filter(Boolean);
+      const cardIds = refreshVerified
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const refreshDbPath = path.join(pmemPath, 'pmem.db');
       if (fileExists(refreshDbPath) && cardIds.length > 0) {
         try {
-          const refreshDb = openMaintenanceDatabase(pmemPath);  // open once
+          const refreshDb = openMaintenanceDatabase(pmemPath); // open once
           const refreshed: string[] = [];
           for (const cardId of cardIds) {
-            const card = refreshDb.prepare('SELECT file_path FROM cards WHERE id = ?').get(cardId) as { file_path: string } | undefined;
+            const card = refreshDb
+              .prepare('SELECT file_path FROM cards WHERE id = ?')
+              .get(cardId) as { file_path: string } | undefined;
             if (card) {
               const cardFilePath = path.join(process.cwd(), card.file_path);
               if (fileExists(cardFilePath)) {
@@ -478,7 +582,10 @@ ${next || 'Continue as planned.'}
                     } else {
                       newFmText = frontmatterText.trimEnd() + `\nlast_verified: "${nowStr}"`;
                     }
-                    const newContent = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${newFmText}\n---`);
+                    const newContent = content.replace(
+                      /^---\n([\s\S]*?)\n---/,
+                      `---\n${newFmText}\n---`,
+                    );
                     writeFile(cardFilePath, newContent);
                     refreshed.push(cardId);
                   }
@@ -580,9 +687,11 @@ function aggregationKey(flag: DirtyFlagDetailed): string {
 function getLatestSessionEnd(pmemPath: string): string | null {
   try {
     const db = openMaintenanceDatabase(pmemPath);
-    const row = db.prepare(
-      "SELECT ended_at FROM sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
-    ).get() as { ended_at: string } | undefined;
+    const row = db
+      .prepare(
+        'SELECT ended_at FROM sessions WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1',
+      )
+      .get() as { ended_at: string } | undefined;
     return row?.ended_at ?? null;
   } catch {
     return null;
@@ -595,9 +704,11 @@ function getLatestSessionEnd(pmemPath: string): string | null {
 function getActiveSessionStart(pmemPath: string): string | null {
   try {
     const db = openMaintenanceDatabase(pmemPath);
-    const row = db.prepare(
-      "SELECT started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1"
-    ).get() as { started_at: string } | undefined;
+    const row = db
+      .prepare(
+        'SELECT started_at FROM sessions WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1',
+      )
+      .get() as { started_at: string } | undefined;
     return row?.started_at ?? null;
   } catch {
     return null;
@@ -608,7 +719,15 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) {
     return {
-      summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
+      summary: {
+        affected_cards: 0,
+        blocking: 0,
+        warning: 0,
+        info: 0,
+        duplicates_hidden: 0,
+        historical_hidden: 0,
+        verify_blocking: false,
+      },
       message: 'No SQLite database. Run pmem rebuild first.',
       state: 'no_affected_cards',
       card_count: 0,
@@ -624,7 +743,15 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
     db = openMaintenanceDatabase(pmemPath);
   } catch {
     return {
-      summary: { affected_cards: 0, blocking: 0, warning: 0, info: 0, duplicates_hidden: 0, historical_hidden: 0, verify_blocking: false },
+      summary: {
+        affected_cards: 0,
+        blocking: 0,
+        warning: 0,
+        info: 0,
+        duplicates_hidden: 0,
+        historical_hidden: 0,
+        verify_blocking: false,
+      },
       message: 'Cannot open database. Run pmem rebuild first.',
       state: 'no_affected_cards',
       card_count: 0,
@@ -704,7 +831,7 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
     }
 
     // Historical classification
-    const allCreatedAts = flags.map(f => f.created_at).sort();
+    const allCreatedAts = flags.map((f) => f.created_at).sort();
     const latestCreated = allCreatedAts[allCreatedAts.length - 1];
     const earliestCreated = allCreatedAts[0];
     const isMulti = flags.length > 1;
@@ -720,10 +847,6 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
       // All flags are from before the session boundary → historical
       isHistorical = true;
       isDuplicate = isMulti;
-    } else if (isMulti && sessionBoundary && latestCreated < sessionBoundary) {
-      // Multiple flags, all old → historical duplicate
-      isHistorical = true;
-      isDuplicate = true;
     } else {
       // Default: keep in current
       isHistorical = false;
@@ -741,7 +864,7 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
       is_historical: isHistorical,
       created_at_first: earliestCreated,
       created_at_last: latestCreated,
-      sources: flags.map(f => ({
+      sources: flags.map((f) => ({
         scope: f.scope,
         target: f.target,
         reason: f.reason,
@@ -766,14 +889,14 @@ function generateSuggestions(pmemPath: string, includeHistory: boolean = false):
   }
 
   const duplicatesHidden = [...blockingForVerify, ...currentSuggestions, ...historicalDirtyFlags]
-    .filter(g => g.count > 1)
+    .filter((g) => g.count > 1)
     .reduce((sum, g) => sum + (g.count - 1), 0);
 
   const summary: SuggestSummary = {
     affected_cards: uniqueAffectedCards.size,
     blocking: blockingForVerify.length,
-    warning: currentSuggestions.filter(g => g.severity === 'warning').length,
-    info: currentSuggestions.filter(g => g.severity === 'info').length,
+    warning: currentSuggestions.filter((g) => g.severity === 'warning').length,
+    info: currentSuggestions.filter((g) => g.severity === 'info').length,
     duplicates_hidden: duplicatesHidden,
     historical_hidden: includeHistory ? 0 : historicalDirtyFlags.length,
     verify_blocking: blockingForVerify.length > 0,
@@ -830,19 +953,25 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
     // counts, needs_rebuild, and next_actions so agents can distinguish
     // empty states. Existing fields (summary, message, next_steps, groups)
     // keep their names for backward compatibility.
-    console.log(JSON.stringify({
-      state: report.state,
-      message: report.message,
-      card_count: report.card_count,
-      needs_rebuild: report.needs_rebuild,
-      blocking: report.summary.blocking,
-      warning: report.summary.warning,
-      info: report.summary.info,
-      summary: report.summary,
-      next_actions: report.next_steps,
-      next_steps: report.next_steps,
-      groups: report.groups,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          state: report.state,
+          message: report.message,
+          card_count: report.card_count,
+          needs_rebuild: report.needs_rebuild,
+          blocking: report.summary.blocking,
+          warning: report.summary.warning,
+          info: report.summary.info,
+          summary: report.summary,
+          next_actions: report.next_steps,
+          next_steps: report.next_steps,
+          groups: report.groups,
+        },
+        null,
+        2,
+      ),
+    );
   } else {
     // Compact output
     console.log('Memory update suggestions');
@@ -858,7 +987,10 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
       console.log('');
       console.log('Blocking:');
       for (const item of report.groups.blocking_for_verify) {
-        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const filePart =
+          item.matched_file && !item.reason.includes(item.matched_file)
+            ? `, ${item.matched_file}`
+            : '';
         const countPart = item.count > 1 ? `, count ${item.count}` : '';
         console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
       }
@@ -869,7 +1001,10 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
       console.log('');
       console.log('Current:');
       for (const item of report.groups.current_suggestions) {
-        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const filePart =
+          item.matched_file && !item.reason.includes(item.matched_file)
+            ? `, ${item.matched_file}`
+            : '';
         const countPart = item.count > 1 ? `, count ${item.count}` : '';
         console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
       }
@@ -880,7 +1015,10 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
       console.log('');
       console.log('Historical:');
       for (const item of report.groups.historical_dirty_flags) {
-        const filePart = (item.matched_file && !item.reason.includes(item.matched_file)) ? `, ${item.matched_file}` : '';
+        const filePart =
+          item.matched_file && !item.reason.includes(item.matched_file)
+            ? `, ${item.matched_file}`
+            : '';
         const countPart = item.count > 1 ? `, count ${item.count}` : '';
         console.log(`  - ${item.target} (${item.reason}${filePart}${countPart})`);
       }
@@ -929,7 +1067,9 @@ function suggestActions(pmemPath: string, format?: string, includeHistory?: bool
 function getCardCount(pmemPath: string): number {
   try {
     const db = openMaintenanceDatabase(pmemPath);
-    const row = db.prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0 AND is_candidate = 0').get() as { count: number };
+    const row = db
+      .prepare('SELECT COUNT(*) as count FROM cards WHERE is_deleted = 0 AND is_candidate = 0')
+      .get() as { count: number };
     return row?.count ?? 0;
   } catch {
     return 0;
@@ -947,19 +1087,24 @@ function getCardCount(pmemPath: string): number {
  *
  * Exported for unit testing in src/commands/update.test.ts.
  */
-export function buildSuggestMessage(summary: SuggestSummary, cardCount: number): {
+export function buildSuggestMessage(
+  summary: SuggestSummary,
+  cardCount: number,
+): {
   message: string;
   state: 'no_cards' | 'no_affected_cards' | 'has_suggestions';
 } {
   if (cardCount === 0) {
     return {
-      message: 'No memory cards exist in this project yet. Run `pmem new <type> <title>` to create one, or `pmem init --guided` to bootstrap.',
+      message:
+        'No memory cards exist in this project yet. Run `pmem new <type> <title>` to create one, or `pmem init --guided` to bootstrap.',
       state: 'no_cards',
     };
   }
   if (summary.blocking === 0 && summary.warning === 0 && summary.info === 0) {
     return {
-      message: 'No suggestions generated; no affected cards were detected. Run `pmem status --format json` to verify the change graph, and `pmem verify` to check freshness.',
+      message:
+        'No suggestions generated; no affected cards were detected. Run `pmem status --format json` to verify the change graph, and `pmem verify` to check freshness.',
       state: 'no_affected_cards',
     };
   }
@@ -981,7 +1126,9 @@ function buildSuggestNextSteps(summary: SuggestSummary, cardCount: number): stri
     steps.push('Run `pmem rebuild` after creating cards');
     steps.push('Then try `pmem status` and `pmem mark-dirty --auto`');
   } else if (summary.blocking > 0 || summary.warning > 0) {
-    steps.push('Update or confirm affected cards with pmem update --confirm -s "<summary>" -n "<next step>"');
+    steps.push(
+      'Update or confirm affected cards with pmem update --confirm -s "<summary>" -n "<next step>"',
+    );
     steps.push('Use --include-history to inspect older dirty flags.');
   } else if (summary.historical_hidden > 0) {
     steps.push('Use --include-history to inspect older dirty flags.');
@@ -1017,7 +1164,7 @@ function applySuggestionAction(pmemPath: string, suggestionId: string): void {
     idx++;
   }
 
-  const match = flatList.find(s => s.id === suggestionId);
+  const match = flatList.find((s) => s.id === suggestionId);
   if (!match) {
     console.log(`Suggestion "${suggestionId}" not found. Available suggestions:`);
     for (const s of flatList) {
@@ -1041,9 +1188,10 @@ function applySuggestionAction(pmemPath: string, suggestionId: string): void {
     case 'update_card': {
       const db = openMaintenanceDatabase(pmemPath);
       // Mark the card's last_verified_at as expired
-      db.prepare(
-        "UPDATE cards SET last_verified_at = ? WHERE id = ?"
-      ).run(new Date(0).toISOString(), target);
+      db.prepare('UPDATE cards SET last_verified_at = ? WHERE id = ?').run(
+        new Date(0).toISOString(),
+        target,
+      );
       closeDatabase();
       console.log(`Marked card "${target}" as needing verification.`);
       console.log(`  Reason: ${reason}`);
@@ -1055,14 +1203,16 @@ function applySuggestionAction(pmemPath: string, suggestionId: string): void {
       ensureDir(traceDir);
 
       const fs = require('fs');
-      const existingTraces = fs.readdirSync(traceDir)
-        .filter((f: string) => f.startsWith(today))
-        .length;
+      const existingTraces = fs
+        .readdirSync(traceDir)
+        .filter((f: string) => f.startsWith(today)).length;
 
       const traceNum = String(existingTraces + 1).padStart(3, '0');
       const traceFile = path.join(traceDir, `${today}-${traceNum}.md`);
 
-      atomicWrite(traceFile, `---
+      atomicWrite(
+        traceFile,
+        `---
 id: trace.${today}-${traceNum}
 type: trace
 created: ${today}
@@ -1075,7 +1225,8 @@ ${reason}
 
 ## Next
 Continue as planned.
-`);
+`,
+      );
       console.log(`Auto-created trace: traces/${today}-${traceNum}.md`);
       console.log(`  Reason: ${reason}`);
 
@@ -1084,7 +1235,14 @@ Continue as planned.
       const activeSession = getActiveSession(db);
       // Resolve all dirty flags matching this target+reason
       resolveDirtyFlags(db, 'card', target);
-      insertUpdateLog(db, 'auto_trace', reason, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+      insertUpdateLog(
+        db,
+        'auto_trace',
+        reason,
+        activeSession?.id,
+        [`trace.${today}-${traceNum}`],
+        true,
+      );
       closeDatabase();
       break;
     }
@@ -1148,13 +1306,19 @@ function manageEdges(pmemPath: string, acceptRaw?: string, rejectRaw?: string): 
       console.log(`Inferred edges (${inferred.length} total):\n`);
       const getCardTitle = (cid: string): string => {
         try {
-          const row = db2.prepare('SELECT title FROM cards WHERE id = ?').get(cid) as { title: string } | undefined;
+          const row = db2.prepare('SELECT title FROM cards WHERE id = ?').get(cid) as
+            | { title: string }
+            | undefined;
           return row?.title ?? cid;
-        } catch { return cid; }
+        } catch {
+          return cid;
+        }
       };
       for (const edge of inferred) {
         console.log(`  [${edge.id}] ${edge.from_id} → ${edge.to_id}`);
-        console.log(`      type: ${edge.type}, confidence: ${edge.confidence.toFixed(1)}, source: ${edge.source}`);
+        console.log(
+          `      type: ${edge.type}, confidence: ${edge.confidence.toFixed(1)}, source: ${edge.source}`,
+        );
       }
       console.log('\nTo accept: pmem update --confirm --accept-edges <id1,id2>');
       console.log('To reject: pmem update --confirm --reject-edges <id1,id2>');
@@ -1166,18 +1330,15 @@ function manageEdges(pmemPath: string, acceptRaw?: string, rejectRaw?: string): 
 function parseEdgeIds(raw: string): number[] {
   return raw
     .split(',')
-    .map(s => parseInt(s.trim(), 10))
-    .filter(n => !isNaN(n) && n > 0);
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n) && n > 0);
 }
 
 // Add edge-related suggestions to the suggestion report.
 // All inferred edges are surfaced (not just low-confidence), so the agent
 // can review and decide which to accept / reject. Confidence and source are
 // included as `sources[]` entries to drive the agent's judgment.
-function enrichWithEdgeSuggestions(
-  pmemPath: string,
-  report: SuggestionReport,
-): SuggestionReport {
+function enrichWithEdgeSuggestions(pmemPath: string, report: SuggestionReport): SuggestionReport {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) return report;
 
@@ -1206,22 +1367,23 @@ function enrichWithEdgeSuggestions(
         is_historical: false,
         created_at_first: edge.created_at || new Date().toISOString(),
         created_at_last: edge.created_at || new Date().toISOString(),
-        sources: [{
-          scope: 'edge',
-          target: `${edge.from_id} → ${edge.to_id}`,
-          reason: detailReason,
-          created_at: edge.created_at || new Date().toISOString(),
-          session_id: null,
-        }],
+        sources: [
+          {
+            scope: 'edge',
+            target: `${edge.from_id} → ${edge.to_id}`,
+            reason: detailReason,
+            created_at: edge.created_at || new Date().toISOString(),
+            session_id: null,
+          },
+        ],
         edge_ids: edge.id !== undefined ? [edge.id] : [],
         edge_tuple: `${edge.from_id} → ${edge.to_id}`,
       });
     }
 
     report.summary.info += inferred.length;
-    report.summary.affected_cards = new Set(
-      inferred.map(e => e.from_id!)
-    ).size + report.summary.affected_cards;
+    report.summary.affected_cards =
+      new Set(inferred.map((e) => e.from_id!)).size + report.summary.affected_cards;
 
     return report;
   } catch {

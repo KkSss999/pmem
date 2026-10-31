@@ -37,35 +37,50 @@ export interface RollbackRestoreResult {
 }
 
 function nonEmpty(value: unknown, field: string): asserts value is string {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`Rollback ${field} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '')
+    throw new TypeError(`Rollback ${field} must be a non-empty string`);
 }
 
 function canonicalDate(value: string): string {
   nonEmpty(value, 'createdAt');
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) throw new TypeError('Rollback createdAt must be a valid ISO date');
+  if (!Number.isFinite(date.getTime()))
+    throw new TypeError('Rollback createdAt must be a valid ISO date');
   return date.toISOString();
 }
 
 function validatePlanVersion(value: number): void {
-  if (!Number.isInteger(value) || value <= 0) throw new RangeError(`Rollback planVersion must be a positive integer, received ${String(value)}`);
+  if (!Number.isInteger(value) || value <= 0)
+    throw new RangeError(
+      `Rollback planVersion must be a positive integer, received ${String(value)}`,
+    );
 }
 
 /** Validate and defensively copy a checkpoint; no filesystem or database access occurs. */
 export function validateRollbackCheckpoint(input: RollbackCheckpoint): RollbackCheckpoint {
-  if (!input || typeof input !== 'object' || input.version !== 1) throw new TypeError('Unsupported rollback checkpoint version');
+  if (!input || typeof input !== 'object' || input.version !== 1)
+    throw new TypeError('Unsupported rollback checkpoint version');
   nonEmpty(input.id, 'id');
   validatePlanVersion(input.planVersion);
   const createdAt = canonicalDate(input.createdAt);
   if (!Array.isArray(input.changes)) throw new TypeError('Rollback changes must be an array');
-  if (typeof input.reversible !== 'boolean') throw new TypeError('Rollback reversible must be a boolean');
+  if (typeof input.reversible !== 'boolean')
+    throw new TypeError('Rollback reversible must be a boolean');
   nonEmpty(input.source, 'source');
   const plan = buildRepairPlan(input.changes, { apply: true });
-  if (input.state !== undefined && !['pending', 'applied', 'partial', 'rolled_back', 'rollback_failed'].includes(input.state)) {
+  if (
+    input.state !== undefined &&
+    !['pending', 'applied', 'partial', 'rolled_back', 'rollback_failed'].includes(input.state)
+  ) {
     throw new TypeError('Rollback checkpoint has an invalid state');
   }
   const appliedIds = input.appliedIds ?? [];
-  if (!Array.isArray(appliedIds) || appliedIds.some(id => typeof id !== 'string' || !plan.changes.some(change => change.id === id))) {
+  if (
+    !Array.isArray(appliedIds) ||
+    appliedIds.some(
+      (id) => typeof id !== 'string' || !plan.changes.some((change) => change.id === id),
+    )
+  ) {
     throw new TypeError('Rollback checkpoint appliedIds must reference checkpoint changes');
   }
   return {
@@ -109,7 +124,7 @@ export function restoreRollbackCheckpoint(
     return {
       status: 'not-reversible',
       restoredIds: [],
-      skippedIds: checkpoint.changes.map(change => change.id),
+      skippedIds: checkpoint.changes.map((change) => change.id),
       failures: [],
     };
   }
@@ -124,15 +139,20 @@ export function restoreRollbackCheckpoint(
       restoredIds.push(change.id);
     } catch (error) {
       failed = true;
-      failures.push({ id: change.id, message: error instanceof Error ? error.message : String(error) });
+      failures.push({
+        id: change.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   const restored = new Set(restoredIds);
-  const failedIds = new Set(failures.map(failure => failure.id));
+  const failedIds = new Set(failures.map((failure) => failure.id));
   return {
     status: failures.length === 0 ? 'restored' : restoredIds.length === 0 ? 'failed' : 'partial',
     restoredIds,
-    skippedIds: checkpoint.changes.map(change => change.id).filter(id => !restored.has(id) && !failedIds.has(id)),
+    skippedIds: checkpoint.changes
+      .map((change) => change.id)
+      .filter((id) => !restored.has(id) && !failedIds.has(id)),
     failures,
   };
 }

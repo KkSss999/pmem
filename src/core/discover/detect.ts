@@ -26,14 +26,11 @@ export function detectLanguages(rootDir: string, patterns: LanguagePattern[]): s
  * Filter patterns to only the specified languages.
  * If langs is ['auto'] or empty, return all patterns.
  */
-export function filterPatterns(
-  patterns: LanguagePattern[],
-  langs: string[],
-): LanguagePattern[] {
+export function filterPatterns(patterns: LanguagePattern[], langs: string[]): LanguagePattern[] {
   if (!langs || langs.length === 0 || (langs.length === 1 && langs[0] === 'auto')) {
     return patterns;
   }
 
-  const langSet = new Set(langs.map(l => l.toLowerCase()));
-  return patterns.filter(p => langSet.has(p.language));
+  const langSet = new Set(langs.map((l) => l.toLowerCase()));
+  return patterns.filter((p) => langSet.has(p.language));
 }

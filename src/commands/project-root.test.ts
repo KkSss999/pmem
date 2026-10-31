@@ -14,7 +14,20 @@ function run(args: string[], cwd: string): string {
 describe('project-root CLI discovery', () => {
   it('runs rebuild and new from a source subdirectory and from .pmem', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-cli-root-'));
-    run(['init', 'root-test', '--guided', '--description', 'test', '--stage', 'test', '--next', 'test'], root);
+    run(
+      [
+        'init',
+        'root-test',
+        '--guided',
+        '--description',
+        'test',
+        '--stage',
+        'test',
+        '--next',
+        'test',
+      ],
+      root,
+    );
 
     const nested = path.join(root, 'src', 'feature');
     fs.mkdirSync(nested, { recursive: true });

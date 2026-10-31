@@ -103,7 +103,9 @@ export class RetrieverRegistry {
         supported = retriever.supports(context.backend);
       } catch (error: unknown) {
         skipped.push(stage);
-        warnings.push(`${stage} retriever skipped: capability check failed (${errorMessage(error)})`);
+        warnings.push(
+          `${stage} retriever skipped: capability check failed (${errorMessage(error)})`,
+        );
         continue;
       }
       if (!supported) {
@@ -130,11 +132,18 @@ export class RetrieverRegistry {
     }
     let hits = [...merged.values()];
     if (context.plan.stages.includes('rerank')) {
-      const channelWeight: Record<string, number> = { exact: 1, structured: 0.9, lexical: 0.8, graph: 0.7, semantic: 0.6 };
-      hits = hits.sort((a, b) =>
-      (b.score + channelBonus(b.channels, channelWeight))
-        - (a.score + channelBonus(a.channels, channelWeight))
-        || a.id.localeCompare(b.id)
+      const channelWeight: Record<string, number> = {
+        exact: 1,
+        structured: 0.9,
+        lexical: 0.8,
+        graph: 0.7,
+        semantic: 0.6,
+      };
+      hits = hits.sort(
+        (a, b) =>
+          b.score +
+            channelBonus(b.channels, channelWeight) -
+            (a.score + channelBonus(a.channels, channelWeight)) || a.id.localeCompare(b.id),
       );
     } else {
       hits = hits.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
@@ -155,31 +164,41 @@ export function createDefaultRetrieverRegistry(): RetrieverRegistry {
 
 const exactRetriever: Retriever = {
   id: 'exact',
-  supports: backend => backend.capabilities.query.structured,
+  supports: (backend) => backend.capabilities.query.structured,
   async retrieve({ backend, plan }) {
-    const query: BackendQuery = { filters: [{ field: 'id', operator: 'eq', value: plan.text }], limit: plan.limit };
+    const query: BackendQuery = {
+      filters: [{ field: 'id', operator: 'eq', value: plan.text }],
+      limit: plan.limit,
+    };
     const result = await backend.query(query);
-    return { hits: result.records.map(record => toHit(record, 1, 'exact')) };
+    return { hits: result.records.map((record) => toHit(record, 1, 'exact')) };
   },
 };
 
 const structuredRetriever: Retriever = {
   id: 'structured',
-  supports: backend => backend.capabilities.query.structured,
+  supports: (backend) => backend.capabilities.query.structured,
   async retrieve({ backend, plan }) {
-    const query: BackendQuery = { filters: [{ field: 'title', operator: 'contains', value: plan.text }], limit: plan.limit };
+    const query: BackendQuery = {
+      filters: [{ field: 'title', operator: 'contains', value: plan.text }],
+      limit: plan.limit,
+    };
     const result = await backend.query(query);
-    return { hits: result.records.map(record => toHit(record, 0.8, 'structured')) };
+    return { hits: result.records.map((record) => toHit(record, 0.8, 'structured')) };
   },
 };
 
 const lexicalRetriever: Retriever = {
   id: 'lexical',
-  supports: backend => backend.capabilities.query.fulltext || backend.capabilities.search_index,
+  supports: (backend) => backend.capabilities.query.fulltext || backend.capabilities.search_index,
   async retrieve({ backend, plan }) {
-    const result: MemorySearchResult = await backend.search({ text: plan.text, channel: 'lexical', limit: plan.limit });
+    const result: MemorySearchResult = await backend.search({
+      text: plan.text,
+      channel: 'lexical',
+      limit: plan.limit,
+    });
     return {
-      hits: await Promise.all(result.hits.map(hit => toSearchHit(backend, hit, 'lexical'))),
+      hits: await Promise.all(result.hits.map((hit) => toSearchHit(backend, hit, 'lexical'))),
       ...(result.warnings ? { warnings: result.warnings } : {}),
     };
   },
@@ -187,11 +206,14 @@ const lexicalRetriever: Retriever = {
 
 const graphRetriever: Retriever = {
   id: 'graph',
-  supports: backend => backend.capabilities.query.graph && backend.capabilities.relations,
+  supports: (backend) => backend.capabilities.query.graph && backend.capabilities.relations,
   async retrieve({ backend, plan }) {
     try {
-      const result = await backend.query({ relation: { from_id: plan.text, depth: 1 }, limit: plan.limit });
-      return { hits: result.records.map(record => toHit(record, 0.6, 'graph')) };
+      const result = await backend.query({
+        relation: { from_id: plan.text, depth: 1 },
+        limit: plan.limit,
+      });
+      return { hits: result.records.map((record) => toHit(record, 0.6, 'graph')) };
     } catch (error: unknown) {
       // A backend may advertise the general graph capability while omitting
       // relation traversal in a particular deployment.  Do not manufacture
@@ -206,19 +228,27 @@ const graphRetriever: Retriever = {
 
 const semanticRetriever: Retriever = {
   id: 'semantic',
-  supports: backend => backend.capabilities.query.semantic,
+  supports: (backend) => backend.capabilities.query.semantic,
   async retrieve({ backend, plan }) {
-    const result = await backend.search({ text: plan.text, channel: 'semantic', limit: plan.limit });
-    const converted = await Promise.all(result.hits.map(hit => toSemanticSearchHit(backend, hit)));
-    const missing = converted.filter(item => !item.hit.evidence);
+    const result = await backend.search({
+      text: plan.text,
+      channel: 'semantic',
+      limit: plan.limit,
+    });
+    const converted = await Promise.all(
+      result.hits.map((hit) => toSemanticSearchHit(backend, hit)),
+    );
+    const missing = converted.filter((item) => !item.hit.evidence);
     const warnings = [
       ...(result.warnings ?? []),
       ...(missing.length > 0
-        ? [`semantic retriever degraded: semantic evidence unavailable for ${missing.length} hit${missing.length === 1 ? '' : 's'} (${[...new Set(missing.map(item => item.evidenceIssue))].join('; ')})`]
+        ? [
+            `semantic retriever degraded: semantic evidence unavailable for ${missing.length} hit${missing.length === 1 ? '' : 's'} (${[...new Set(missing.map((item) => item.evidenceIssue))].join('; ')})`,
+          ]
         : []),
     ];
     return {
-      hits: converted.map(item => item.hit),
+      hits: converted.map((item) => item.hit),
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   },
@@ -228,14 +258,23 @@ function toHit(record: MemoryRecord, score: number, channel: string): RetrieverH
   return { id: record.id, score, channels: [channel], record };
 }
 
-async function toSearchHit(backend: MemoryBackend, hit: MemorySearchHit, channel: string): Promise<RetrieverHit> {
+async function toSearchHit(
+  backend: MemoryBackend,
+  hit: MemorySearchHit,
+  channel: string,
+): Promise<RetrieverHit> {
   let record: MemoryRecord | undefined;
   try {
     record = (await backend.getRecord(hit.record_id)) ?? undefined;
   } catch {
     // Search results remain useful when a backend cannot hydrate a document.
   }
-  return { id: hit.record_id, score: finiteScore(hit.score), channels: [channel, ...(hit.channels ?? [])], record };
+  return {
+    id: hit.record_id,
+    score: finiteScore(hit.score),
+    channels: [channel, ...(hit.channels ?? [])],
+    record,
+  };
 }
 
 async function toSemanticSearchHit(
@@ -245,14 +284,20 @@ async function toSemanticSearchHit(
   const base = await toSearchHit(backend, hit, 'semantic');
   const candidate = hit.metadata?.[SEMANTIC_EVIDENCE_METADATA_KEY];
   if (isSemanticEvidence(candidate)) return { hit: { ...base, evidence: candidate } };
-  const evidenceIssue = candidate === undefined
-    ? 'backend did not return validated chunk provenance'
-    : `metadata.${SEMANTIC_EVIDENCE_METADATA_KEY} failed validation`;
+  const evidenceIssue =
+    candidate === undefined
+      ? 'backend did not return validated chunk provenance'
+      : `metadata.${SEMANTIC_EVIDENCE_METADATA_KEY} failed validation`;
   return { hit: base, evidenceIssue };
 }
 
 function mergeHits(existing: RetrieverHit | undefined, incoming: RetrieverHit): RetrieverHit {
-  if (!existing) return { ...incoming, score: finiteScore(incoming.score), channels: [...new Set(incoming.channels)] };
+  if (!existing)
+    return {
+      ...incoming,
+      score: finiteScore(incoming.score),
+      channels: [...new Set(incoming.channels)],
+    };
   const channels = [...new Set([...existing.channels, ...incoming.channels])];
   const incomingWins = finiteScore(incoming.score) > finiteScore(existing.score);
   const winner = incomingWins ? incoming : existing;
@@ -268,8 +313,11 @@ function mergeHits(existing: RetrieverHit | undefined, incoming: RetrieverHit): 
   };
 }
 
-function channelBonus(channels: readonly string[], weights: Readonly<Record<string, number>>): number {
-  return Math.max(0, ...channels.map(channel => weights[channel] ?? 0)) * 0.01;
+function channelBonus(
+  channels: readonly string[],
+  weights: Readonly<Record<string, number>>,
+): number {
+  return Math.max(0, ...channels.map((channel) => weights[channel] ?? 0)) * 0.01;
 }
 
 function finiteScore(score: number): number {

@@ -9,12 +9,15 @@ const PMEM_DIR = '.pmem';
 
 type RelatedCommandResult = Awaited<ReturnType<Pmem['related']>>;
 
-export async function relatedCommand(id: string, options?: {
-  depth?: number;
-  type?: string;
-  format?: CliFormat;
-  source?: 'explicit' | 'inferred' | 'mention' | 'all';
-}): Promise<void> {
+export async function relatedCommand(
+  id: string,
+  options?: {
+    depth?: number;
+    type?: string;
+    format?: CliFormat;
+    source?: 'explicit' | 'inferred' | 'mention' | 'all';
+  },
+): Promise<void> {
   const cwd = process.cwd();
   const pmemPath = path.join(cwd, PMEM_DIR);
   const depth = options?.depth ?? 1;
@@ -46,17 +49,23 @@ export async function relatedCommand(id: string, options?: {
   }
 
   const directEdges = Object.entries(result.edges_by_type).flatMap(([type, items]: [string, any]) =>
-    items.map((item: any) => ({ type, ...item }))
+    items.map((item: any) => ({ type, ...item })),
   );
 
   if (fmt === 'json') {
-    console.log(JSON.stringify({
-      card: result.card,
-      total_edges: result.total_edges,
-      high_confidence: result.high_confidence,
-      needs_review: result.needs_review,
-      edges_by_type: result.edges_by_type,
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          card: result.card,
+          total_edges: result.total_edges,
+          high_confidence: result.high_confidence,
+          needs_review: result.needs_review,
+          edges_by_type: result.edges_by_type,
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
@@ -74,7 +83,9 @@ export async function relatedCommand(id: string, options?: {
   }
 
   console.log('\nDirect Relations:');
-  for (const [edgeType, targets] of Object.entries(result.edges_by_type) as Array<[string, any[]]>) {
+  for (const [edgeType, targets] of Object.entries(result.edges_by_type) as Array<
+    [string, any[]]
+  >) {
     for (const t of targets) {
       const prefix = t.direction === 'in' ? '←' : '';
       const srcTag = t.source === 'inferred' ? ` [${t.source}, ${t.confidence.toFixed(1)}]` : '';
@@ -135,7 +146,9 @@ export async function relatedCommand(id: string, options?: {
     const totalReachable = visited.size - 1;
     if (totalReachable > 0) {
       console.log(`\nExtended Network (depth ${depth}):`);
-      console.log(`  ${totalReachable} reachable node(s) via ${totalExtendedEdges + directEdges.length} edge(s) across all hops`);
+      console.log(
+        `  ${totalReachable} reachable node(s) via ${totalExtendedEdges + directEdges.length} edge(s) across all hops`,
+      );
     }
   }
 }
@@ -150,7 +163,9 @@ export function traceCommand(id: string): void {
   const db = openDatabase(pmemPath);
   createSchema(db);
 
-  const card = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(id) as CardRow | undefined;
+  const card = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(id) as
+    | CardRow
+    | undefined;
   if (!card) {
     console.log(`Node "${id}" not found in database.`);
     return;
@@ -173,16 +188,20 @@ export function traceCommand(id: string): void {
   const placeholders = evidenceTypes.map(() => '?').join(',');
 
   // Find evidence: decision and trace type cards connected via edges
-  const evidenceRows = (db.prepare(`
+  const evidenceRows = (
+    db
+      .prepare(`
     SELECT DISTINCT c.id, c.type, c.title, c.file_path, c.sensitivity
     FROM edges e
     JOIN cards c ON (c.id = e.from_id OR c.id = e.to_id) AND c.id != ?
     WHERE (e.from_id = ? OR e.to_id = ?)
       AND c.type IN (${placeholders})
       AND c.is_deleted = 0
-  `).all(id, id, id, ...evidenceTypes) as (CardRow)[])
+  `)
+      .all(id, id, id, ...evidenceTypes) as CardRow[]
+  )
     // v1.1: never surface secret-sensitivity evidence cards.
-    .filter(row => (row as any).sensitivity !== 'secret');
+    .filter((row) => (row as any).sensitivity !== 'secret');
 
   if (evidenceRows.length > 0) {
     console.log('');
@@ -194,37 +213,59 @@ export function traceCommand(id: string): void {
   }
 
   // Find depends_on chain
-  const dependsOn = (db.prepare(`
+  const dependsOn = (
+    db
+      .prepare(`
     SELECT e.to_id, c.title as to_title, c.sensitivity as to_sensitivity, e.source, e.confidence
     FROM edges e
     LEFT JOIN cards c ON c.id = e.to_id AND c.is_deleted = 0
     WHERE e.from_id = ? AND e.type = 'depends_on'
-  `).all(id) as { to_id: string; to_title: string | null; to_sensitivity: string | null; source: string; confidence: number }[])
+  `)
+      .all(id) as {
+      to_id: string;
+      to_title: string | null;
+      to_sensitivity: string | null;
+      source: string;
+      confidence: number;
+    }[]
+  )
     // v1.1: hide edges pointing at secret-sensitivity cards.
-    .filter(row => row.to_sensitivity !== 'secret');
+    .filter((row) => row.to_sensitivity !== 'secret');
 
   if (dependsOn.length > 0) {
     console.log('\nDepends On:');
     for (const row of dependsOn) {
-      const srcTag = row.source === 'inferred' ? ` [${row.source}, ${row.confidence.toFixed(1)}]` : '';
+      const srcTag =
+        row.source === 'inferred' ? ` [${row.source}, ${row.confidence.toFixed(1)}]` : '';
       console.log(`  - ${row.to_id}${row.to_title ? ` (${row.to_title})` : ''}${srcTag}`);
     }
   }
 
   // Find depended_by
-  const dependedBy = (db.prepare(`
+  const dependedBy = (
+    db
+      .prepare(`
     SELECT e.from_id, c.title as from_title, c.sensitivity as from_sensitivity, e.source, e.confidence
     FROM edges e
     LEFT JOIN cards c ON c.id = e.from_id AND c.is_deleted = 0
     WHERE e.to_id = ? AND e.type = 'depends_on'
-  `).all(id) as { from_id: string; from_title: string | null; from_sensitivity: string | null; source: string; confidence: number }[])
+  `)
+      .all(id) as {
+      from_id: string;
+      from_title: string | null;
+      from_sensitivity: string | null;
+      source: string;
+      confidence: number;
+    }[]
+  )
     // v1.1: hide edges pointing at secret-sensitivity cards.
-    .filter(row => row.from_sensitivity !== 'secret');
+    .filter((row) => row.from_sensitivity !== 'secret');
 
   if (dependedBy.length > 0) {
     console.log('\nDepended On By:');
     for (const row of dependedBy) {
-      const srcTag = row.source === 'inferred' ? ` [${row.source}, ${row.confidence.toFixed(1)}]` : '';
+      const srcTag =
+        row.source === 'inferred' ? ` [${row.source}, ${row.confidence.toFixed(1)}]` : '';
       console.log(`  - ${row.from_id}${row.from_title ? ` (${row.from_title})` : ''}${srcTag}`);
     }
   }

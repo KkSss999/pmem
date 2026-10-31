@@ -42,7 +42,10 @@ export class InvalidSchemaError extends SchemaError {
 
 export class BuiltinSchemaError extends SchemaError {
   constructor(schemaName: string, version: string) {
-    super('BUILTIN_SCHEMA_PROTECTED', `Builtin schema "${schemaName}@${version}" cannot be unregistered`);
+    super(
+      'BUILTIN_SCHEMA_PROTECTED',
+      `Builtin schema "${schemaName}@${version}" cannot be unregistered`,
+    );
     this.name = 'BuiltinSchemaError';
   }
 }

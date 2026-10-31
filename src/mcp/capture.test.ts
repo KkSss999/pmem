@@ -5,7 +5,12 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { contextQuery } from '../core/query/context';
 import { captureCore } from '../core/capture';
-import { openDatabase, getRecentRuntimeEvents, insertRuntimeEvent, closeDatabase } from '../core/db';
+import {
+  openDatabase,
+  getRecentRuntimeEvents,
+  insertRuntimeEvent,
+  closeDatabase,
+} from '../core/db';
 import { getCurrentBranch } from '../core/git';
 import { validateCaptureInputs } from './security';
 import { handleMcpTool, listMcpTools } from './server';
@@ -34,7 +39,9 @@ describe('pmem context & capture functionality', () => {
     } catch {}
 
     // Minimal project configuration
-    fs.writeFileSync(path.join(pmemDir, 'manifest.yml'), `pmem:
+    fs.writeFileSync(
+      path.join(pmemDir, 'manifest.yml'),
+      `pmem:
   schema_version: '0.3'
   protocol_version: '0.3'
   created_by: 0.3.0
@@ -125,36 +132,49 @@ schema:
   foundational_types: [module]
   evidence_types: [decision, trace]
   default_type: trace
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(pmemDir, 'index.md'), `# Project Memory Index
+    fs.writeFileSync(
+      path.join(pmemDir, 'index.md'),
+      `# Project Memory Index
 ## Project
 Name: capture-workspace
 Stage: Development
 Status: active
 ## Current Focus
 Testing capture logic
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(pmemDir, 'state.md'), `# State
+    fs.writeFileSync(
+      path.join(pmemDir, 'state.md'),
+      `# State
 ## Overall Status
 active
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(pmemDir, 'next.md'), `# Next Steps
+    fs.writeFileSync(
+      path.join(pmemDir, 'next.md'),
+      `# Next Steps
 <!-- pmem:next:start -->
 - Recommended next step: Original step
 <!-- pmem:next:end -->
-`);
+`,
+    );
 
-    fs.writeFileSync(path.join(pmemDir, 'modules', 'module.core.md'), `---
+    fs.writeFileSync(
+      path.join(pmemDir, 'modules', 'module.core.md'),
+      `---
 id: module.core
 type: module
 status: active
 source_files: [src/index.ts]
 ---
 # Core Module
-`);
+`,
+    );
 
     // Create a mock source file
     fs.mkdirSync(path.join(testDir, 'src'), { recursive: true });
@@ -162,8 +182,14 @@ source_files: [src/index.ts]
 
     // Initialize sqlite db
     try {
-      execSync(`node "${PMEM_BIN}" rebuild --full`, { cwd: testDir, stdio: 'ignore', timeout: 10_000 });
-    } catch { /* ignore */ }
+      execSync(`node "${PMEM_BIN}" rebuild --full`, {
+        cwd: testDir,
+        stdio: 'ignore',
+        timeout: 10_000,
+      });
+    } catch {
+      /* ignore */
+    }
 
     // Commit baseline
     try {
@@ -179,7 +205,9 @@ source_files: [src/index.ts]
     if (oldCwd) {
       process.chdir(oldCwd);
     }
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   describe('validateCaptureInputs', () => {
@@ -187,7 +215,7 @@ source_files: [src/index.ts]
       const longSummary = 'A'.repeat(2001);
       assert.throws(
         () => validateCaptureInputs('.pmem', longSummary, 'next'),
-        /Security: summary input exceeds max size/
+        /Security: summary input exceeds max size/,
       );
     });
 
@@ -195,7 +223,7 @@ source_files: [src/index.ts]
       const longNext = 'B'.repeat(2001);
       assert.throws(
         () => validateCaptureInputs('.pmem', 'summary', longNext),
-        /Security: next input exceeds max size/
+        /Security: next input exceeds max size/,
       );
     });
 
@@ -203,18 +231,18 @@ source_files: [src/index.ts]
       const maliciousSummary = 'Summary\x00withNull';
       assert.throws(
         () => validateCaptureInputs('.pmem', maliciousSummary, 'next'),
-        /Security: summary input contains invalid control characters/
+        /Security: summary input contains invalid control characters/,
       );
     });
 
     it('rejects reserved comment markers to prevent injection', () => {
       assert.throws(
         () => validateCaptureInputs('.pmem', '<!-- pmem:next:start --> summary', 'next'),
-        /Security: capture input contains reserved pmem marker/
+        /Security: capture input contains reserved pmem marker/,
       );
       assert.throws(
         () => validateCaptureInputs('.pmem', 'summary', '<!-- pmem:rules:end --> next'),
-        /Security: capture input contains reserved pmem marker/
+        /Security: capture input contains reserved pmem marker/,
       );
     });
 
@@ -229,13 +257,12 @@ source_files: [src/index.ts]
       assert.strictEqual(result.task, 'core module');
       assert.strictEqual(result.project_stage, 'Development');
       assert.strictEqual(result.current_focus, 'Testing capture logic');
-      
-      const paths = result.must_read.map(m => m.path);
+
+      const paths = result.must_read.map((m) => m.path);
       assert.ok(paths.includes('.pmem/state.md'));
       assert.ok(paths.includes('.pmem/next.md'));
     });
   });
-
 
   describe('MCP Runtime API routing', () => {
     let runtime: Pmem;
@@ -261,7 +288,9 @@ source_files: [src/index.ts]
       assert.strictEqual(askBody.schema_version, MCP_SCHEMA_VERSION);
       assert.ok(Array.isArray(askBody.matched));
 
-      const context = await handleMcpTool(runtime, 'readonly', 'pmem_context', { task: 'core module' });
+      const context = await handleMcpTool(runtime, 'readonly', 'pmem_context', {
+        task: 'core module',
+      });
       assert.strictEqual(context.isError, undefined);
       const contextBody = JSON.parse(context.content[0].text);
       assert.strictEqual(contextBody.schema_version, MCP_SCHEMA_VERSION);
@@ -269,13 +298,19 @@ source_files: [src/index.ts]
     });
 
     it('preserves read-only defaults and lists write tools only in append-only mode', () => {
-      const readonlyNames = listMcpTools('readonly').map(tool => tool.name);
+      const readonlyNames = listMcpTools('readonly').map((tool) => tool.name);
       assert.deepStrictEqual(readonlyNames, [
-        'pmem_recall', 'pmem_ask', 'pmem_related', 'pmem_history', 'pmem_diff',
-        'pmem_status', 'pmem_context', 'pmem_context_pack',
+        'pmem_recall',
+        'pmem_ask',
+        'pmem_related',
+        'pmem_history',
+        'pmem_diff',
+        'pmem_status',
+        'pmem_context',
+        'pmem_context_pack',
       ]);
 
-      const appendOnlyNames = listMcpTools('append-only').map(tool => tool.name);
+      const appendOnlyNames = listMcpTools('append-only').map((tool) => tool.name);
       assert.ok(appendOnlyNames.includes('pmem_capture'));
       assert.ok(appendOnlyNames.includes('pmem_observe'));
       assert.ok(appendOnlyNames.includes('pmem_forget'));
@@ -352,18 +387,24 @@ source_files: [src/index.ts]
     });
 
     it('keeps pmem_capture gated by write mode and routes append-only capture through runtime', async () => {
-      const readonly = await handleMcpTool(runtime, 'readonly', 'pmem_capture', { summary: 'Readonly blocked' });
+      const readonly = await handleMcpTool(runtime, 'readonly', 'pmem_capture', {
+        summary: 'Readonly blocked',
+      });
       assert.strictEqual(readonly.isError, true);
       assert.match(readonly.content[0].text, /append-only write mode/);
 
       const appendOnly = await handleMcpTool(runtime, 'append-only', 'pmem_capture', {
         summary: 'Runtime MCP capture',
-        next: 'Verify runtime capture routing'
+        next: 'Verify runtime capture routing',
       });
       assert.strictEqual(appendOnly.isError, undefined);
       const body = JSON.parse(appendOnly.content[0].text);
       assert.strictEqual(body.schema_version, MCP_SCHEMA_VERSION);
-      assert.strictEqual(body.content_trust, undefined, 'top-level capture result is not card content');
+      assert.strictEqual(
+        body.content_trust,
+        undefined,
+        'top-level capture result is not card content',
+      );
       assert.ok(body.success);
     });
   });
@@ -386,17 +427,35 @@ source_files: [src/index.ts]
       execSync('git config user.email "test@example.com"', { cwd: unbornDir });
       execSync('git config user.name "test"', { cwd: unbornDir });
 
-      fs.writeFileSync(path.join(unbornPmemDir, 'manifest.yml'), fs.readFileSync(path.join(pmemDir, 'manifest.yml'), 'utf8'));
-      fs.writeFileSync(path.join(unbornPmemDir, 'index.md'), fs.readFileSync(path.join(pmemDir, 'index.md'), 'utf8'));
-      fs.writeFileSync(path.join(unbornPmemDir, 'state.md'), fs.readFileSync(path.join(pmemDir, 'state.md'), 'utf8'));
-      fs.writeFileSync(path.join(unbornPmemDir, 'next.md'), fs.readFileSync(path.join(pmemDir, 'next.md'), 'utf8'));
-      fs.writeFileSync(path.join(unbornPmemDir, 'modules', 'module.core.md'), fs.readFileSync(path.join(pmemDir, 'modules', 'module.core.md'), 'utf8'));
+      fs.writeFileSync(
+        path.join(unbornPmemDir, 'manifest.yml'),
+        fs.readFileSync(path.join(pmemDir, 'manifest.yml'), 'utf8'),
+      );
+      fs.writeFileSync(
+        path.join(unbornPmemDir, 'index.md'),
+        fs.readFileSync(path.join(pmemDir, 'index.md'), 'utf8'),
+      );
+      fs.writeFileSync(
+        path.join(unbornPmemDir, 'state.md'),
+        fs.readFileSync(path.join(pmemDir, 'state.md'), 'utf8'),
+      );
+      fs.writeFileSync(
+        path.join(unbornPmemDir, 'next.md'),
+        fs.readFileSync(path.join(pmemDir, 'next.md'), 'utf8'),
+      );
+      fs.writeFileSync(
+        path.join(unbornPmemDir, 'modules', 'module.core.md'),
+        fs.readFileSync(path.join(pmemDir, 'modules', 'module.core.md'), 'utf8'),
+      );
       fs.writeFileSync(path.join(unbornDir, 'src', 'index.ts'), 'console.log("unborn change");\n');
 
       const previousCwd = process.cwd();
       process.chdir(unbornDir);
       try {
-        const result = captureCore('.pmem', { summary: 'Unborn repository capture', next: 'Commit baseline' });
+        const result = captureCore('.pmem', {
+          summary: 'Unborn repository capture',
+          next: 'Commit baseline',
+        });
         assert.ok(result.success, result.message);
         assert.ok(!/bad revision 'HEAD'|ambiguous argument 'HEAD'/.test(result.message));
         assert.ok(result.tracePath);
@@ -410,7 +469,7 @@ source_files: [src/index.ts]
       const result = captureCore('.pmem', {
         summary: 'Force sync capture',
         next: 'Write test assertions',
-        force: true
+        force: true,
       });
 
       assert.ok(result.success);
@@ -436,10 +495,14 @@ source_files: [src/index.ts]
       const secondResult = captureCore('.pmem', {
         summary: 'Force sync capture',
         next: 'Write test assertions',
-        force: false
+        force: false,
       });
       assert.ok(secondResult.success);
-      assert.strictEqual(secondResult.skipped, true, 'Should skip duplicate diff_hash trace writing');
+      assert.strictEqual(
+        secondResult.skipped,
+        true,
+        'Should skip duplicate diff_hash trace writing',
+      );
     });
 
     it('does not emit a capture commit event when rebuild fails', () => {
@@ -447,13 +510,15 @@ source_files: [src/index.ts]
       fs.rmSync(indexesPath, { recursive: true, force: true });
       fs.writeFileSync(indexesPath, 'not a directory');
       const beforeDb = openDatabase('.pmem');
-      const beforeCount = getRecentRuntimeEvents(beforeDb, 100).filter(e => e.event_type === 'memory.capture.committed').length;
+      const beforeCount = getRecentRuntimeEvents(beforeDb, 100).filter(
+        (e) => e.event_type === 'memory.capture.committed',
+      ).length;
       closeDatabase();
       try {
         const result = captureCore('.pmem', {
           summary: 'This capture should fail rebuild',
           next: 'Restore indexes directory',
-          force: true
+          force: true,
         });
         assert.strictEqual(result.success, false);
       } finally {
@@ -461,7 +526,9 @@ source_files: [src/index.ts]
         fs.mkdirSync(indexesPath, { recursive: true });
       }
       const afterDb = openDatabase('.pmem');
-      const afterCount = getRecentRuntimeEvents(afterDb, 100).filter(e => e.event_type === 'memory.capture.committed').length;
+      const afterCount = getRecentRuntimeEvents(afterDb, 100).filter(
+        (e) => e.event_type === 'memory.capture.committed',
+      ).length;
       closeDatabase();
       assert.strictEqual(afterCount, beforeCount);
     });
@@ -493,12 +560,12 @@ source_files: [src/index.ts]
       const result = captureCore('.pmem', {
         summary: '../../evil.md',
         next: 'Traversing',
-        force: true
+        force: true,
       });
 
       assert.ok(result.success);
       assert.ok(result.tracePath);
-      
+
       const filename = path.basename(result.tracePath);
       assert.ok(!filename.includes('evil'));
       assert.ok(result.tracePath.startsWith(path.resolve('.pmem', 'traces')));
@@ -508,12 +575,12 @@ source_files: [src/index.ts]
       const result = captureCore('.pmem', {
         summary: '../../module.core.md',
         next: 'Attack summary',
-        force: true
+        force: true,
       });
 
       assert.ok(result.success);
       assert.ok(result.tracePath);
-      
+
       const filename = path.basename(result.tracePath);
       assert.ok(!filename.includes('module.core.md'));
       assert.ok(result.tracePath.startsWith(path.resolve('.pmem', 'traces')));

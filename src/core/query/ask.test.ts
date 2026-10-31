@@ -35,7 +35,7 @@ function writeFile(p: string, content: string): void {
 
 function makeManifest(cardTypes?: string[]): string {
   const types = cardTypes ?? ['decision', 'feature', 'module', 'task', 'trace'];
-  const dirs = types.map(t => `      ${t}: ${t}s/`).join('\n');
+  const dirs = types.map((t) => `      ${t}: ${t}s/`).join('\n');
   return `pmem:
   schema_version: "0.3"
   protocol_version: "0.3"
@@ -152,7 +152,7 @@ serve:
     rest: false
 schema:
   card_types:
-${types.map(t => `    - ${t}`).join('\n')}
+${types.map((t) => `    - ${t}`).join('\n')}
   type_dirs:
 ${dirs}
   foundational_types:
@@ -162,7 +162,7 @@ ${dirs}
     - trace
   default_type: decision
   creatable_types:
-${types.map(t => `    - ${t}`).join('\n')}
+${types.map((t) => `    - ${t}`).join('\n')}
 `;
 }
 
@@ -176,7 +176,11 @@ function fixtureDir(sub: string): string {
 }
 
 /** Ensure a fresh DB connection for the current test's pmemPath. */
-function query(pmemPath: string, q: string, opts?: Parameters<typeof askQuery>[2]): ReturnType<typeof askQuery> {
+function query(
+  pmemPath: string,
+  q: string,
+  opts?: Parameters<typeof askQuery>[2],
+): ReturnType<typeof askQuery> {
   closeDatabase();
   return askQuery(pmemPath, q, opts);
 }
@@ -184,7 +188,7 @@ function query(pmemPath: string, q: string, opts?: Parameters<typeof askQuery>[2
 // ── helpers ──────────────────────────────────────────────────────────
 
 function sortedIds(result: ReturnType<typeof askQuery>): string[] {
-  return result.matched.map(m => m.id);
+  return result.matched.map((m) => m.id);
 }
 
 function idAt(result: ReturnType<typeof askQuery>, index: number): string {
@@ -209,7 +213,9 @@ describe('v0.8 ask pipeline integration', () => {
     testDir = fixtureDir('exact-id');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -217,9 +223,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.alpha.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.alpha.md'),
+      `---
 id: decision.alpha
 type: decision
 title: "Alpha Decision"
@@ -229,8 +241,11 @@ tags: [alpha]
 # Alpha Decision
 
 Some body text about important architecture.
-`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.beta.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.beta.md'),
+      `---
 id: decision.beta
 type: decision
 title: "Beta Decision"
@@ -240,7 +255,8 @@ tags: [beta, alpha-test]
 # Beta Decision
 
 Discussion of beta and related hybrid patterns.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -250,7 +266,10 @@ Discussion of beta and related hybrid patterns.
     assert.strictEqual(r.matched.length, 1);
     assert.strictEqual(r.matched[0].id, 'decision.alpha');
     assert.strictEqual(r.matched[0].match_type, 'exact_id');
-    assert.ok(r.matched[0].score === 1.0 || (r.matched[0].score! >= 0.9), 'exact ID score should be high');
+    assert.ok(
+      r.matched[0].score === 1.0 || r.matched[0].score! >= 0.9,
+      'exact ID score should be high',
+    );
   });
 
   // ── ii. source_file query ──────────────────────────────────────
@@ -259,7 +278,9 @@ Discussion of beta and related hybrid patterns.
     testDir = fixtureDir('source-file');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -267,9 +288,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'modules', 'module.auth.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'modules', 'module.auth.md'),
+      `---
 id: module.auth
 type: module
 title: "Auth Module"
@@ -281,7 +308,8 @@ source_files:
 # Auth Module
 
 Handles authentication.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -294,7 +322,7 @@ Handles authentication.
     // Explain mode should include reasons
     assert.ok(r.matched[0].reasons, 'explain mode should include reasons');
     assert.ok(r.matched[0].reasons!.length >= 1);
-    const sfReason = r.matched[0].reasons!.find(rr => rr.channel === 'source_file');
+    const sfReason = r.matched[0].reasons!.find((rr) => rr.channel === 'source_file');
     assert.ok(sfReason, 'should have source_file reason');
   });
 
@@ -304,7 +332,9 @@ Handles authentication.
     testDir = fixtureDir('fuzzy-title');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -312,10 +342,16 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
     // Card with "hybrid recall" in title — should rank high
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.hybrid_target.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.hybrid_target.md'),
+      `---
 id: decision.hybrid_target
 type: decision
 title: "v0.8 Hybrid Recall Engine"
@@ -325,9 +361,12 @@ tags: [hybrid-search, recall]
 # v0.8 Hybrid Recall Engine
 
 This is the main architecture decision for the hybrid recall system.
-`);
+`,
+    );
     // Card that only mentions "hybrid" and "recall" in body — should rank lower
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.unrelated.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.unrelated.md'),
+      `---
 id: decision.unrelated
 type: decision
 title: "MCP Deferred Decision"
@@ -337,9 +376,12 @@ tags: [mcp]
 # MCP Deferred Decision
 
 This card discusses hybrid approaches and recall mechanisms only incidentally in its body text.
-`);
+`,
+    );
     // Another title-matched card
-    writeFile(path.join(testDir, '.pmem', 'features', 'feature.hybrid.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'features', 'feature.hybrid.md'),
+      `---
 id: feature.hybrid
 type: feature
 title: "Hybrid Recall Feature"
@@ -349,7 +391,8 @@ tags: [hybrid-search]
 # Hybrid Recall Feature
 
 Feature card for hybrid recall.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -359,14 +402,16 @@ Feature card for hybrid recall.
 
     // Title-matched cards should appear before body-only FTS matches
     const titleMatchedIds = r.matched
-      .filter(m => m.reasons?.some(rr => rr.channel === 'title_phrase' || rr.channel === 'title_token'))
-      .map(m => m.id);
+      .filter((m) =>
+        m.reasons?.some((rr) => rr.channel === 'title_phrase' || rr.channel === 'title_token'),
+      )
+      .map((m) => m.id);
     assert.ok(titleMatchedIds.length >= 2, 'at least 2 cards should have title match reasons');
 
     // decision.hybrid_target should be in top-2 (title match + decision type boost)
-    const top2Ids = r.matched.slice(0, 2).map(m => m.id);
-    const hasTitleCardInTop2 = top2Ids.includes('decision.hybrid_target') ||
-      top2Ids.includes('feature.hybrid');
+    const top2Ids = r.matched.slice(0, 2).map((m) => m.id);
+    const hasTitleCardInTop2 =
+      top2Ids.includes('decision.hybrid_target') || top2Ids.includes('feature.hybrid');
     assert.ok(hasTitleCardInTop2, 'at least one title-matched card should be in top-2');
   });
 
@@ -376,7 +421,9 @@ Feature card for hybrid recall.
     testDir = fixtureDir('stale-downgrade');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -384,9 +431,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.fresh.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.fresh.md'),
+      `---
 id: decision.fresh
 type: decision
 title: "Fresh Decision"
@@ -399,8 +452,11 @@ last_verified: "2026-07-03T12:00:00.000Z"
 # Fresh Decision
 
 This is a recently verified decision.
-`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.stale_card.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.stale_card.md'),
+      `---
 id: decision.stale_card
 type: decision
 title: "Stale Decision"
@@ -413,7 +469,8 @@ last_verified: "2025-01-01T00:00:00.000Z"
 # Stale Decision
 
 This old decision hasn't been verified in a long time.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -421,8 +478,8 @@ This old decision hasn't been verified in a long time.
     const r = query(pmemPath, 'decision', { limit: 10, explain: true });
     assert.ok(r.matched.length >= 2, 'should find both cards');
 
-    const stale = r.matched.find(m => m.id === 'decision.stale_card');
-    const fresh = r.matched.find(m => m.id === 'decision.fresh');
+    const stale = r.matched.find((m) => m.id === 'decision.stale_card');
+    const fresh = r.matched.find((m) => m.id === 'decision.fresh');
 
     assert.ok(stale, 'stale card must be present');
     assert.ok(fresh, 'fresh card must be present');
@@ -430,10 +487,12 @@ This old decision hasn't been verified in a long time.
     assert.strictEqual(fresh.stale, false, 'fresh card should not be marked stale');
 
     // Fresh card should rank above stale card (all else being equal)
-    const freshIdx = r.matched.findIndex(m => m.id === 'decision.fresh');
-    const staleIdx = r.matched.findIndex(m => m.id === 'decision.stale_card');
-    assert.ok(freshIdx < staleIdx,
-      `fresh card (idx ${freshIdx}) should rank above stale card (idx ${staleIdx})`);
+    const freshIdx = r.matched.findIndex((m) => m.id === 'decision.fresh');
+    const staleIdx = r.matched.findIndex((m) => m.id === 'decision.stale_card');
+    assert.ok(
+      freshIdx < staleIdx,
+      `fresh card (idx ${freshIdx}) should rank above stale card (idx ${staleIdx})`,
+    );
   });
 
   // ── v. graph expansion ─────────────────────────────────────────
@@ -442,7 +501,9 @@ This old decision hasn't been verified in a long time.
     testDir = fixtureDir('graph-expand');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -450,9 +511,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.root.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.root.md'),
+      `---
 id: decision.root
 type: decision
 title: "Root Decision"
@@ -466,8 +533,11 @@ related:
 # Root Decision
 
 Root depends on child_a and is related to child_b.
-`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.child_a.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.child_a.md'),
+      `---
 id: decision.child_a
 type: decision
 title: "Child A"
@@ -477,8 +547,11 @@ tags: [child]
 # Child A
 
 This is a dependency of root.
-`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.child_b.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.child_b.md'),
+      `---
 id: decision.child_b
 type: decision
 title: "Child B"
@@ -488,7 +561,8 @@ tags: [child]
 # Child B
 
 Related to root.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -501,12 +575,18 @@ Related to root.
     assert.strictEqual(r.matched[0].id, 'decision.root');
 
     // Graph expansion should include related cards
-    const allIds = r.matched.map(m => m.id);
-    assert.ok(allIds.includes('decision.child_a'), 'should include depends_on child via graph expansion');
-    assert.ok(allIds.includes('decision.child_b'), 'should include related child via graph expansion');
+    const allIds = r.matched.map((m) => m.id);
+    assert.ok(
+      allIds.includes('decision.child_a'),
+      'should include depends_on child via graph expansion',
+    );
+    assert.ok(
+      allIds.includes('decision.child_b'),
+      'should include related child via graph expansion',
+    );
 
     // Graph-expanded cards should have graph_distance >= 1
-    const childA = r.matched.find(m => m.id === 'decision.child_a');
+    const childA = r.matched.find((m) => m.id === 'decision.child_a');
     assert.ok(childA, 'child_a should be present');
     assert.ok(childA.graph_distance >= 1, 'graph-expanded card should have graph_distance >= 1');
     assert.strictEqual(childA.match_type, 'graph_expansion');
@@ -519,7 +599,9 @@ Related to root.
     testDir = fixtureDir('explain');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -527,9 +609,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.explain_target.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.explain_target.md'),
+      `---
 id: decision.explain_target
 type: decision
 title: "Explain Target Decision"
@@ -541,7 +629,8 @@ aliases:
 # Explain Target Decision
 
 Body text for FTS matching.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -561,8 +650,16 @@ Body text for FTS matching.
     // Non-explain mode should NOT include reasons/factors
     const rNoExplain = query(pmemPath, 'explain test', { limit: 5, explain: false });
     assert.ok(rNoExplain.matched.length >= 1);
-    assert.strictEqual(rNoExplain.matched[0].reasons, undefined, 'non-explain mode should omit reasons');
-    assert.strictEqual(rNoExplain.matched[0].factors, undefined, 'non-explain mode should omit factors');
+    assert.strictEqual(
+      rNoExplain.matched[0].reasons,
+      undefined,
+      'non-explain mode should omit reasons',
+    );
+    assert.strictEqual(
+      rNoExplain.matched[0].factors,
+      undefined,
+      'non-explain mode should omit factors',
+    );
   });
 
   // ── vii. limit ─────────────────────────────────────────────────
@@ -571,7 +668,9 @@ Body text for FTS matching.
     testDir = fixtureDir('limit');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -579,12 +678,18 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
 
     // Create 10 cards all mentioning "common" keyword
     for (let i = 0; i < 10; i++) {
-      writeFile(path.join(testDir, '.pmem', 'decisions', `decision.card_${i}.md`), `---
+      writeFile(
+        path.join(testDir, '.pmem', 'decisions', `decision.card_${i}.md`),
+        `---
 id: decision.card_${i}
 type: decision
 title: "Card ${i} — Common Topic"
@@ -594,21 +699,31 @@ tags: [common]
 # Card ${i}
 
 All cards discuss the common topic keyword extensively.
-`);
+`,
+      );
     }
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
 
     const r3 = query(pmemPath, 'common topic', { limit: 3 });
-    assert.ok(r3.matched.length <= 3, `limit 3 should return ≤ 3 results, got ${r3.matched.length}`);
+    assert.ok(
+      r3.matched.length <= 3,
+      `limit 3 should return ≤ 3 results, got ${r3.matched.length}`,
+    );
 
     const r7 = query(pmemPath, 'common topic', { limit: 7 });
-    assert.ok(r7.matched.length <= 7, `limit 7 should return ≤ 7 results, got ${r7.matched.length}`);
+    assert.ok(
+      r7.matched.length <= 7,
+      `limit 7 should return ≤ 7 results, got ${r7.matched.length}`,
+    );
 
     // Default limit (20) should be higher
     const rDefault = query(pmemPath, 'common topic');
-    assert.ok(rDefault.matched.length >= r3.matched.length, 'default limit should return more results');
+    assert.ok(
+      rDefault.matched.length >= r3.matched.length,
+      'default limit should return more results',
+    );
   });
 
   // ── viii. evidence_paths ───────────────────────────────────────
@@ -617,7 +732,9 @@ All cards discuss the common topic keyword extensively.
     testDir = fixtureDir('evidence');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -625,9 +742,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.evidence_a.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.evidence_a.md'),
+      `---
 id: decision.evidence_a
 type: decision
 title: "Evidence Decision A"
@@ -637,8 +760,11 @@ tags: [evidence]
 # Evidence Decision A
 
 Important decision about evidence.
-`);
-    writeFile(path.join(testDir, '.pmem', 'traces', 'trace.evidence_trace.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'traces', 'trace.evidence_trace.md'),
+      `---
 id: trace.evidence_trace
 type: trace
 title: "Evidence Trace"
@@ -648,7 +774,8 @@ tags: [evidence]
 # Evidence Trace
 
 Some trace related to evidence decisions.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -657,13 +784,15 @@ Some trace related to evidence decisions.
     assert.ok(r.evidence_paths.length >= 1, 'should have at least one evidence path');
 
     // Evidence paths should only include decision and trace types
-    const evidenceIds = r.evidence_paths.map(p => {
+    const evidenceIds = r.evidence_paths.map((p) => {
       // Extract card id from file path like .pmem/decisions/decision.xxx.md
       const base = path.basename(p, '.md');
       return base;
     });
-    assert.ok(evidenceIds.some(id => id.includes('evidence')),
-      'evidence_paths should include matching evidence cards');
+    assert.ok(
+      evidenceIds.some((id) => id.includes('evidence')),
+      'evidence_paths should include matching evidence cards',
+    );
 
     // recommended_files should be populated
     assert.ok(r.recommended_files.length >= 1, 'should have recommended files');
@@ -675,7 +804,9 @@ Some trace related to evidence decisions.
     testDir = fixtureDir('determinism');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -683,9 +814,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.det_a.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.det_a.md'),
+      `---
 id: decision.det_a
 type: decision
 title: "Determinism Test Alpha"
@@ -695,8 +832,11 @@ tags: [determinism]
 # Determinism Test Alpha
 
 This card is for testing deterministic output.
-`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.det_b.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.det_b.md'),
+      `---
 id: decision.det_b
 type: decision
 title: "Determinism Test Beta"
@@ -706,7 +846,8 @@ tags: [determinism]
 # Determinism Test Beta
 
 Another card for determinism testing.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);
@@ -715,10 +856,16 @@ Another card for determinism testing.
     const r1 = query(pmemPath, 'determinism', { limit: 10, now });
     const r2 = query(pmemPath, 'determinism', { limit: 10, now });
 
-    assert.deepStrictEqual(r1.matched.map(m => m.id), r2.matched.map(m => m.id),
-      'same query with same timestamp should produce identical ordering');
-    assert.deepStrictEqual(r1.matched.map(m => m.score), r2.matched.map(m => m.score),
-      'same query with same timestamp should produce identical scores');
+    assert.deepStrictEqual(
+      r1.matched.map((m) => m.id),
+      r2.matched.map((m) => m.id),
+      'same query with same timestamp should produce identical ordering',
+    );
+    assert.deepStrictEqual(
+      r1.matched.map((m) => m.score),
+      r2.matched.map((m) => m.score),
+      'same query with same timestamp should produce identical scores',
+    );
   });
 
   // ── combined: recall-compatible output shape ───────────────────
@@ -727,7 +874,9 @@ Another card for determinism testing.
     testDir = fixtureDir('v03-shape');
     pmemPath = path.join(testDir, '.pmem');
     writeFile(path.join(testDir, '.pmem', 'manifest.yml'), makeManifest());
-    writeFile(path.join(testDir, '.pmem', 'state.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'state.md'),
+      `---
 id: state
 type: module
 title: "State"
@@ -735,9 +884,15 @@ status: active
 tags: []
 ---
 # State
-`);
-    writeFile(path.join(testDir, '.pmem', 'next.md'), `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`);
-    writeFile(path.join(testDir, '.pmem', 'decisions', 'decision.shape.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'next.md'),
+      `# Next\n\n<!-- pmem:next:start -->\n## Recommended Next Step\nnone\n## Why\ntest\n<!-- pmem:next:end -->\n`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'decisions', 'decision.shape.md'),
+      `---
 id: decision.shape
 type: decision
 title: "Shape Test"
@@ -747,7 +902,8 @@ tags: [shape]
 # Shape Test
 
 Testing the output shape.
-`);
+`,
+    );
 
     pmem('init', testDir);
     pmem('rebuild --full', testDir);

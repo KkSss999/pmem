@@ -18,7 +18,15 @@ import {
   type SemanticRuntimeStatus,
   type SemanticOperations,
 } from './semantic';
-import { MODEL_UINT8_SHA256, MODELSCOPE_SOURCE_REVISION, REQUIRED_MODEL_FILES, createDefaultSemanticOperations, inspectModelCache, nativeDynamicImport } from './semanticRuntime';
+import {
+  MODEL_UINT8_SHA256,
+  MODELSCOPE_SOURCE_REVISION,
+  createDefaultSemanticOperations,
+  expectedOnnxSha256,
+  inspectModelCache,
+  nativeDynamicImport,
+  requiredModelFiles,
+} from './semanticRuntime';
 import {
   createOfflineTransformersProvider,
   assertTransformersRuntimeAvailable,
@@ -76,24 +84,30 @@ describe('pmem semantic command', () => {
     const calls: string[] = [];
     const output: string[] = [];
 
-    await semanticCommand('enable', { cwd, yes: true }, {
-      platform: 'darwin',
-      operations: fakeOperations({
-        prepareModel: async () => { calls.push('prepare'); },
-        rebuild: async (_pmemPath, spec, mode) => {
-          calls.push('rebuild');
-          assert.strictEqual(mode, 'full');
-          const persisted = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
-          assert.strictEqual(persisted.embedding.enabled, true);
-          assert.strictEqual(persisted.embedding.cache_path, spec.cachePath);
-          return { indexedCards: 4, indexedChunks: 12 };
-        },
-      }),
-      log: line => output.push(line),
-    });
+    await semanticCommand(
+      'enable',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async () => {
+            calls.push('prepare');
+          },
+          rebuild: async (_pmemPath, spec, mode) => {
+            calls.push('rebuild');
+            assert.strictEqual(mode, 'full');
+            const persisted = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+            assert.strictEqual(persisted.embedding.enabled, true);
+            assert.strictEqual(persisted.embedding.cache_path, spec.cachePath);
+            return { indexedCards: 4, indexedChunks: 12 };
+          },
+        }),
+        log: (line) => output.push(line),
+      },
+    );
 
     assert.deepStrictEqual(calls, ['prepare', 'rebuild']);
-    assert.ok(output.some(line => line.includes('4 cards / 12 chunks')));
+    assert.ok(output.some((line) => line.includes('4 cards / 12 chunks')));
   });
 
   it('enable cancellation leaves the manifest byte-for-byte unchanged and performs no work', async () => {
@@ -101,15 +115,24 @@ describe('pmem semantic command', () => {
     const before = fs.readFileSync(manifestPath, 'utf8');
     const calls: string[] = [];
 
-    await semanticCommand('enable', { cwd }, {
-      platform: 'darwin',
-      operations: fakeOperations({
-        prepareModel: async () => { calls.push('prepare'); },
-        rebuild: async () => { calls.push('rebuild'); return { indexedCards: 0, indexedChunks: 0 }; },
-      }),
-      confirm: async () => false,
-      log: () => {},
-    });
+    await semanticCommand(
+      'enable',
+      { cwd },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async () => {
+            calls.push('prepare');
+          },
+          rebuild: async () => {
+            calls.push('rebuild');
+            return { indexedCards: 0, indexedChunks: 0 };
+          },
+        }),
+        confirm: async () => false,
+        log: () => {},
+      },
+    );
 
     assert.deepStrictEqual(calls, []);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
@@ -121,14 +144,26 @@ describe('pmem semantic command', () => {
     let rebuilt = false;
     const setupError = new Error('The local Transformers runtime is unavailable');
 
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
-      platform: 'darwin',
-      operations: fakeOperations({
-        prepareModel: async () => { throw setupError; },
-        rebuild: async () => { rebuilt = true; return { indexedCards: 0, indexedChunks: 0 }; },
-      }),
-      log: () => {},
-    }), error => error === setupError);
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            prepareModel: async () => {
+              throw setupError;
+            },
+            rebuild: async () => {
+              rebuilt = true;
+              return { indexedCards: 0, indexedChunks: 0 };
+            },
+          }),
+          log: () => {},
+        },
+      ),
+      (error) => error === setupError,
+    );
 
     assert.strictEqual(rebuilt, false);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
@@ -138,15 +173,27 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
-    const actionable = 'The local Transformers runtime is unavailable. '
-      + 'Reinstall pmem with npm install -g pmem-ai@latest, then retry.';
+    const actionable =
+      'The local Transformers runtime is unavailable. ' +
+      'Reinstall pmem with npm install -g pmem-ai@latest, then retry.';
     const setupError = Object.assign(new Error(actionable), { code: 'PMEM_TRANSFORMERS_MISSING' });
 
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async () => { throw setupError; } }),
-      log: line => output.push(line),
-    }), new RegExp(actionable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true, format: 'json' },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            prepareModel: async () => {
+              throw setupError;
+            },
+          }),
+          log: (line) => output.push(line),
+        },
+      ),
+      new RegExp(actionable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    );
 
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
@@ -162,11 +209,22 @@ describe('pmem semantic command', () => {
   it('enable rejects non-macOS before model preparation', async () => {
     const { cwd } = project();
     let prepared = false;
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
-      platform: 'linux',
-      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
-      log: () => {},
-    }), /enable is supported on macOS and Windows only/);
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true },
+        {
+          platform: 'linux',
+          operations: fakeOperations({
+            prepareModel: async () => {
+              prepared = true;
+            },
+          }),
+          log: () => {},
+        },
+      ),
+      /enable is supported on macOS and Windows only/,
+    );
     assert.strictEqual(prepared, false);
   });
 
@@ -174,27 +232,44 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     const output: string[] = [];
 
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true }, {
-      platform: 'darwin',
-      operations: fakeOperations({ rebuild: async () => { throw new Error('provider interrupted'); } }),
-      log: line => output.push(line),
-    }), /cached and enabled.*pmem semantic rebuild --full/);
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            rebuild: async () => {
+              throw new Error('provider interrupted');
+            },
+          }),
+          log: (line) => output.push(line),
+        },
+      ),
+      /cached and enabled.*pmem semantic rebuild --full/,
+    );
 
     const persisted = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
     assert.strictEqual(persisted.embedding.enabled, true);
     assert.strictEqual(persisted.embedding.provider, 'local');
-    assert.ok(output.some(line => line.includes('setup succeeded')));
-    assert.ok(output.some(line => line.includes('pmem semantic rebuild --full')));
+    assert.ok(output.some((line) => line.includes('setup succeeded')));
+    assert.ok(output.some((line) => line.includes('pmem semantic rebuild --full')));
   });
 
   it('enable JSON output is one parseable readiness document on success', async () => {
     const { cwd } = project();
     const output: string[] = [];
-    await semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ rebuild: async () => ({ indexedCards: 3, indexedChunks: 9 }) }),
-      log: line => output.push(line),
-    });
+    await semanticCommand(
+      'enable',
+      { cwd, yes: true, format: 'json' },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          rebuild: async () => ({ indexedCards: 3, indexedChunks: 9 }),
+        }),
+        log: (line) => output.push(line),
+      },
+    );
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
     assert.strictEqual(result.action, 'enable');
@@ -206,11 +281,22 @@ describe('pmem semantic command', () => {
   it('enable JSON failure output is one structured recovery document', async () => {
     const { cwd } = project();
     const output: string[] = [];
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ rebuild: async () => { throw new Error('index unavailable'); } }),
-      log: line => output.push(line),
-    }), /index unavailable/);
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true, format: 'json' },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            rebuild: async () => {
+              throw new Error('index unavailable');
+            },
+          }),
+          log: (line) => output.push(line),
+        },
+      ),
+      /index unavailable/,
+    );
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
     assert.strictEqual(result.status, 'index_failed');
@@ -222,19 +308,28 @@ describe('pmem semantic command', () => {
   it('enable JSON partial result remains one truthful failure document', async () => {
     const { cwd } = project();
     const output: string[] = [];
-    await assert.rejects(semanticCommand('enable', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ rebuild: async () => ({
-        indexedCards: 2,
-        indexedChunks: 4,
-        eligibleCards: 3,
-        excludedCards: 0,
-        buildStatus: 'partial',
-        cardsFailed: 1,
-        failedCardIds: ['module.bad'],
-      }) }),
-      log: line => output.push(line),
-    }), /index construction failed/);
+    await assert.rejects(
+      semanticCommand(
+        'enable',
+        { cwd, yes: true, format: 'json' },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            rebuild: async () => ({
+              indexedCards: 2,
+              indexedChunks: 4,
+              eligibleCards: 3,
+              excludedCards: 0,
+              buildStatus: 'partial',
+              cardsFailed: 1,
+              failedCardIds: ['module.bad'],
+            }),
+          }),
+          log: (line) => output.push(line),
+        },
+      ),
+      /index construction failed/,
+    );
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
     assert.strictEqual(result.status, 'index_failed');
@@ -248,12 +343,20 @@ describe('pmem semantic command', () => {
     let prepared = false;
     const output: string[] = [];
 
-    await semanticCommand('setup', { cwd }, {
-      platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
-      confirm: async () => false,
-      log: (line) => output.push(line),
-    });
+    await semanticCommand(
+      'setup',
+      { cwd },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async () => {
+            prepared = true;
+          },
+        }),
+        confirm: async () => false,
+        log: (line) => output.push(line),
+      },
+    );
 
     assert.strictEqual(prepared, false);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
@@ -266,11 +369,15 @@ describe('pmem semantic command', () => {
     const { cwd } = project();
     const output: string[] = [];
 
-    await semanticCommand('setup', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations(),
-      log: line => output.push(line),
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true, format: 'json' },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: (line) => output.push(line),
+      },
+    );
 
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
@@ -286,12 +393,16 @@ describe('pmem semantic command', () => {
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
 
-    await semanticCommand('setup', { cwd, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations(),
-      confirm: async () => false,
-      log: line => output.push(line),
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, format: 'json' },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        confirm: async () => false,
+        log: (line) => output.push(line),
+      },
+    );
 
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
@@ -306,11 +417,22 @@ describe('pmem semantic command', () => {
     const before = fs.readFileSync(manifestPath, 'utf8');
     const output: string[] = [];
 
-    await assert.rejects(semanticCommand('setup', { cwd, yes: true, format: 'json' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async () => { throw new Error('download interrupted'); } }),
-      log: line => output.push(line),
-    }), /download interrupted/);
+    await assert.rejects(
+      semanticCommand(
+        'setup',
+        { cwd, yes: true, format: 'json' },
+        {
+          platform: 'darwin',
+          operations: fakeOperations({
+            prepareModel: async () => {
+              throw new Error('download interrupted');
+            },
+          }),
+          log: (line) => output.push(line),
+        },
+      ),
+      /download interrupted/,
+    );
 
     assert.strictEqual(output.length, 1);
     const result = JSON.parse(output[0]);
@@ -326,11 +448,19 @@ describe('pmem semantic command', () => {
     const { cwd, manifestPath } = project();
     let received: SemanticModelSpec | undefined;
 
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async (spec) => { received = spec; } }),
-      log: () => {},
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async (spec) => {
+            received = spec;
+          },
+        }),
+        log: () => {},
+      },
+    );
 
     assert.ok(received);
     assert.strictEqual(received.model, SEMANTIC_MODEL);
@@ -339,7 +469,17 @@ describe('pmem semantic command', () => {
     assert.strictEqual(received.dimension, SEMANTIC_DIMENSION);
     assert.strictEqual(received.source, DEFAULT_SEMANTIC_SOURCE);
     assert.ok(path.isAbsolute(received.cachePath));
-    assert.strictEqual(received.cachePath, path.join(os.homedir(), '.pmem-global', 'models', 'Xenova', 'multilingual-e5-small', SEMANTIC_MODEL_REVISION));
+    assert.strictEqual(
+      received.cachePath,
+      path.join(
+        os.homedir(),
+        '.pmem-global',
+        'models',
+        'Xenova',
+        'multilingual-e5-small',
+        SEMANTIC_MODEL_REVISION,
+      ),
+    );
     assert.ok(!received.cachePath.startsWith(cwd));
     const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
     assert.deepStrictEqual(manifest.embedding, {
@@ -360,10 +500,18 @@ describe('pmem semantic command', () => {
     const { cwd } = project();
     let prepared = false;
     await assert.rejects(
-      semanticCommand('setup', { cwd, yes: true }, {
-        platform: 'linux',
-        operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
-      }),
+      semanticCommand(
+        'setup',
+        { cwd, yes: true },
+        {
+          platform: 'linux',
+          operations: fakeOperations({
+            prepareModel: async () => {
+              prepared = true;
+            },
+          }),
+        },
+      ),
       /macOS and Windows only/,
     );
     assert.strictEqual(prepared, false);
@@ -372,10 +520,18 @@ describe('pmem semantic command', () => {
   it('accepts setup on win32', async () => {
     const { cwd } = project();
     let prepared = false;
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'win32',
-      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'win32',
+        operations: fakeOperations({
+          prepareModel: async () => {
+            prepared = true;
+          },
+        }),
+      },
+    );
     assert.strictEqual(prepared, true);
   });
 
@@ -384,10 +540,18 @@ describe('pmem semantic command', () => {
     const before = fs.readFileSync(manifestPath, 'utf8');
     let prepared = false;
     const output: string[] = [];
-    await semanticCommand('status', { cwd, format: 'json' }, {
-      operations: fakeOperations({ prepareModel: async () => { prepared = true; } }),
-      log: (line) => output.push(line),
-    });
+    await semanticCommand(
+      'status',
+      { cwd, format: 'json' },
+      {
+        operations: fakeOperations({
+          prepareModel: async () => {
+            prepared = true;
+          },
+        }),
+        log: (line) => output.push(line),
+      },
+    );
     assert.strictEqual(prepared, false);
     assert.strictEqual(fs.readFileSync(manifestPath, 'utf8'), before);
     const status = JSON.parse(output.join('\n'));
@@ -403,21 +567,32 @@ describe('pmem semantic command', () => {
   it('status marks partial indexes unavailable and exposes failed cards and recovery in JSON', async () => {
     const { cwd } = project();
     const output: string[] = [];
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'darwin', operations: fakeOperations(), log: () => {},
-    });
-    await semanticCommand('status', { cwd, format: 'json' }, {
-      operations: fakeOperations({
-        status: async () => fakeStatus({
-          available: false,
-          indexCompatible: true,
-          buildStatus: 'partial',
-          failedCardCount: 2,
-          failedCardIds: ['module.bad', 'module.worse'],
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: () => {},
+      },
+    );
+    await semanticCommand(
+      'status',
+      { cwd, format: 'json' },
+      {
+        operations: fakeOperations({
+          status: async () =>
+            fakeStatus({
+              available: false,
+              indexCompatible: true,
+              buildStatus: 'partial',
+              failedCardCount: 2,
+              failedCardIds: ['module.bad', 'module.worse'],
+            }),
         }),
-      }),
-      log: line => output.push(line),
-    });
+        log: (line) => output.push(line),
+      },
+    );
     const status = JSON.parse(output.join('\n'));
     assert.strictEqual(status.available, false);
     assert.strictEqual(status.indexCompatible, false);
@@ -430,24 +605,40 @@ describe('pmem semantic command', () => {
   it('status compact output names partial failures and the full rebuild recovery command', async () => {
     const { cwd } = project();
     const output: string[] = [];
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'darwin', operations: fakeOperations(), log: () => {},
-    });
-    await semanticCommand('status', { cwd }, {
-      operations: fakeOperations({
-        status: async () => fakeStatus({
-          available: false,
-          indexCompatible: true,
-          buildStatus: 'partial',
-          failedCardCount: 1,
-          failedCardIds: ['module.bad'],
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: () => {},
+      },
+    );
+    await semanticCommand(
+      'status',
+      { cwd },
+      {
+        operations: fakeOperations({
+          status: async () =>
+            fakeStatus({
+              available: false,
+              indexCompatible: true,
+              buildStatus: 'partial',
+              failedCardCount: 1,
+              failedCardIds: ['module.bad'],
+            }),
         }),
-      }),
-      log: line => output.push(line),
-    });
-    assert.ok(output.some(line => line.includes('Index:') && line.includes('unavailable') && line.includes('partial')));
-    assert.ok(output.some(line => line.includes('Failed cards: 1 (module.bad)')));
-    assert.ok(output.some(line => line.includes('pmem semantic rebuild --full')));
+        log: (line) => output.push(line),
+      },
+    );
+    assert.ok(
+      output.some(
+        (line) =>
+          line.includes('Index:') && line.includes('unavailable') && line.includes('partial'),
+      ),
+    );
+    assert.ok(output.some((line) => line.includes('Failed cards: 1 (module.bad)')));
+    assert.ok(output.some((line) => line.includes('pmem semantic rebuild --full')));
   });
 
   it('runtime status does not report a partial compatible pipeline as queryable', async () => {
@@ -462,7 +653,15 @@ describe('pmem semantic command', () => {
         index_content_hash, chunk_count, built_at, build_status,
         failed_card_count, failed_card_ids
       ) VALUES (1, 2, ?, ?, ?, ?, ?, ?, 'partial', 1, ?)
-    `).run(SEMANTIC_MODEL, SEMANTIC_MODEL_REVISION, SEMANTIC_DIMENSION, 'hash', 1, new Date(0).toISOString(), JSON.stringify(['module.bad']));
+    `).run(
+      SEMANTIC_MODEL,
+      SEMANTIC_MODEL_REVISION,
+      SEMANTIC_DIMENSION,
+      'hash',
+      1,
+      new Date(0).toISOString(),
+      JSON.stringify(['module.bad']),
+    );
     db.close();
 
     const status = await createDefaultSemanticOperations().status(pmemPath, {
@@ -482,54 +681,154 @@ describe('pmem semantic command', () => {
 
   it('status verifies the registry source recorded by setup', async () => {
     const { cwd } = project();
-    await semanticCommand('setup', { cwd, yes: true, source: 'huggingface' }, {
-      platform: 'darwin', operations: fakeOperations(), log: () => {},
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true, source: 'huggingface' },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: () => {},
+      },
+    );
     let received: SemanticModelSpec | undefined;
-    await semanticCommand('status', { cwd }, {
-      operations: fakeOperations({
-        status: async (_pmemPath, spec) => {
-          received = spec;
-          return {
-            modelCached: true,
-            cacheIntegrity: 'ok',
-            available: false,
-            indexedCards: 0,
-            indexedChunks: 0,
-            indexRevision: null,
-          };
-        },
-      }),
-      log: () => {},
-    });
+    await semanticCommand(
+      'status',
+      { cwd },
+      {
+        operations: fakeOperations({
+          status: async (_pmemPath, spec) => {
+            received = spec;
+            return {
+              modelCached: true,
+              cacheIntegrity: 'ok',
+              available: false,
+              indexedCards: 0,
+              indexedChunks: 0,
+              indexRevision: null,
+            };
+          },
+        }),
+        log: () => {},
+      },
+    );
     assert.strictEqual(received?.source, 'huggingface');
   });
 
   it('rebuild requires setup, then passes the pinned cache spec to the runtime', async () => {
     const { cwd } = project();
-    await assert.rejects(semanticCommand('rebuild', { cwd }, { operations: fakeOperations() }), /setup/);
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'darwin', operations: fakeOperations(), log: () => {},
-    });
+    await assert.rejects(
+      semanticCommand('rebuild', { cwd }, { operations: fakeOperations() }),
+      /setup/,
+    );
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: () => {},
+      },
+    );
     let rebuilt: SemanticModelSpec | undefined;
-    await semanticCommand('rebuild', { cwd }, {
-      operations: fakeOperations({
-        rebuild: async (_pmemPath, spec, mode) => {
-          rebuilt = spec;
-          assert.strictEqual(mode, 'incremental');
-          return { indexedCards: 1, indexedChunks: 3 };
-        },
-      }),
-      log: () => {},
-    });
+    await semanticCommand(
+      'rebuild',
+      { cwd },
+      {
+        operations: fakeOperations({
+          rebuild: async (_pmemPath, spec, mode) => {
+            rebuilt = spec;
+            assert.strictEqual(mode, 'incremental');
+            return { indexedCards: 1, indexedChunks: 3 };
+          },
+        }),
+        log: () => {},
+      },
+    );
+    assert.strictEqual(rebuilt?.revision, SEMANTIC_MODEL_REVISION);
+  });
+
+  it('re-running setup on a uint8 project keeps uint8 instead of silently switching quantization', async () => {
+    const { cwd, manifestPath } = project();
+    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+    manifest.embedding = {
+      ...manifest.embedding,
+      enabled: true,
+      provider: 'local',
+      model: SEMANTIC_MODEL,
+      revision: SEMANTIC_MODEL_REVISION,
+      source: DEFAULT_SEMANTIC_SOURCE,
+      dtype: 'uint8',
+      cache_path: path.join(cwd, 'shared-model'),
+      dimension: SEMANTIC_DIMENSION,
+      store: 'sqlite',
+      index: 'flat',
+    };
+    fs.writeFileSync(manifestPath, yaml.dump(manifest));
+    let prepared: SemanticModelSpec | undefined;
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async (spec) => {
+            prepared = spec;
+          },
+        }),
+        log: () => {},
+      },
+    );
+    assert.strictEqual(prepared?.dtype, 'uint8');
+    const after = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+    assert.strictEqual(after.embedding.dtype, 'uint8');
+  });
+
+  it('keeps a pre-1.3.6 uint8 project usable and rebuilds it with its own quantization', async () => {
+    const { cwd, manifestPath } = project();
+    const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
+    manifest.embedding = {
+      ...manifest.embedding,
+      enabled: true,
+      provider: 'local',
+      model: SEMANTIC_MODEL,
+      revision: SEMANTIC_MODEL_REVISION,
+      source: DEFAULT_SEMANTIC_SOURCE,
+      dtype: 'uint8',
+      cache_path: path.join(cwd, 'shared-model'),
+      dimension: SEMANTIC_DIMENSION,
+      store: 'sqlite',
+      index: 'flat',
+    };
+    fs.writeFileSync(manifestPath, yaml.dump(manifest));
+    let rebuilt: SemanticModelSpec | undefined;
+    await semanticCommand(
+      'rebuild',
+      { cwd },
+      {
+        operations: fakeOperations({
+          rebuild: async (_pmemPath, spec) => {
+            rebuilt = spec;
+            return { indexedCards: 1, indexedChunks: 2 };
+          },
+        }),
+        log: () => {},
+      },
+    );
+    assert.strictEqual(rebuilt?.dtype, 'uint8');
     assert.strictEqual(rebuilt?.revision, SEMANTIC_MODEL_REVISION);
   });
 
   it('clear removes derived chunks, disables semantic retrieval, and preserves model coordinates', async () => {
     const { cwd, manifestPath } = project();
-    await semanticCommand('setup', { cwd, yes: true }, {
-      platform: 'darwin', operations: fakeOperations(), log: () => {},
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true },
+      {
+        platform: 'darwin',
+        operations: fakeOperations(),
+        log: () => {},
+      },
+    );
     await semanticCommand('clear', { cwd }, { operations: fakeOperations(), log: () => {} });
     const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
     assert.strictEqual(manifest.embedding.enabled, false);
@@ -545,7 +844,7 @@ describe('pmem semantic command', () => {
 
   it('gives an actionable error when the bundled Transformers runtime cannot load', async () => {
     await assert.rejects(
-      assertTransformersRuntimeAvailable(async specifier => {
+      assertTransformersRuntimeAvailable(async (specifier) => {
         assert.strictEqual(specifier, '@huggingface/transformers');
         const error = new Error('not found') as NodeJS.ErrnoException;
         error.code = 'ERR_MODULE_NOT_FOUND';
@@ -556,7 +855,9 @@ describe('pmem semantic command', () => {
   });
 
   it('checks the bundled Transformers runtime before semantic setup downloads model files', async () => {
-    const operations = createDefaultSemanticOperations(async () => { throw new Error('missing'); });
+    const operations = createDefaultSemanticOperations(async () => {
+      throw new Error('missing');
+    });
     await assert.rejects(
       operations.prepareModel({
         model: SEMANTIC_MODEL,
@@ -573,13 +874,31 @@ describe('pmem semantic command', () => {
   it('records an explicit Hugging Face source without changing the shared model directory', async () => {
     const { cwd, manifestPath } = project();
     let received: SemanticModelSpec | undefined;
-    await semanticCommand('setup', { cwd, yes: true, source: 'huggingface' }, {
-      platform: 'darwin',
-      operations: fakeOperations({ prepareModel: async spec => { received = spec; } }),
-      log: () => {},
-    });
+    await semanticCommand(
+      'setup',
+      { cwd, yes: true, source: 'huggingface' },
+      {
+        platform: 'darwin',
+        operations: fakeOperations({
+          prepareModel: async (spec) => {
+            received = spec;
+          },
+        }),
+        log: () => {},
+      },
+    );
     assert.strictEqual(received?.source, 'huggingface');
-    assert.strictEqual(received?.cachePath, path.join(os.homedir(), '.pmem-global', 'models', 'Xenova', 'multilingual-e5-small', SEMANTIC_MODEL_REVISION));
+    assert.strictEqual(
+      received?.cachePath,
+      path.join(
+        os.homedir(),
+        '.pmem-global',
+        'models',
+        'Xenova',
+        'multilingual-e5-small',
+        SEMANTIC_MODEL_REVISION,
+      ),
+    );
     const manifest = yaml.load(fs.readFileSync(manifestPath, 'utf8')) as any;
     assert.strictEqual(manifest.embedding.source, 'huggingface');
   });
@@ -592,44 +911,57 @@ describe('pmem semantic command', () => {
       source_revision: MODELSCOPE_SOURCE_REVISION,
       dtype: SEMANTIC_DTYPE,
       dimension: SEMANTIC_DIMENSION,
-      files: REQUIRED_MODEL_FILES.map(file => ({ path: file, size: 1, sha256: '0'.repeat(64) })),
+      files: requiredModelFiles(SEMANTIC_DTYPE).map((file) => ({
+        path: file,
+        size: 1,
+        sha256: '0'.repeat(64),
+      })),
       cached_at: new Date(0).toISOString(),
     };
-    assert.strictEqual(semanticCacheIdentityMatches(receipt, {
-      model: SEMANTIC_MODEL,
-      revision: SEMANTIC_MODEL_REVISION,
-      source: 'huggingface',
-      dtype: SEMANTIC_DTYPE,
-      dimension: SEMANTIC_DIMENSION,
-      cachePath: '/tmp/shared-model',
-    }), true);
+    assert.strictEqual(
+      semanticCacheIdentityMatches(receipt, {
+        model: SEMANTIC_MODEL,
+        revision: SEMANTIC_MODEL_REVISION,
+        source: 'huggingface',
+        dtype: SEMANTIC_DTYPE,
+        dimension: SEMANTIC_DIMENSION,
+        cachePath: '/tmp/shared-model',
+      }),
+      true,
+    );
   });
 
   it('loads the absolute model directory offline and never enables remote models', async () => {
     const calls: any[] = [];
     const extractionCalls: any[] = [];
     const env = { allowRemoteModels: true, allowLocalModels: false, cacheDir: 'before' };
-    const extractor = Object.assign(async (input: unknown, options: unknown) => {
-      extractionCalls.push({ input, options });
-      return { tolist: () => [[1, 0]] };
-    }, { dispose: async () => {} });
-    const provider = await createOfflineTransformersProvider({
-      model: SEMANTIC_MODEL,
-      revision: SEMANTIC_MODEL_REVISION,
-      dtype: SEMANTIC_DTYPE,
-      dimension: SEMANTIC_DIMENSION,
-      source: 'modelscope',
-      cachePath: '/tmp/shared-model',
-    }, async (specifier: string) => {
-      assert.strictEqual(specifier, '@huggingface/transformers');
-      return {
-        env,
-        pipeline: async (...args: any[]) => {
-          calls.push({ args, remote: env.allowRemoteModels, local: env.allowLocalModels });
-          return extractor;
-        },
-      };
-    });
+    const extractor = Object.assign(
+      async (input: unknown, options: unknown) => {
+        extractionCalls.push({ input, options });
+        return { tolist: () => [[1, 0]] };
+      },
+      { dispose: async () => {} },
+    );
+    const provider = await createOfflineTransformersProvider(
+      {
+        model: SEMANTIC_MODEL,
+        revision: SEMANTIC_MODEL_REVISION,
+        dtype: SEMANTIC_DTYPE,
+        dimension: SEMANTIC_DIMENSION,
+        source: 'modelscope',
+        cachePath: '/tmp/shared-model',
+      },
+      async (specifier: string) => {
+        assert.strictEqual(specifier, '@huggingface/transformers');
+        return {
+          env,
+          pipeline: async (...args: any[]) => {
+            calls.push({ args, remote: env.allowRemoteModels, local: env.allowLocalModels });
+            return extractor;
+          },
+        };
+      },
+    );
     assert.deepStrictEqual(await provider.embedPassages(['memory text']), [[1, 0]]);
     assert.deepStrictEqual(await provider.embedQuery('question text'), [1, 0]);
     assert.strictEqual(calls[0].args[1], '/tmp/shared-model');
@@ -649,14 +981,19 @@ describe('pmem semantic command', () => {
   });
 
   it('keeps the local inference runtime dependency inside the base package', () => {
-    const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')) as any;
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'),
+    ) as any;
     assert.strictEqual(packageJson.dependencies['@huggingface/transformers'], '4.3.0');
-    assert.strictEqual(fs.existsSync(path.join(__dirname, '../../packages/semantic-runtime')), false);
+    assert.strictEqual(
+      fs.existsSync(path.join(__dirname, '../../packages/semantic-runtime')),
+      false,
+    );
   });
 
   it('probes the bundled Transformers runtime before a cached setup is accepted', async () => {
     let probed = false;
-    await assertTransformersRuntimeAvailable(async specifier => {
+    await assertTransformersRuntimeAvailable(async (specifier) => {
       assert.strictEqual(specifier, '@huggingface/transformers');
       probed = true;
       return { env: {} };
@@ -675,15 +1012,25 @@ describe('pmem semantic command', () => {
       source: 'modelscope',
       cachePath,
     };
-    fs.writeFileSync(path.join(cachePath, 'pmem-semantic-model.json'), JSON.stringify({
-      model: SEMANTIC_MODEL,
-      revision: SEMANTIC_MODEL_REVISION,
-      source: 'modelscope',
-      source_revision: `${MODELSCOPE_SOURCE_REVISION}-wrong`,
-      dtype: SEMANTIC_DTYPE,
-      dimension: SEMANTIC_DIMENSION,
-      files: REQUIRED_MODEL_FILES.map(file => ({ path: file, size: 0, sha256: file.includes('model_uint8') ? MODEL_UINT8_SHA256 : '0'.repeat(64) })),
-    }));
+    fs.writeFileSync(
+      path.join(cachePath, 'pmem-semantic-model.json'),
+      JSON.stringify({
+        model: SEMANTIC_MODEL,
+        revision: SEMANTIC_MODEL_REVISION,
+        source: 'modelscope',
+        source_revision: `${MODELSCOPE_SOURCE_REVISION}-wrong`,
+        dtype: SEMANTIC_DTYPE,
+        dimension: SEMANTIC_DIMENSION,
+        files: requiredModelFiles(SEMANTIC_DTYPE).map((file) => ({
+          path: file,
+          size: 0,
+          sha256:
+            file === requiredModelFiles(SEMANTIC_DTYPE).at(-1)
+              ? expectedOnnxSha256(SEMANTIC_DTYPE)!
+              : '0'.repeat(64),
+        })),
+      }),
+    );
     assert.deepStrictEqual(await inspectModelCache(spec), { integrity: 'corrupt', cached: false });
   });
 });

@@ -5,7 +5,6 @@ import * as https from 'node:https';
 import { pipeline } from 'node:stream/promises';
 import type { SemanticModelSpec, SemanticOperations, SemanticRuntimeStatus } from './semantic';
 import {
-  createOfflineTransformersProvider,
   assertTransformersRuntimeAvailable,
   nativeDynamicImport,
   type TransformersRuntimeLoader,
@@ -14,16 +13,27 @@ import { inspectSemanticReadiness } from '../core/health/semantic';
 import { PACKAGE_VERSION } from '../version';
 import { loadManifest } from '../core/manifest';
 import {
+  expectedOnnxSha256,
   inspectModelCache,
   MODELSCOPE_SOURCE_REVISION,
-  MODEL_UINT8_SHA256,
-  REQUIRED_MODEL_FILES,
+  ONNX_MODEL_FILE,
+  requiredModelFiles,
   semanticReceiptPath,
   sha256File,
   type SemanticModelReceipt as ModelReceipt,
 } from '../core/semantic/cache';
 import { SEMANTIC_CHUNK_STRATEGY, SEMANTIC_METADATA_VERSION } from '../core/semantic/defaults';
-export { inspectModelCache, MODELSCOPE_SOURCE_REVISION, MODEL_UINT8_SHA256, REQUIRED_MODEL_FILES } from '../core/semantic/cache';
+import { ensureOnnxRuntimePruned } from '../core/semantic/onnxRuntime';
+import { runRebuild } from '../core/semantic/rebuildRunner';
+export {
+  expectedOnnxSha256,
+  inspectModelCache,
+  MODELSCOPE_SOURCE_REVISION,
+  MODEL_UINT8_SHA256,
+  MODEL_Q8_SHA256,
+  ONNX_MODEL_FILE,
+  requiredModelFiles,
+} from '../core/semantic/cache';
 
 export { nativeDynamicImport } from '../core/semantic/transformers';
 
@@ -38,32 +48,42 @@ function expectedSourceRevision(spec: SemanticModelSpec): string {
 function sourceUrl(spec: SemanticModelSpec, file: string): URL {
   const encodedFile = file.split('/').map(encodeURIComponent).join('/');
   if (spec.source === 'modelscope') {
-    return new URL(`https://www.modelscope.cn/models/${spec.model}/resolve/${MODELSCOPE_SOURCE_REVISION}/${encodedFile}`);
+    return new URL(
+      `https://www.modelscope.cn/models/${spec.model}/resolve/${MODELSCOPE_SOURCE_REVISION}/${encodedFile}`,
+    );
   }
   return new URL(`https://huggingface.co/${spec.model}/resolve/${spec.revision}/${encodedFile}`);
 }
 
 function getWithRedirects(url: URL, redirects = 0): Promise<import('node:http').IncomingMessage> {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, {
-      headers: { 'user-agent': `pmem-semantic-setup/${PACKAGE_VERSION}`, accept: 'application/octet-stream' },
-    }, response => {
-      const status = response.statusCode ?? 0;
-      if (status >= 300 && status < 400 && response.headers.location) {
-        response.resume();
-        if (redirects >= 8) return reject(new Error(`Too many redirects downloading ${url}`));
-        const next = new URL(response.headers.location, url);
-        if (next.protocol !== 'https:') return reject(new Error(`Refusing non-HTTPS redirect to ${next}`));
-        void getWithRedirects(next, redirects + 1).then(resolve, reject);
-        return;
-      }
-      if (status !== 200) {
-        response.resume();
-        reject(new Error(`Download failed (${status}) for ${url}`));
-        return;
-      }
-      resolve(response);
-    });
+    const request = https.get(
+      url,
+      {
+        headers: {
+          'user-agent': `pmem-semantic-setup/${PACKAGE_VERSION}`,
+          accept: 'application/octet-stream',
+        },
+      },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        if (status >= 300 && status < 400 && response.headers.location) {
+          response.resume();
+          if (redirects >= 8) return reject(new Error(`Too many redirects downloading ${url}`));
+          const next = new URL(response.headers.location, url);
+          if (next.protocol !== 'https:')
+            return reject(new Error(`Refusing non-HTTPS redirect to ${next}`));
+          void getWithRedirects(next, redirects + 1).then(resolve, reject);
+          return;
+        }
+        if (status !== 200) {
+          response.resume();
+          reject(new Error(`Download failed (${status}) for ${url}`));
+          return;
+        }
+        resolve(response);
+      },
+    );
     request.setTimeout(30_000, () => request.destroy(new Error(`Download timed out for ${url}`)));
     request.on('error', reject);
   });
@@ -84,17 +104,28 @@ async function downloadAtomic(url: URL, destination: string): Promise<void> {
 
 async function downloadModelSnapshot(spec: SemanticModelSpec): Promise<ModelReceipt> {
   fs.mkdirSync(spec.cachePath, { recursive: true });
-  for (const file of REQUIRED_MODEL_FILES) {
-    await retryTransientDownload(() => downloadAtomic(sourceUrl(spec, file), path.join(spec.cachePath, file)));
+  const wanted = requiredModelFiles(spec.dtype);
+  for (const file of wanted) {
+    await retryTransientDownload(() =>
+      downloadAtomic(sourceUrl(spec, file), path.join(spec.cachePath, file)),
+    );
   }
   const files: ModelReceipt['files'] = [];
-  for (const file of REQUIRED_MODEL_FILES) {
+  for (const file of wanted) {
     const localPath = path.join(spec.cachePath, file);
-    files.push({ path: file, size: fs.statSync(localPath).size, sha256: await sha256File(localPath) });
+    files.push({
+      path: file,
+      size: fs.statSync(localPath).size,
+      sha256: await sha256File(localPath),
+    });
   }
-  const onnx = files.find(file => file.path === 'onnx/model_uint8.onnx');
-  if (onnx?.sha256 !== MODEL_UINT8_SHA256) {
-    throw new Error(`Semantic model integrity check failed for onnx/model_uint8.onnx (expected ${MODEL_UINT8_SHA256}, got ${onnx?.sha256 ?? 'missing'}).`);
+  const onnxPath = ONNX_MODEL_FILE[spec.dtype] ?? ONNX_MODEL_FILE.q8;
+  const pinned = expectedOnnxSha256(spec.dtype);
+  const onnx = files.find((file) => file.path === onnxPath);
+  if (!onnx || (pinned !== undefined && onnx.sha256 !== pinned)) {
+    throw new Error(
+      `Semantic model integrity check failed for ${onnxPath} (expected ${pinned ?? 'any digest'}, got ${onnx?.sha256 ?? 'missing'}).`,
+    );
   }
   return {
     metadata_version: SEMANTIC_METADATA_VERSION,
@@ -124,12 +155,13 @@ async function retryTransientDownload<T>(operation: () => Promise<T>, attempts =
     } catch (error: any) {
       lastError = error;
       const code = error?.cause?.code ?? error?.code;
-      const transient = code === 'ECONNRESET'
-        || code === 'ETIMEDOUT'
-        || code === 'EAI_AGAIN'
-        || /fetch failed|timed out|Download failed \(5\d\d\)/i.test(error?.message ?? '');
+      const transient =
+        code === 'ECONNRESET' ||
+        code === 'ETIMEDOUT' ||
+        code === 'EAI_AGAIN' ||
+        /fetch failed|timed out|Download failed \(5\d\d\)/i.test(error?.message ?? '');
       if (!transient || attempt === attempts) throw error;
-      await new Promise(resolve => setTimeout(resolve, 250 * (2 ** (attempt - 1))));
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** (attempt - 1)));
     }
   }
   throw lastError;
@@ -140,6 +172,8 @@ export function createDefaultSemanticOperations(
 ): SemanticOperations {
   return {
     async prepareModel(spec): Promise<void> {
+      // Trim unused GPU/cross-platform ONNX Runtime binaries while the native library is still unloaded.
+      ensureOnnxRuntimePruned();
       // Fail before downloading ~145 MB if the bundled inference dependency is unavailable.
       await assertTransformersRuntimeAvailable(loadTransformers);
       const existing = await inspectModelCache(spec);
@@ -149,7 +183,8 @@ export function createDefaultSemanticOperations(
       fs.writeFileSync(temporaryReceipt, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
       fs.renameSync(temporaryReceipt, receiptPath(spec));
       const verified = await inspectModelCache(spec);
-      if (!verified.cached) throw new Error('Semantic model cache verification failed after download.');
+      if (!verified.cached)
+        throw new Error('Semantic model cache verification failed after download.');
     },
 
     async status(pmemPath, spec): Promise<SemanticRuntimeStatus> {
@@ -169,9 +204,8 @@ export function createDefaultSemanticOperations(
           pipelineVersion: value.pipelineVersion ?? null,
           metadataVersion: value.metadataVersion ?? null,
           chunkStrategy: value.chunkStrategy ?? null,
-          indexCompatible: value.available === true
-            && value.pipelineVersion != null
-            && value.compatible === true,
+          indexCompatible:
+            value.available === true && value.pipelineVersion != null && value.compatible === true,
           indexFresh: readiness?.index_fresh ?? false,
           buildStatus: value.buildStatus,
           failedCardCount: value.failedCardCount,
@@ -208,25 +242,23 @@ export function createDefaultSemanticOperations(
     async rebuild(pmemPath, spec, mode) {
       const receipt = await inspectModelCache(spec);
       if (!receipt.cached) {
-        throw new Error(`Semantic model cache is ${receipt.integrity}. Re-run \`pmem semantic setup\` while online.`);
+        throw new Error(
+          `Semantic model cache is ${receipt.integrity}. Re-run \`pmem semantic setup\` while online.`,
+        );
       }
       const core = await loadCore();
-      const provider = await createOfflineTransformersProvider(spec, loadTransformers);
-      try {
-        const result = await core.rebuildSemanticProject(pmemPath, provider, { mode });
-        return {
-          indexedCards: result.cardsIndexed ?? result.cardsSeen - result.cardsExcluded,
-          indexedChunks: result.chunksTotal,
-          eligibleCards: result.cardsSeen - result.cardsExcluded,
-          excludedCards: result.cardsExcluded,
-          buildStatus: result.buildStatus,
-          cardsFailed: result.cardsFailed,
-          failedCardIds: result.failedCardIds,
-          failures: result.failures,
-        };
-      } finally {
-        await provider.dispose();
-      }
+      ensureOnnxRuntimePruned();
+      const result = await runRebuild(core, pmemPath, spec, mode, loadTransformers);
+      return {
+        indexedCards: result.cardsIndexed ?? result.cardsSeen - result.cardsExcluded,
+        indexedChunks: result.chunksTotal,
+        eligibleCards: result.cardsSeen - result.cardsExcluded,
+        excludedCards: result.cardsExcluded,
+        buildStatus: result.buildStatus,
+        cardsFailed: result.cardsFailed,
+        failedCardIds: result.failedCardIds,
+        failures: result.failures,
+      };
     },
 
     async clear(pmemPath) {

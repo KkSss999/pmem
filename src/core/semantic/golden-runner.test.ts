@@ -43,21 +43,18 @@ describe('semantic golden quality runner', () => {
     assert.equal(result.passed, false);
     assert.equal(result.status, 'failed');
     assert.equal(result.exitCode, 1);
-    assert.deepEqual(result.failures.map(failure => failure.code), [
-      'QUALITY_THRESHOLD',
-      'QUALITY_THRESHOLD',
-      'MISSING_QUERY_RESULTS',
-    ]);
+    assert.deepEqual(
+      result.failures.map((failure) => failure.code),
+      ['QUALITY_THRESHOLD', 'QUALITY_THRESHOLD', 'MISSING_QUERY_RESULTS'],
+    );
     assert.equal(result.failures[0]?.metric, 'coverage');
     assert.deepEqual(result.failures.at(-1)?.queryIds, ['q2']);
   });
 
   it('honors relaxed completeness options when constructing runner failures', () => {
-    const missingRelaxed = runGoldenQuality(
-      fixture,
-      [{ queryId: 'q1', retrievedIds: ['a'] }],
-      { requireCompleteResults: false },
-    );
+    const missingRelaxed = runGoldenQuality(fixture, [{ queryId: 'q1', retrievedIds: ['a'] }], {
+      requireCompleteResults: false,
+    });
     assert.equal(missingRelaxed.passed, true);
     assert.equal(missingRelaxed.exitCode, 0);
     assert.deepEqual(missingRelaxed.failures, []);

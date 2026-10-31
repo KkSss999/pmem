@@ -9,7 +9,10 @@ import Database from 'better-sqlite3';
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
 const tempDirs: string[] = [];
 
-function run(cwd: string, ...args: string[]): { stdout: string; stderr: string; status: number | null } {
+function run(
+  cwd: string,
+  ...args: string[]
+): { stdout: string; stderr: string; status: number | null } {
   const result = spawnSync(process.execPath, [PMEM_BIN, ...args], { cwd, encoding: 'utf8' });
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
@@ -59,12 +62,16 @@ describe('pmem doctor exit codes', () => {
 
     const cardDir = path.join(cwd, '.pmem', 'decisions');
     fs.mkdirSync(cardDir, { recursive: true });
-    fs.writeFileSync(path.join(cardDir, 'decision.stale.md'), `---
+    fs.writeFileSync(
+      path.join(cardDir, 'decision.stale.md'),
+      `---
 id: decision.stale
 type: decision
 ---
 # Stale source card
-`, 'utf8');
+`,
+      'utf8',
+    );
 
     const db = new Database(path.join(cwd, '.pmem', 'pmem.db'));
     try {
@@ -90,12 +97,16 @@ type: decision
 
     const cardDir = path.join(cwd, '.pmem', 'modules');
     fs.mkdirSync(cardDir, { recursive: true });
-    fs.writeFileSync(path.join(cardDir, 'module.tombstoned.md'), `---
+    fs.writeFileSync(
+      path.join(cardDir, 'module.tombstoned.md'),
+      `---
 id: module.tombstoned
 type: module
 ---
 # Tombstoned source card
-`, 'utf8');
+`,
+      'utf8',
+    );
     const rebuilt = run(cwd, 'rebuild');
     assert.equal(rebuilt.status, 0, rebuilt.stderr || rebuilt.stdout);
 
@@ -115,7 +126,11 @@ type: module
     assert.match(check.message, /0 active cards are indexed/);
     assert.match(check.message, /tombstone row/);
     assert.match(check.fix, /pmem rebuild/);
-    assert.ok(!report.checks.some((item: { name: string; status: string; message: string }) =>
-      item.name === 'cards' && item.status === 'ok' && /0 active card/.test(item.message)));
+    assert.ok(
+      !report.checks.some(
+        (item: { name: string; status: string; message: string }) =>
+          item.name === 'cards' && item.status === 'ok' && /0 active card/.test(item.message),
+      ),
+    );
   });
 });

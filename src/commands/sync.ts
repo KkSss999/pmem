@@ -1,12 +1,5 @@
 import * as path from 'path';
-import {
-  fileExists,
-  readFile,
-  writeFile,
-  atomicWrite,
-  ensureDir,
-  isPathMatch
-} from '../core/fs';
+import { fileExists, readFile, writeFile, atomicWrite, ensureDir, isPathMatch } from '../core/fs';
 import { loadManifest, saveManifest } from '../core/manifest';
 import { rebuildCommand } from './rebuild';
 import {
@@ -16,7 +9,7 @@ import {
   resolveDirtyFlags,
   insertUpdateLog,
   getActiveSession,
-  closeDatabase
+  closeDatabase,
 } from '../runtime/maintenance';
 import { getChangedFiles } from './status';
 import { acknowledgeStatusChanges } from '../core/query/status';
@@ -72,15 +65,22 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
     const matchedChangedPaths = new Set<string>();
 
     // Retrieve all paths for precise relative path matching
-    const allPaths = db.prepare(
-      "SELECT card_id, path FROM paths"
-    ).all() as Array<{ card_id: string; path: string }>;
+    const allPaths = db.prepare('SELECT card_id, path FROM paths').all() as Array<{
+      card_id: string;
+      path: string;
+    }>;
 
     for (const change of changes) {
       for (const p of allPaths) {
         if (isPathMatch(change.path, p.path)) {
           if (!dirtyCards.includes(p.card_id)) {
-            insertDirtyFlag(db, 'card', p.card_id, 'file_changed: ' + change.path, activeSession?.id);
+            insertDirtyFlag(
+              db,
+              'card',
+              p.card_id,
+              'file_changed: ' + change.path,
+              activeSession?.id,
+            );
             dirtyCards.push(p.card_id);
           }
           matchedChangedPaths.add(change.path);
@@ -97,8 +97,17 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
       manifest.memory_status.dirty_since = timestamp;
       saveManifest(pmemPath, manifest);
 
-      atomicWrite(dirtyPath, `reason: auto_sync: ${dirtyCards.length} cards dirty\nsince: ${timestamp}\n`);
-      insertDirtyFlag(db, 'project', '.pmem', `auto_sync: ${dirtyCards.length} cards dirty`, activeSession?.id);
+      atomicWrite(
+        dirtyPath,
+        `reason: auto_sync: ${dirtyCards.length} cards dirty\nsince: ${timestamp}\n`,
+      );
+      insertDirtyFlag(
+        db,
+        'project',
+        '.pmem',
+        `auto_sync: ${dirtyCards.length} cards dirty`,
+        activeSession?.id,
+      );
     }
 
     // 3. Confirm update if summary is provided
@@ -107,7 +116,7 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
         writeManagedNext(pmemPath, {
           nextStep: options.next,
           why: 'Confirmed during sync.',
-          context: ['Run `pmem recall` for full context.']
+          context: ['Run `pmem recall` for full context.'],
         });
       }
 
@@ -116,18 +125,28 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
       ensureDir(traceDir);
 
       const fs = require('fs');
-      const existingTraces = fs.readdirSync(traceDir)
-        .filter((f: string) => f.startsWith(today))
-        .length;
+      const existingTraces = fs
+        .readdirSync(traceDir)
+        .filter((f: string) => f.startsWith(today)).length;
 
       const traceNum = String(existingTraces + 1).padStart(3, '0');
       createdTracePath = path.join(traceDir, `${today}-${traceNum}.md`);
 
-      atomicWrite(createdTracePath, `---\nid: trace.${today}-${traceNum}\ntype: trace\ncreated: ${today}\n---\n\n# Trace: ${options.summary}\n\n## What Changed\n${options.summary}\n\n## Next\n${options.next || 'Continue as planned.'}\n`);
+      atomicWrite(
+        createdTracePath,
+        `---\nid: trace.${today}-${traceNum}\ntype: trace\ncreated: ${today}\n---\n\n# Trace: ${options.summary}\n\n## What Changed\n${options.summary}\n\n## Next\n${options.next || 'Continue as planned.'}\n`,
+      );
 
       // Resolve project level dirty flag and log update
       resolveDirtyFlags(db, 'project', '.pmem');
-      insertUpdateLog(db, 'confirm_update', options.summary, activeSession?.id, [`trace.${today}-${traceNum}`], true);
+      insertUpdateLog(
+        db,
+        'confirm_update',
+        options.summary,
+        activeSession?.id,
+        [`trace.${today}-${traceNum}`],
+        true,
+      );
 
       // Clean up dirty state in files
       if (fileExists(dirtyPath)) {
@@ -155,18 +174,22 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
       }
       console.log('Rebuilding indexes...');
       rebuildCommand({ cwd: project?.projectRoot ?? cwd });
-      acknowledgeStatusChanges(pmemPath, changes.map(change => change.path));
+      acknowledgeStatusChanges(
+        pmemPath,
+        changes.map((change) => change.path),
+      );
       console.log('\n✓ Memory sync and update completed.');
     } else {
       if (dirtyCards.length > 0) {
         acknowledgeStatusChanges(pmemPath, [...matchedChangedPaths]);
         console.log(`Auto-marked ${dirtyCards.length} card(s) as dirty.`);
-        console.log('\nRecommended: run `pmem sync -s "<summary>" -n "<next>"` to confirm and sync memory.');
+        console.log(
+          '\nRecommended: run `pmem sync -s "<summary>" -n "<next>"` to confirm and sync memory.',
+        );
       } else {
         console.log('No related cards found for changed files.');
       }
     }
-
   } catch (err: any) {
     console.error('Error during pmem sync:', err.message);
 
@@ -190,15 +213,21 @@ export function syncCommand(options: { summary?: string; next?: string }): void 
     if (dirtyBackup !== null) {
       writeFile(dirtyPath, dirtyBackup);
     } else if (fileExists(dirtyPath)) {
-      try { fs.unlinkSync(dirtyPath); } catch {}
+      try {
+        fs.unlinkSync(dirtyPath);
+      } catch {}
     }
     if (nextBackup !== null) {
       writeFile(nextPath, nextBackup);
     } else if (fileExists(nextPath)) {
-      try { fs.unlinkSync(nextPath); } catch {}
+      try {
+        fs.unlinkSync(nextPath);
+      } catch {}
     }
     if (createdTracePath && fileExists(createdTracePath)) {
-      try { fs.unlinkSync(createdTracePath); } catch {}
+      try {
+        fs.unlinkSync(createdTracePath);
+      } catch {}
     }
 
     console.log('Rollback completed cleanly.');

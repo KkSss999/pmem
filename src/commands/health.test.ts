@@ -51,8 +51,12 @@ describe('health baseline locking', () => {
       const db = openOwnedDatabase(pmemPath);
       try {
         createSchema(db);
-        db.prepare('INSERT INTO edges (from_id, to_id, type, source) VALUES (?, ?, ?, ?)')
-          .run(from, to, 'depends_on', 'explicit');
+        db.prepare('INSERT INTO edges (from_id, to_id, type, source) VALUES (?, ?, ?, ?)').run(
+          from,
+          to,
+          'depends_on',
+          'explicit',
+        );
       } finally {
         closeDatabase(db);
       }
@@ -60,12 +64,12 @@ describe('health baseline locking', () => {
 
     insertOrphan('missing.one', 'missing.target');
     const initial = verifyCommand({ cwd, noExit: true, silent: true })!;
-    assert.equal(initial.issues.find(issue => issue.type === 'orphan_edges')?.evidence_count, 1);
+    assert.equal(initial.issues.find((issue) => issue.type === 'orphan_edges')?.evidence_count, 1);
     writeHealthBaseline(pmemPath, initial.issues);
 
     insertOrphan('missing.two', 'missing.target');
     const regressed = verifyCommand({ cwd, noExit: true, silent: true })!;
-    const orphan = regressed.issues.find(issue => issue.type === 'orphan_edges');
+    const orphan = regressed.issues.find((issue) => issue.type === 'orphan_edges');
     assert.equal(orphan?.evidence_count, 2);
     assert.equal(orphan?.historical, false);
     assert.ok(regressed.change_score !== null && regressed.change_score < 100);

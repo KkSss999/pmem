@@ -3,11 +3,16 @@ import { estimateTokens, pack } from './query/engine/pack';
 
 export function formatOutput(result: unknown, format: CliFormat, budget: number = 1600): string {
   switch (format) {
-    case 'compact': return formatCompact(result, budget);
-    case 'json': return formatJson(result);
-    case 'paths': return formatPaths(result);
-    case 'pack': return formatPack(result, budget);
-    default: return formatCompact(result, budget);
+    case 'compact':
+      return formatCompact(result, budget);
+    case 'json':
+      return formatJson(result);
+    case 'paths':
+      return formatPaths(result);
+    case 'pack':
+      return formatPack(result, budget);
+    default:
+      return formatCompact(result, budget);
   }
 }
 
@@ -69,26 +74,43 @@ function formatPack(result: unknown, budget: number): string {
       `PROJECT: ${r.project || 'Unknown'}`,
       ...(r.stage ? [`STAGE: ${r.stage}`] : []),
       ...(r.focus ? [`FOCUS: ${r.focus}`] : []),
-      ...(r.next ? [`NEXT: ${String(r.next).replace(/^[-*]\s*/, '').trim()}`] : []),
+      ...(r.next
+        ? [
+            `NEXT: ${String(r.next)
+              .replace(/^[-*]\s*/, '')
+              .trim()}`,
+          ]
+        : []),
     ];
-    const arch = Array.isArray(r.architecture) ? r.architecture as any[] : [];
-    const decisions = Array.isArray(r.decisions) ? r.decisions as any[] : [];
-    const packed = pack({
-      l0,
-      l1: [
-        ...arch.slice(0, 5).map(m => `ARCH: ${m.id}${m.summary ? ` — ${m.summary}` : ''}`),
-        ...decisions.slice(0, 5).map(d => `DECISION: ${d.id || d.title}${d.summary ? ` — ${d.summary}` : ''}`),
-        ...(Array.isArray(r.foundation_summaries) ? (r.foundation_summaries as any[]).map(card =>
-          `FOUNDATION: ${card.title}${card.summary ? ` — ${card.summary}` : card.snippet ? ` — ${card.snippet}` : ''}`) : []),
-      ],
-      l2: Array.isArray(r.recent_summaries) ? (r.recent_summaries as any[]).map(card => ({
-        id: card.id,
-        title: card.title,
-        summary: card.summary || card.snippet,
-        file_path: card.file_path,
-      })) : [],
-      l3: Array.isArray(r.mustRead) ? r.mustRead as string[] : [],
-    }, { budget, mode });
+    const arch = Array.isArray(r.architecture) ? (r.architecture as any[]) : [];
+    const decisions = Array.isArray(r.decisions) ? (r.decisions as any[]) : [];
+    const packed = pack(
+      {
+        l0,
+        l1: [
+          ...arch.slice(0, 5).map((m) => `ARCH: ${m.id}${m.summary ? ` — ${m.summary}` : ''}`),
+          ...decisions
+            .slice(0, 5)
+            .map((d) => `DECISION: ${d.id || d.title}${d.summary ? ` — ${d.summary}` : ''}`),
+          ...(Array.isArray(r.foundation_summaries)
+            ? (r.foundation_summaries as any[]).map(
+                (card) =>
+                  `FOUNDATION: ${card.title}${card.summary ? ` — ${card.summary}` : card.snippet ? ` — ${card.snippet}` : ''}`,
+              )
+            : []),
+        ],
+        l2: Array.isArray(r.recent_summaries)
+          ? (r.recent_summaries as any[]).map((card) => ({
+              id: card.id,
+              title: card.title,
+              summary: card.summary || card.snippet,
+              file_path: card.file_path,
+            }))
+          : [],
+        l3: Array.isArray(r.mustRead) ? (r.mustRead as string[]) : [],
+      },
+      { budget, mode },
+    );
     return fitToBudget(packed.lines, budget);
   }
 
@@ -116,7 +138,12 @@ function formatPack(result: unknown, budget: number): string {
   if (r.query && add(`\nQUERY: ${r.query}`)) {
     if (Array.isArray(r.matched)) {
       for (const m of r.matched as Array<Record<string, unknown>>) {
-        if (!add(`  - ${m.id} (${m.matchType || m.match_type}, score: ${m.score ?? m.confidence ?? '?'})`)) break;
+        if (
+          !add(
+            `  - ${m.id} (${m.matchType || m.match_type}, score: ${m.score ?? m.confidence ?? '?'})`,
+          )
+        )
+          break;
       }
     }
   }
@@ -149,7 +176,11 @@ function formatRecallCompact(r: Record<string, unknown>, budget: number): string
     if (r.next) {
       lines.push('');
       lines.push('NEXT:');
-      lines.push(`- ${String(r.next).replace(/^[-*]\s*/, '').trim()}`);
+      lines.push(
+        `- ${String(r.next)
+          .replace(/^[-*]\s*/, '')
+          .trim()}`,
+      );
     }
     if (Array.isArray(r.mustRead) && (r.mustRead as string[]).length > 0) {
       lines.push('');
@@ -165,7 +196,10 @@ function formatRecallCompact(r: Record<string, unknown>, budget: number): string
   const contextSummary = r.context_summary as string[] | undefined;
   if (Array.isArray(contextSummary) && contextSummary.length > 0) {
     for (const s of contextSummary) {
-      const subLines = s.split('\n').map(x => x.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+      const subLines = s
+        .split('\n')
+        .map((x) => x.replace(/^[-*]\s*/, '').trim())
+        .filter(Boolean);
       for (const sl of subLines) {
         lines.push(`- ${sl}`);
       }
@@ -243,17 +277,22 @@ function formatRecallCompact(r: Record<string, unknown>, budget: number): string
   if (Array.isArray(arch) && arch.length > 0) {
     for (const m of arch) {
       if ((m as any).sensitivity === 'secret') continue;
-      const filesStr = Array.isArray(m.source_files) && m.source_files.length > 0
-        ? `: ${m.source_files.join(', ')}`
-        : '';
+      const filesStr =
+        Array.isArray(m.source_files) && m.source_files.length > 0
+          ? `: ${m.source_files.join(', ')}`
+          : '';
       const summaryStr = m.summary ? ` — ${m.summary}` : '';
-      const confStr = (m as any).confidence != null ? ` [confidence: ${(m as any).confidence}]` : '';
+      const confStr =
+        (m as any).confidence != null ? ` [confidence: ${(m as any).confidence}]` : '';
       const supStr = (m as any).superseded_by ? ` [superseded]` : '';
       const classStr = (m as any).classification ? ` [${(m as any).classification}]` : '';
       const trustStr = (m as any).trust_label ? ` [trust: ${(m as any).trust_label}]` : '';
       const sens = (m as any).sensitivity;
-      const sensStr = sens && sens !== 'public' && sens !== 'secret' ? ` [sensitivity: ${sens}]` : '';
-      lines.push(`- ${m.id}${classStr}${filesStr}${summaryStr}${confStr}${supStr}${trustStr}${sensStr}`);
+      const sensStr =
+        sens && sens !== 'public' && sens !== 'secret' ? ` [sensitivity: ${sens}]` : '';
+      lines.push(
+        `- ${m.id}${classStr}${filesStr}${summaryStr}${confStr}${supStr}${trustStr}${sensStr}`,
+      );
     }
   } else {
     lines.push('- (none)');
@@ -278,12 +317,16 @@ function formatRecallCompact(r: Record<string, unknown>, budget: number): string
     for (const d of decs) {
       if ((d as any).sensitivity === 'secret') continue;
       const dClassStr = (d as any).classification ? ` [${(d as any).classification}]` : '';
-      const dConfStr = (d as any).confidence != null ? ` [confidence: ${(d as any).confidence}]` : '';
+      const dConfStr =
+        (d as any).confidence != null ? ` [confidence: ${(d as any).confidence}]` : '';
       const dSupStr = (d as any).superseded_by ? ` [superseded]` : '';
       const dTrustStr = (d as any).trust_label ? ` [trust: ${(d as any).trust_label}]` : '';
       const dSens = (d as any).sensitivity;
-      const dSensStr = dSens && dSens !== 'public' && dSens !== 'secret' ? ` [sensitivity: ${dSens}]` : '';
-      addDecision(`${d.title}${dClassStr}${d.summary ? ` — ${d.summary}` : ''}${dConfStr}${dSupStr}${dTrustStr}${dSensStr}`);
+      const dSensStr =
+        dSens && dSens !== 'public' && dSens !== 'secret' ? ` [sensitivity: ${dSens}]` : '';
+      addDecision(
+        `${d.title}${dClassStr}${d.summary ? ` — ${d.summary}` : ''}${dConfStr}${dSupStr}${dTrustStr}${dSensStr}`,
+      );
     }
   }
   if (Array.isArray(recentTraces)) {
@@ -308,7 +351,11 @@ function formatRecallCompact(r: Record<string, unknown>, budget: number): string
   lines.push('NEXT:');
   const nextSteps = new Set<string>();
   if (r.next && r.next !== 'No next step recorded.') {
-    nextSteps.add(String(r.next).replace(/^[-*]\s*/, '').trim());
+    nextSteps.add(
+      String(r.next)
+        .replace(/^[-*]\s*/, '')
+        .trim(),
+    );
   }
   if (Array.isArray(recentTraces)) {
     for (const trace of recentTraces) {
@@ -356,8 +403,12 @@ function formatAskCompact(r: Record<string, unknown>): string {
 
   const matched = r.matched as Array<Record<string, unknown>> | undefined;
   if (matched && matched.length > 0) {
-    const direct = matched.filter(m => m.matchType !== 'graph_expansion' && m.match_type !== 'graph_expansion');
-    const expanded = matched.filter(m => m.matchType === 'graph_expansion' || m.match_type === 'graph_expansion');
+    const direct = matched.filter(
+      (m) => m.matchType !== 'graph_expansion' && m.match_type !== 'graph_expansion',
+    );
+    const expanded = matched.filter(
+      (m) => m.matchType === 'graph_expansion' || m.match_type === 'graph_expansion',
+    );
 
     if (direct.length > 0) {
       lines.push('\nMatched:');
@@ -365,7 +416,9 @@ function formatAskCompact(r: Record<string, unknown>): string {
         const cConf = m.card_confidence != null ? ` [confidence: ${m.card_confidence}]` : '';
         const cSup = m.superseded_by ? ` [superseded]` : '';
         const cClass = m.classification ? ` [${m.classification}]` : '';
-        lines.push(`  - ${m.id}${cClass} by ${m.matchType || m.match_type}: "${m.title}"${cConf}${cSup}`);
+        lines.push(
+          `  - ${m.id}${cClass} by ${m.matchType || m.match_type}: "${m.title}"${cConf}${cSup}`,
+        );
         if (m.summary) lines.push(`    Summary: ${m.summary}`);
         if (m.snippet && m.snippet !== m.summary) lines.push(`    Excerpt: ${m.snippet}`);
       }
@@ -376,7 +429,9 @@ function formatAskCompact(r: Record<string, unknown>): string {
         const cConf = m.card_confidence != null ? ` [confidence: ${m.card_confidence}]` : '';
         const cSup = m.superseded_by ? ` [superseded]` : '';
         const cClass = m.classification ? ` [${m.classification}]` : '';
-        lines.push(`  - ${m.id}${cClass} via ${m.edgeType || m.edge_type || 'related'} (d=${m.graphDistance || m.graph_distance || 1})${cConf}${cSup}`);
+        lines.push(
+          `  - ${m.id}${cClass} via ${m.edgeType || m.edge_type || 'related'} (d=${m.graphDistance || m.graph_distance || 1})${cConf}${cSup}`,
+        );
       }
     }
   } else {

@@ -19,13 +19,19 @@ function makePmemProject(): string {
   return root;
 }
 
-async function withCapturedConsole(fn: () => void | Promise<void>): Promise<{ stdout: string[]; stderr: string[] }> {
+async function withCapturedConsole(
+  fn: () => void | Promise<void>,
+): Promise<{ stdout: string[]; stderr: string[] }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
-  console.log = (...args: unknown[]) => { stdout.push(args.join(' ')); };
-  console.error = (...args: unknown[]) => { stderr.push(args.join(' ')); };
+  console.log = (...args: unknown[]) => {
+    stdout.push(args.join(' '));
+  };
+  console.error = (...args: unknown[]) => {
+    stderr.push(args.join(' '));
+  };
   try {
     await fn();
     return { stdout, stderr };
@@ -57,11 +63,15 @@ describe('read/query CLI commands use Pmem Runtime', () => {
             evidence_paths: [],
           };
         },
-        close: async () => { calls.push('close'); },
+        close: async () => {
+          calls.push('close');
+        },
       };
     };
 
-    const out = await withCapturedConsole(() => askCommand('runtime api', 'json', { explain: true, limit: 3 }));
+    const out = await withCapturedConsole(() =>
+      askCommand('runtime api', 'json', { explain: true, limit: 3 }),
+    );
     const json = JSON.parse(out.stdout.join('\n'));
 
     assert.deepStrictEqual(calls, [`open:${process.cwd()}`, 'ask:runtime api:true:3', 'close']);
@@ -79,15 +89,30 @@ describe('read/query CLI commands use Pmem Runtime', () => {
     process.chdir(root);
     (Pmem as any).open = async () => ({
       ask: async (query: string) => ({
-        query, matched: [], recommended_files: [], evidence_paths: [],
+        query,
+        matched: [],
+        recommended_files: [],
+        evidence_paths: [],
         diagnostics: {
-          card_count: 2, deterministic_candidate_count: 0, no_result_reason: 'semantic_all_cards_excluded',
+          card_count: 2,
+          deterministic_candidate_count: 0,
+          no_result_reason: 'semantic_all_cards_excluded',
           semantic: {
-            enabled: true, index_available: true, indexed_cards: 0, indexed_chunks: 0,
-            eligible_cards: 0, excluded_cards: 2, excluded_by_reason: { untrusted: 2 },
-            excluded_by_trust_detail: { missing_trust_label: 2 }, raw_chunk_hits: 0,
-            raw_card_hits: 0, accepted_card_hits: 0, top_similarity: null,
-            median_similarity: null, runner_up_similarity: null, cutoff: null,
+            enabled: true,
+            index_available: true,
+            indexed_cards: 0,
+            indexed_chunks: 0,
+            eligible_cards: 0,
+            excluded_cards: 2,
+            excluded_by_reason: { untrusted: 2 },
+            excluded_by_trust_detail: { missing_trust_label: 2 },
+            raw_chunk_hits: 0,
+            raw_card_hits: 0,
+            accepted_card_hits: 0,
+            top_similarity: null,
+            median_similarity: null,
+            runner_up_similarity: null,
+            cutoff: null,
             abstained_reason: 'no_positive_similarity',
           },
         },
@@ -110,25 +135,40 @@ describe('read/query CLI commands use Pmem Runtime', () => {
     (Pmem as any).open = async (opts: { root: string }) => {
       calls.push(`open:${opts.root}`);
       return {
-        capture: async (summary: string, opts: { auto?: boolean; summary?: string; next?: string; full?: boolean; force?: boolean }) => {
-          calls.push(`capture:${summary}:${opts.auto}:${opts.summary}:${opts.next}:${opts.full}:${opts.force}`);
+        capture: async (
+          summary: string,
+          opts: {
+            auto?: boolean;
+            summary?: string;
+            next?: string;
+            full?: boolean;
+            force?: boolean;
+          },
+        ) => {
+          calls.push(
+            `capture:${summary}:${opts.auto}:${opts.summary}:${opts.next}:${opts.full}:${opts.force}`,
+          );
           return {
             success: true,
             message: 'Memory sync and update completed successfully.',
             tracePath: path.join(cwd, '.pmem', 'traces', '2026-07-22-001.md'),
           };
         },
-        close: async () => { calls.push('close'); },
+        close: async () => {
+          calls.push('close');
+        },
       };
     };
 
-    const out = await withCapturedConsole(() => captureCommand({
-      auto: true,
-      summary: 'runtime capture',
-      next: 'continue',
-      full: true,
-      force: true,
-    }));
+    const out = await withCapturedConsole(() =>
+      captureCommand({
+        auto: true,
+        summary: 'runtime capture',
+        next: 'continue',
+        full: true,
+        force: true,
+      }),
+    );
 
     assert.deepStrictEqual(calls, [
       `open:${cwd}`,
@@ -151,7 +191,9 @@ describe('read/query CLI commands use Pmem Runtime', () => {
         calls.push('capture');
         throw new Error('capture failed');
       },
-      close: async () => { calls.push('close'); },
+      close: async () => {
+        calls.push('close');
+      },
     });
 
     await assert.rejects(() => captureCommand({ summary: 'failure' }), /capture failed/);
@@ -176,10 +218,14 @@ describe('read/query CLI commands use Pmem Runtime', () => {
         calls.push(`status:${opts.since}`);
         return expected;
       },
-      close: async () => { calls.push('close'); },
+      close: async () => {
+        calls.push('close');
+      },
     });
 
-    const out = await withCapturedConsole(() => statusCommand({ since: '2026-07-21T00:00:00.000Z', format: 'json' }));
+    const out = await withCapturedConsole(() =>
+      statusCommand({ since: '2026-07-21T00:00:00.000Z', format: 'json' }),
+    );
 
     assert.deepStrictEqual(calls, ['status:2026-07-21T00:00:00.000Z', 'close']);
     assert.deepStrictEqual(JSON.parse(out.stdout.join('\n')), expected);
@@ -194,35 +240,71 @@ describe('read/query CLI commands use Pmem Runtime', () => {
         related: async (id: string, opts: { type?: string; source?: string }) => {
           calls.push(`related:${id}:${opts.type}:${opts.source}`);
           return {
-            card: { id, type: 'module', title: 'Hub', status: 'active', file: '.pmem/modules/hub.md' },
+            card: {
+              id,
+              type: 'module',
+              title: 'Hub',
+              status: 'active',
+              file: '.pmem/modules/hub.md',
+            },
             total_edges: 3,
             high_confidence: [],
             needs_review: [],
             edges_by_type: {
               depends_on: [
-                { direction: 'out', target_id: 'module.A', target_title: 'A', target_type: 'module', target_status: 'active', source: 'explicit', confidence: 1 },
-                { direction: 'in', target_id: 'module.B', target_title: 'B', target_type: 'module', target_status: 'active', source: 'mention', confidence: 0.4 },
+                {
+                  direction: 'out',
+                  target_id: 'module.A',
+                  target_title: 'A',
+                  target_type: 'module',
+                  target_status: 'active',
+                  source: 'explicit',
+                  confidence: 1,
+                },
+                {
+                  direction: 'in',
+                  target_id: 'module.B',
+                  target_title: 'B',
+                  target_type: 'module',
+                  target_status: 'active',
+                  source: 'mention',
+                  confidence: 0.4,
+                },
               ],
               related_to: [
-                { direction: 'out', target_id: 'module.C', target_title: 'C', target_type: 'module', target_status: 'active', source: 'inferred', confidence: 0.8 },
+                {
+                  direction: 'out',
+                  target_id: 'module.C',
+                  target_title: 'C',
+                  target_type: 'module',
+                  target_status: 'active',
+                  source: 'inferred',
+                  confidence: 0.8,
+                },
               ],
             },
           };
         },
-        close: async () => { calls.push('close'); },
+        close: async () => {
+          calls.push('close');
+        },
       };
     };
 
     const result = await relationsQuery(path.join(root, '.pmem'), 'module.Hub', { source: 'all' });
 
-    assert.deepStrictEqual(calls, [`open:${path.dirname(path.join(root, '.pmem'))}`, 'related:module.Hub:undefined:all', 'close']);
+    assert.deepStrictEqual(calls, [
+      `open:${path.dirname(path.join(root, '.pmem'))}`,
+      'related:module.Hub:undefined:all',
+      'close',
+    ]);
     assert.strictEqual(result.card_id, 'module.Hub');
     assert.strictEqual(result.total, 3);
     assert.deepStrictEqual(result.summary_by_type, { related_to: 1, depends_on: 2 });
     assert.deepStrictEqual(result.summary_by_source, { inferred: 1, mention: 1, explicit: 1 });
-    assert.deepStrictEqual(result.pruning_candidates.map(p => `${p.direction}:${p.other_id}:${p.reason}`).sort(), [
-      'in:module.B:low_confidence',
-      'out:module.C:inferred',
-    ]);
+    assert.deepStrictEqual(
+      result.pruning_candidates.map((p) => `${p.direction}:${p.other_id}:${p.reason}`).sort(),
+      ['in:module.B:low_confidence', 'out:module.C:inferred'],
+    );
   });
 });

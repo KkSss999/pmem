@@ -28,7 +28,7 @@ export interface InferredDecisionsResult {
 
 export function inferDecisions(
   pmemPath: string,
-  options?: { threshold?: number; verbose?: boolean }
+  options?: { threshold?: number; verbose?: boolean },
 ): InferredDecisionsResult {
   const traceDir = path.join(pmemPath, 'traces');
   const diagnostics: InferredDecisionsDiagnostics = {
@@ -47,8 +47,9 @@ export function inferDecisions(
   const seen = new Set<string>();
 
   try {
-    const traceFiles = fs.readdirSync(traceDir)
-      .filter(f => f.endsWith('.md'))
+    const traceFiles = fs
+      .readdirSync(traceDir)
+      .filter((f) => f.endsWith('.md'))
       .sort((a, b) => a.localeCompare(b)); // Chronological order
 
     diagnostics.traces_scanned = traceFiles.length;
@@ -77,7 +78,7 @@ export function inferDecisions(
         const id = `decision.${slug}`;
 
         // Look for existing
-        let existing = decisions.find(d => d.id === id);
+        let existing = decisions.find((d) => d.id === id);
         if (existing) {
           if (!existing.evidence.includes(parsed.id)) {
             existing.evidence.push(parsed.id);
@@ -96,13 +97,13 @@ export function inferDecisions(
             reason: `Inferred from trace ${parsed.id}`,
             evidence: [parsed.id],
             related: parsed.changedFiles
-              .filter(f => f.includes('App') || f.includes('engine') || f.includes('render'))
-              .map(f => {
+              .filter((f) => f.includes('App') || f.includes('engine') || f.includes('render'))
+              .map((f) => {
                 if (f.toLowerCase().includes('engine')) return 'module.engine';
                 if (f.toLowerCase().includes('render')) return 'module.renderer';
                 return 'module.ui';
               }),
-            source_files: parsed.changedFiles
+            source_files: parsed.changedFiles,
           });
 
           if (!seen.has(id)) {
@@ -142,9 +143,9 @@ tags:
   - inferred
 updated: "${new Date().toISOString()}"
 related:
-${d.related.map(r => `  - ${r}`).join('\n')}
+${d.related.map((r) => `  - ${r}`).join('\n')}
 source_files:
-${d.source_files.map(sf => `  - ${sf}`).join('\n')}
+${d.source_files.map((sf) => `  - ${sf}`).join('\n')}
 ---
 
 # ${d.title}
@@ -160,7 +161,7 @@ ${d.reason}
 - Project implementations must align with this choice.
 
 ## Evidence
-${d.evidence.map(e => `- [[${e}]]`).join('\n')}
+${d.evidence.map((e) => `- [[${e}]]`).join('\n')}
 `;
 
     atomicWrite(filePath, content);
@@ -180,12 +181,16 @@ export function writeDecisionCandidates(pmemPath: string, decisions: InferredDec
 Generated on ${new Date().toISOString().split('T')[0]}.
 
 ## Candidates
-${decisions.map(d => `### ${d.title}
+${decisions
+  .map(
+    (d) => `### ${d.title}
 - Suggested ID: ${d.id}
 - Statement: ${d.statement}
 - Evidence: ${d.evidence.join(', ')}
 - Related: ${d.related.join(', ')}
-`).join('\n')}
+`,
+  )
+  .join('\n')}
 
 Run \`pmem decision infer --write\` to finalize these decision cards.
 `;

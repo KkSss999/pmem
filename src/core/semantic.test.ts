@@ -12,7 +12,9 @@ import {
   encodeVector,
   getSemanticStatus,
   isSemanticSafeCard,
+  hydrateSemanticChunks,
   rebuildSemanticIndex,
+  scoreSemanticChunks,
   searchSemanticCards,
   semanticRelevanceGate,
   SEMANTIC_PIPELINE_VERSION,
@@ -54,7 +56,11 @@ function dbWithCards(ids: string[]): Database.Database {
   return db;
 }
 
-function document(id: string, body: string, overrides: Partial<SemanticCardDocument> = {}): SemanticCardDocument {
+function document(
+  id: string,
+  body: string,
+  overrides: Partial<SemanticCardDocument> = {},
+): SemanticCardDocument {
   return {
     id,
     title: `Title ${id}`,
@@ -76,8 +82,9 @@ class SpyProvider implements EmbeddingProvider {
 
   async embedPassages(texts: readonly string[]): Promise<readonly (readonly number[])[]> {
     this.passages.push(...texts);
-    if (this.fail || (this.failWhen && texts.some(text => text.includes(this.failWhen!)))) throw new Error('provider failed');
-    return texts.map(text => {
+    if (this.fail || (this.failWhen && texts.some((text) => text.includes(this.failWhen!))))
+      throw new Error('provider failed');
+    return texts.map((text) => {
       const chinese = /[\u3400-\u9fff]/.test(text) ? 1 : 0;
       return [text.length + 1, chinese + 1, 1];
     });
@@ -91,42 +98,51 @@ class SpyProvider implements EmbeddingProvider {
 
 describe('semantic chunking and vectors', () => {
   it('creates stable heading-aware chunks and ignores headings inside code fences', () => {
-    const card = document('decision.chunk', [
-      '# Top',
-      'intro',
-      '## Child',
-      'body',
-      '```md',
-      '# not a heading',
-      '```',
-    ].join('\n'));
+    const card = document(
+      'decision.chunk',
+      ['# Top', 'intro', '## Child', 'body', '```md', '# not a heading', '```'].join('\n'),
+    );
     const first = chunkCard(card);
     const second = chunkCard(card);
     assert.deepStrictEqual(first, second);
-    assert.deepStrictEqual(first.map(chunk => chunk.headingPath), [['Top'], ['Top', 'Child']]);
+    assert.deepStrictEqual(
+      first.map((chunk) => chunk.headingPath),
+      [['Top'], ['Top', 'Child']],
+    );
     assert.match(first[1].content, /# not a heading/);
-    assert.ok(first.every(chunk => chunk.estimatedTokens <= 480));
+    assert.ok(first.every((chunk) => chunk.estimatedTokens <= 480));
   });
 
   it('adds stable card context to passages without adding freshness timestamps', () => {
-    const [chunk] = chunkCard(document('decision.context', '# Boundary\nbody', {
-      type: 'decision',
-      status: 'active',
-      aliases: ['auth boundary'],
-      tags: ['security'],
-      sourceFiles: ['src/auth.ts'],
-      relatedCardIds: ['module.session'],
-    }));
-    assert.match(chunk.context, /Context: decision \| auth boundary \| security \| auth\.ts \| module\.session/);
+    const [chunk] = chunkCard(
+      document('decision.context', '# Boundary\nbody', {
+        type: 'decision',
+        status: 'active',
+        aliases: ['auth boundary'],
+        tags: ['security'],
+        sourceFiles: ['src/auth.ts'],
+        relatedCardIds: ['module.session'],
+      }),
+    );
+    assert.match(
+      chunk.context,
+      /Context: decision \| auth boundary \| security \| auth\.ts \| module\.session/,
+    );
     assert.doesNotMatch(chunk.context, /updated|last_verified/i);
   });
 
   it('splits oversized multilingual/code sections deterministically below the 512-token ceiling', () => {
     const body = `## 大型实现\n${'const value = "语义"; '.repeat(120)}`;
-    const chunks = chunkCard(document('feature.large', body), { maxTokens: 512, reservedTokens: 32 });
+    const chunks = chunkCard(document('feature.large', body), {
+      maxTokens: 512,
+      reservedTokens: 32,
+    });
     assert.ok(chunks.length > 1);
-    assert.ok(chunks.every(chunk => chunk.estimatedTokens <= 480));
-    assert.deepStrictEqual(chunks.map(chunk => chunk.chunkId), chunkCard(document('feature.large', body)).map(chunk => chunk.chunkId));
+    assert.ok(chunks.every((chunk) => chunk.estimatedTokens <= 480));
+    assert.deepStrictEqual(
+      chunks.map((chunk) => chunk.chunkId),
+      chunkCard(document('feature.large', body)).map((chunk) => chunk.chunkId),
+    );
   });
 
   it('bounds oversized title and section context without dropping the card', () => {
@@ -135,7 +151,7 @@ describe('semantic chunking and vectors', () => {
     const card = document('trace.oversized-context', `# ${heading}\nbody`, { title });
     const chunks = chunkCard(card);
     assert.ok(chunks.length > 0);
-    assert.ok(chunks.every(chunk => chunk.estimatedTokens <= 480));
+    assert.ok(chunks.every((chunk) => chunk.estimatedTokens <= 480));
     assert.match(chunks[0].content, /^Title: /);
     assert.ok(!chunks[0].content.includes(title));
     assert.deepStrictEqual(chunks, chunkCard(card));
@@ -168,21 +184,46 @@ describe('semantic safety and SQLite lifecycle', () => {
     try {
       createSemanticSchema(db);
       createSemanticSchema(db);
-      const names = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'semantic_%' ORDER BY name").all() as Array<{ name: string }>;
-      assert.deepStrictEqual(names.map(row => row.name), ['semantic_chunks', 'semantic_meta']);
+      const names = db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'semantic_%' ORDER BY name",
+        )
+        .all() as Array<{ name: string }>;
+      assert.deepStrictEqual(
+        names.map((row) => row.name),
+        ['semantic_chunks', 'semantic_meta'],
+      );
     } finally {
       db.close();
     }
   });
 
   it('excludes every unsafe class before the embedding provider is invoked', async () => {
-    const ids = ['safe', 'secret', 'untrusted', 'imported', 'agent', 'tool', 'missing', 'invalid', 'candidate', 'deleted', 'superseded'];
+    const ids = [
+      'safe',
+      'secret',
+      'untrusted',
+      'imported',
+      'agent',
+      'tool',
+      'missing',
+      'invalid',
+      'candidate',
+      'deleted',
+      'superseded',
+    ];
     const db = dbWithCards(ids);
     const provider = new SpyProvider();
     const docs = [
       document('safe', 'SAFE ONLY', { relatedCardIds: ['secret'] }),
-      document('secret', 'SECRET NEVER', { aliases: ['SECRET ALIAS NEVER'], sourceFiles: ['secret/path.ts'], frontmatter: { trust_label: 'system_trusted', sensitivity: 'secret' } }),
-      document('untrusted', 'UNTRUSTED NEVER', { frontmatter: { trust_label: 'untrusted_content' } }),
+      document('secret', 'SECRET NEVER', {
+        aliases: ['SECRET ALIAS NEVER'],
+        sourceFiles: ['secret/path.ts'],
+        frontmatter: { trust_label: 'system_trusted', sensitivity: 'secret' },
+      }),
+      document('untrusted', 'UNTRUSTED NEVER', {
+        frontmatter: { trust_label: 'untrusted_content' },
+      }),
       document('imported', 'IMPORTED NEVER', { frontmatter: { trust_label: 'imported_external' } }),
       document('agent', 'AGENT NEVER', { frontmatter: { trust_label: 'agent_generated' } }),
       document('tool', 'TOOL NEVER', { frontmatter: { trust_label: 'tool_observed' } }),
@@ -190,19 +231,32 @@ describe('semantic safety and SQLite lifecycle', () => {
       document('invalid', 'INVALID NEVER', { frontmatter: { trust_label: 'trusted' as any } }),
       document('candidate', 'CANDIDATE NEVER', { isCandidate: true }),
       document('deleted', 'DELETED NEVER', { isDeleted: true }),
-      document('superseded', 'SUPERSEDED NEVER', { frontmatter: { trust_label: 'user_confirmed', superseded_by: ['new'] } }),
+      document('superseded', 'SUPERSEDED NEVER', {
+        frontmatter: { trust_label: 'user_confirmed', superseded_by: ['new'] },
+      }),
     ];
     try {
       const result = await rebuildSemanticIndex(db, docs, provider, { mode: 'full' });
       assert.strictEqual(result.cardsExcluded, 10);
       assert.ok(provider.passages.length > 0);
-      assert.ok(provider.passages.every(text => text.includes('SAFE ONLY')));
-      assert.ok(provider.passages.every(text => !text.includes('SECRET ALIAS NEVER') && !text.includes('secret/path.ts')));
-      assert.ok(provider.passages.every(text => !text.includes('secret')));
-      const contexts = db.prepare('SELECT context FROM semantic_chunks').all() as Array<{ context: string }>;
-      assert.ok(contexts.every(row => !row.context.includes('secret')));
-      const rows = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{ card_id: string }>;
-      assert.deepStrictEqual(rows.map(row => row.card_id), ['safe']);
+      assert.ok(provider.passages.every((text) => text.includes('SAFE ONLY')));
+      assert.ok(
+        provider.passages.every(
+          (text) => !text.includes('SECRET ALIAS NEVER') && !text.includes('secret/path.ts'),
+        ),
+      );
+      assert.ok(provider.passages.every((text) => !text.includes('secret')));
+      const contexts = db.prepare('SELECT context FROM semantic_chunks').all() as Array<{
+        context: string;
+      }>;
+      assert.ok(contexts.every((row) => !row.context.includes('secret')));
+      const rows = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{
+        card_id: string;
+      }>;
+      assert.deepStrictEqual(
+        rows.map((row) => row.card_id),
+        ['safe'],
+      );
       assert.ok(isSemanticSafeCard(docs[0]));
       assert.ok(!isSemanticSafeCard(docs[4]));
     } finally {
@@ -214,9 +268,16 @@ describe('semantic safety and SQLite lifecycle', () => {
     const db = dbWithCards(['secret']);
     const provider = new SpyProvider();
     try {
-      const result = await rebuildSemanticIndex(db, [
-        document('secret', 'SECRET NEVER', { frontmatter: { trust_label: 'system_trusted', sensitivity: 'secret' } }),
-      ], provider, { mode: 'full' });
+      const result = await rebuildSemanticIndex(
+        db,
+        [
+          document('secret', 'SECRET NEVER', {
+            frontmatter: { trust_label: 'system_trusted', sensitivity: 'secret' },
+          }),
+        ],
+        provider,
+        { mode: 'full' },
+      );
       assert.equal(result.chunksTotal, 0);
       assert.equal(provider.passages.length, 0);
       assert.deepEqual(getSemanticStatus(db), {
@@ -252,7 +313,9 @@ describe('semantic safety and SQLite lifecycle', () => {
       assert.equal(legacy.available, false);
       assert.equal(legacy.compatible, false);
       assert.equal(legacy.pipelineVersion, 1);
-      const rebuilt = await rebuildSemanticIndex(db, [document('one', 'trusted')], provider, { mode: 'incremental' });
+      const rebuilt = await rebuildSemanticIndex(db, [document('one', 'trusted')], provider, {
+        mode: 'incremental',
+      });
       assert.equal(rebuilt.chunksEmbedded, 1, 'old pipeline vectors must not be reused');
       assert.equal(getSemanticStatus(db).pipelineVersion, SEMANTIC_PIPELINE_VERSION);
       assert.equal(getSemanticStatus(db).available, true);
@@ -265,10 +328,20 @@ describe('semantic safety and SQLite lifecycle', () => {
     const db = dbWithCards(['one']);
     const provider = new SpyProvider();
     try {
-      await rebuildSemanticIndex(db, [document('one', 'trusted body', { aliases: ['old alias'] })], provider, { mode: 'full' });
+      await rebuildSemanticIndex(
+        db,
+        [document('one', 'trusted body', { aliases: ['old alias'] })],
+        provider,
+        { mode: 'full' },
+      );
       const before = getSemanticStatus(db).indexContentHash;
       provider.passages = [];
-      const result = await rebuildSemanticIndex(db, [document('one', 'trusted body', { aliases: ['new alias'] })], provider, { mode: 'incremental' });
+      const result = await rebuildSemanticIndex(
+        db,
+        [document('one', 'trusted body', { aliases: ['new alias'] })],
+        provider,
+        { mode: 'incremental' },
+      );
       assert.equal(result.chunksEmbedded, 0);
       assert.deepEqual(provider.passages, []);
       const stored = db.prepare('SELECT context FROM semantic_chunks').get() as { context: string };
@@ -279,27 +352,77 @@ describe('semantic safety and SQLite lifecycle', () => {
     }
   });
 
+  it('scores chunks without card text, then hydrates only the requested rows in rank order', async () => {
+    const db = dbWithCards(['one', 'two']);
+    const provider = new SpyProvider();
+    try {
+      await rebuildSemanticIndex(
+        db,
+        [document('one', '## A\nalpha'), document('two', '## C\ngamma gamma')],
+        provider,
+        { mode: 'full' },
+      );
+      const queryVector = await provider.embedQuery('alpha');
+      const scored = scoreSemanticChunks(db, queryVector);
+      assert.deepStrictEqual(Object.keys(scored[0]).sort(), ['card_id', 'chunk_id', 'similarity']);
+      assert.ok(
+        scored.every(
+          (chunk, index) => index === 0 || scored[index - 1].similarity >= chunk.similarity,
+        ),
+      );
+
+      const [top] = hydrateSemanticChunks(db, [
+        { chunk_id: scored[0].chunk_id, card_id: scored[0].card_id, similarity: 0.5 },
+      ]);
+      assert.strictEqual(top.chunk_id, scored[0].chunk_id);
+      assert.strictEqual(top.card_id, scored[0].card_id);
+      assert.strictEqual(top.content.includes('alpha') || top.content.includes('gamma'), true);
+      assert.strictEqual(top.similarity, 0.5);
+
+      const limited = scoreSemanticChunks(db, queryVector, 1);
+      assert.strictEqual(limited.length, 1);
+      assert.deepStrictEqual(scoreSemanticChunks(db, queryVector, 0), []);
+    } finally {
+      db.close();
+    }
+  });
+
   it('supports full, incremental reuse/change/removal, parent collapse, delete, and clear', async () => {
     const db = dbWithCards(['one', 'two']);
     const provider = new SpyProvider();
     try {
-      const initialDocs = [document('one', '## A\nalpha\n## B\nbeta'), document('two', '## C\ngamma')];
+      const initialDocs = [
+        document('one', '## A\nalpha\n## B\nbeta'),
+        document('two', '## C\ngamma'),
+      ];
       const full = await rebuildSemanticIndex(db, initialDocs, provider, { mode: 'full' });
       assert.strictEqual(full.chunksEmbedded, 3);
       assert.strictEqual(getSemanticStatus(db).available, true);
 
       provider.passages = [];
-      const unchanged = await rebuildSemanticIndex(db, initialDocs, provider, { mode: 'incremental' });
+      const unchanged = await rebuildSemanticIndex(db, initialDocs, provider, {
+        mode: 'incremental',
+      });
       assert.strictEqual(unchanged.chunksEmbedded, 0);
       assert.strictEqual(unchanged.chunksReused, 3);
       assert.deepStrictEqual(provider.passages, []);
 
-      const changed = await rebuildSemanticIndex(db, [document('one', '## A\nalpha changed')], provider, { mode: 'incremental' });
+      const changed = await rebuildSemanticIndex(
+        db,
+        [document('one', '## A\nalpha changed')],
+        provider,
+        { mode: 'incremental' },
+      );
       assert.strictEqual(changed.cardsSeen, 1);
       assert.strictEqual(changed.chunksEmbedded, 1);
       assert.ok(changed.chunksDeleted >= 3);
-      const storedCards = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{ card_id: string }>;
-      assert.deepStrictEqual(storedCards.map(row => row.card_id), ['one']);
+      const storedCards = db
+        .prepare('SELECT DISTINCT card_id FROM semantic_chunks')
+        .all() as Array<{ card_id: string }>;
+      assert.deepStrictEqual(
+        storedCards.map((row) => row.card_id),
+        ['one'],
+      );
 
       const matches = await searchSemanticCards(db, 'alpha', provider, 5);
       assert.strictEqual(matches.length, 1);
@@ -322,19 +445,36 @@ describe('semantic safety and SQLite lifecycle', () => {
     const db = dbWithCards(['one', 'two']);
     const provider = new SpyProvider();
     try {
-      await rebuildSemanticIndex(db, [document('one', 'old text'), document('two', 'healthy text')], provider, { mode: 'full' });
+      await rebuildSemanticIndex(
+        db,
+        [document('one', 'old text'), document('two', 'healthy text')],
+        provider,
+        { mode: 'full' },
+      );
       provider.failWhen = 'new text';
-      const result = await rebuildSemanticIndex(db, [document('one', 'new text'), document('two', 'healthy text')], provider, { mode: 'full' });
+      const result = await rebuildSemanticIndex(
+        db,
+        [document('one', 'new text'), document('two', 'healthy text')],
+        provider,
+        { mode: 'full' },
+      );
       assert.strictEqual(result.buildStatus, 'partial');
       assert.strictEqual(result.cardsFailed, 1);
       assert.deepStrictEqual(result.failedCardIds, ['one']);
-      assert.deepStrictEqual(result.failures, [{ cardId: 'one', stage: 'embed', error: 'provider failed' }]);
+      assert.deepStrictEqual(result.failures, [
+        { cardId: 'one', stage: 'embed', error: 'provider failed' },
+      ]);
       assert.strictEqual(result.chunksEmbedded, 1);
       assert.strictEqual(getSemanticStatus(db).available, false);
       assert.strictEqual(getSemanticStatus(db).buildStatus, 'partial');
       assert.deepStrictEqual(getSemanticStatus(db).failedCardIds, ['one']);
-      const indexed = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks ORDER BY card_id').all() as Array<{ card_id: string }>;
-      assert.deepStrictEqual(indexed.map(row => row.card_id), ['two']);
+      const indexed = db
+        .prepare('SELECT DISTINCT card_id FROM semantic_chunks ORDER BY card_id')
+        .all() as Array<{ card_id: string }>;
+      assert.deepStrictEqual(
+        indexed.map((row) => row.card_id),
+        ['two'],
+      );
     } finally {
       db.close();
     }
@@ -344,18 +484,28 @@ describe('semantic safety and SQLite lifecycle', () => {
     const db = dbWithCards(['broken', 'healthy']);
     const provider = new SpyProvider();
     try {
-      const result = await rebuildSemanticIndex(db, [
-        document('broken', 'never indexed', { title: null as any }),
-        document('healthy', 'healthy text'),
-      ], provider, { mode: 'full' });
+      const result = await rebuildSemanticIndex(
+        db,
+        [
+          document('broken', 'never indexed', { title: null as any }),
+          document('healthy', 'healthy text'),
+        ],
+        provider,
+        { mode: 'full' },
+      );
       assert.strictEqual(result.buildStatus, 'partial');
       assert.deepStrictEqual(result.failedCardIds, ['broken']);
       assert.strictEqual(result.failures.length, 1);
       assert.strictEqual(result.failures[0].cardId, 'broken');
       assert.strictEqual(result.failures[0].stage, 'chunk');
       assert.match(result.failures[0].error, /trim/);
-      const indexed = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{ card_id: string }>;
-      assert.deepStrictEqual(indexed.map(row => row.card_id), ['healthy']);
+      const indexed = db.prepare('SELECT DISTINCT card_id FROM semantic_chunks').all() as Array<{
+        card_id: string;
+      }>;
+      assert.deepStrictEqual(
+        indexed.map((row) => row.card_id),
+        ['healthy'],
+      );
       assert.strictEqual(getSemanticStatus(db).available, false);
     } finally {
       db.close();
@@ -366,17 +516,23 @@ describe('semantic safety and SQLite lifecycle', () => {
     const db = dbWithCards(['one']);
     const provider = new SpyProvider();
     try {
-      await rebuildSemanticIndex(db, [document('one', 'old trusted text')], provider, { mode: 'full' });
+      await rebuildSemanticIndex(db, [document('one', 'old trusted text')], provider, {
+        mode: 'full',
+      });
       const before = getSemanticStatus(db);
       await assert.rejects(
         rebuildSemanticIndex(db, [document('one', 'stale trusted text')], provider, {
           mode: 'full',
-          beforeCommit: () => { throw new Error('source changed to secret'); },
+          beforeCommit: () => {
+            throw new Error('source changed to secret');
+          },
         }),
         /source changed to secret/,
       );
       assert.deepStrictEqual(getSemanticStatus(db), before);
-      const content = db.prepare('SELECT content FROM semantic_chunks').get() as { content: string };
+      const content = db.prepare('SELECT content FROM semantic_chunks').get() as {
+        content: string;
+      };
       assert.match(content.content, /old trusted text/);
     } finally {
       db.close();

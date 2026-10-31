@@ -147,7 +147,7 @@ A trace that records an architectural decision.
     assert.equal(result.diagnostics.candidates_above_threshold, 2);
     assert.equal(result.decisions.length, 2);
 
-    const ids = result.decisions.map(d => d.id).sort();
+    const ids = result.decisions.map((d) => d.id).sort();
     assert.ok(ids.includes('decision.adopt_a_single_file_render_pipeline'));
     assert.ok(ids.includes('decision.cache_module_lookups_at_boot'));
 

@@ -14,3 +14,7 @@ node_modules/
 .DS_Store
 .mcp.json
 dist/
+
+# Local registry credentials (never commit npm tokens)
+.npmrc
+.npmrc.*

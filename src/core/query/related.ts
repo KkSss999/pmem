@@ -28,28 +28,30 @@ export interface RelatedResult {
   needs_review: RelatedEdgeItem[];
 }
 
-export function relatedQuery(pmemPath: string, id: string, options?: {
-  depth?: number;
-  type?: string;
-  source?: 'explicit' | 'inferred' | 'mention' | 'all';
-  db?: Database.Database;
-}): RelatedResult {
+export function relatedQuery(
+  pmemPath: string,
+  id: string,
+  options?: {
+    depth?: number;
+    type?: string;
+    source?: 'explicit' | 'inferred' | 'mention' | 'all';
+    db?: Database.Database;
+  },
+): RelatedResult {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) {
     throw new Error('No SQLite database found. Run `pmem rebuild` first.');
   }
 
   const edgeTypeFilter = options?.type;
-  const sourceFilter = (options?.source && options.source !== 'all')
-    ? options.source
-    : undefined;
+  const sourceFilter = options?.source && options.source !== 'all' ? options.source : undefined;
 
   const db = options?.db ?? openDatabase(pmemPath);
   if (!options?.db) createSchema(db);
 
-  const card = db.prepare(
-    'SELECT * FROM cards WHERE id = ? AND is_deleted = 0'
-  ).get(id) as CardRow | undefined;
+  const card = db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(id) as
+    | CardRow
+    | undefined;
 
   if (!card) {
     throw new Error(`Node "${id}" not found in database.`);
@@ -63,13 +65,13 @@ export function relatedQuery(pmemPath: string, id: string, options?: {
 
   let directEdges = getEdgesForCard(db, id, sourceFilter) as EdgeRow[];
   if (edgeTypeFilter) {
-    directEdges = directEdges.filter(e => e.type === edgeTypeFilter);
+    directEdges = directEdges.filter((e) => e.type === edgeTypeFilter);
   }
 
   const getCard = (cardId: string): CardRow | undefined => {
-    return db.prepare(
-      'SELECT * FROM cards WHERE id = ? AND is_deleted = 0'
-    ).get(cardId) as CardRow | undefined;
+    return db.prepare('SELECT * FROM cards WHERE id = ? AND is_deleted = 0').get(cardId) as
+      | CardRow
+      | undefined;
   };
 
   const edgesByType: Record<string, RelatedEdgeItem[]> = {};

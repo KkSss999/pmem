@@ -9,7 +9,9 @@ import { closeDatabase, openOwnedDatabase } from '../db';
 import { rebuildCommand } from '../../commands/rebuild';
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
+});
 
 function fixture(type = 'module'): { root: string; pmemPath: string; card: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-health-migrate-'));
@@ -28,13 +30,26 @@ describe('health metadata migration', () => {
     const before = fs.readFileSync(card, 'utf8');
     const result = planHealthMigration(pmemPath, { cwd: root });
     assert.equal(result.mode, 'dry-run');
-    assert.deepEqual(result.cards[0].unresolved.sort(), ['classification', 'sensitivity', 'trust_label']);
+    assert.deepEqual(result.cards[0].unresolved.sort(), [
+      'classification',
+      'sensitivity',
+      'trust_label',
+    ]);
     assert.equal(fs.readFileSync(card, 'utf8'), before);
   });
 
   it('requires every ambiguous choice before apply', () => {
     const { root, pmemPath } = fixture();
-    assert.throws(() => applyHealthMigration(pmemPath, { apply: true, trustLabel: 'application_trusted', sensitivity: 'internal', cwd: root }), /unresolved metadata/);
+    assert.throws(
+      () =>
+        applyHealthMigration(pmemPath, {
+          apply: true,
+          trustLabel: 'application_trusted',
+          sensitivity: 'internal',
+          cwd: root,
+        }),
+      /unresolved metadata/,
+    );
   });
 
   it('applies explicit metadata atomically, creates a backup, and is idempotent', () => {
@@ -61,7 +76,10 @@ describe('health metadata migration', () => {
     const { root, pmemPath } = fixture('decision');
     const plan = planHealthMigration(pmemPath, { cwd: root });
     assert.equal(plan.cards[0].add.classification, 'decision');
-    assert.deepEqual(parseClassificationByType('module=fact,resource=question'), { module: 'fact', resource: 'question' });
+    assert.deepEqual(parseClassificationByType('module=fact,resource=question'), {
+      module: 'fact',
+      resource: 'question',
+    });
     assert.throws(() => parseClassificationByType('module=wrong'), /Invalid classification/);
   });
 
@@ -82,27 +100,33 @@ describe('health metadata migration', () => {
     const original = fs.readFileSync(card, 'utf8');
     let rollbackRebuilds = 0;
 
-    assert.throws(() => applyHealthMigration(pmemPath, {
-      apply: true,
-      trustLabel: 'application_trusted',
-      sensitivity: 'internal',
-      classificationByType: { module: 'fact' },
-      cwd: root,
-      afterApply: () => {
-        rebuildCommand({ cwd: root, full: true });
-        throw new Error('simulated post-commit graph failure');
-      },
-      afterRollback: () => {
-        rollbackRebuilds++;
-        rebuildCommand({ cwd: root, full: true });
-      },
-    }), /simulated post-commit graph failure/);
+    assert.throws(
+      () =>
+        applyHealthMigration(pmemPath, {
+          apply: true,
+          trustLabel: 'application_trusted',
+          sensitivity: 'internal',
+          classificationByType: { module: 'fact' },
+          cwd: root,
+          afterApply: () => {
+            rebuildCommand({ cwd: root, full: true });
+            throw new Error('simulated post-commit graph failure');
+          },
+          afterRollback: () => {
+            rollbackRebuilds++;
+            rebuildCommand({ cwd: root, full: true });
+          },
+        }),
+      /simulated post-commit graph failure/,
+    );
 
     assert.equal(fs.readFileSync(card, 'utf8'), original);
     assert.equal(rollbackRebuilds, 1);
     const db = openOwnedDatabase(pmemPath);
     try {
-      const row = db.prepare('SELECT classification, trust_label, sensitivity FROM cards WHERE id = ?').get('module.one') as {
+      const row = db
+        .prepare('SELECT classification, trust_label, sensitivity FROM cards WHERE id = ?')
+        .get('module.one') as {
         classification: string | null;
         trust_label: string | null;
         sensitivity: string | null;

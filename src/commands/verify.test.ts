@@ -54,20 +54,29 @@ describe('verify metadata migration guidance', () => {
     writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
-    writeFile(path.join(testDir, '.pmem/modules/module.missing-trust.md'), moduleCard('module.missing-trust'));
+    writeFile(
+      path.join(testDir, '.pmem/modules/module.missing-trust.md'),
+      moduleCard('module.missing-trust'),
+    );
     const rebuilt = pmem('rebuild --full', testDir);
     assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
   });
 
   after(() => {
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   });
 
   it('points missing trust_label at health migrate and the explicit command changes the label', () => {
     const verification = pmem('verify', testDir);
     assert.match(verification.stdout, /untrusted_memory/);
-    assert.match(verification.stdout, /pmem health migrate --apply --trust-label <label> --sensitivity <level>/);
-    const untrustedBlock = verification.stdout.split('\n\n').find(block => block.includes('[untrusted_memory]')) ?? '';
+    assert.match(
+      verification.stdout,
+      /pmem health migrate --apply --trust-label <label> --sensitivity <level>/,
+    );
+    const untrustedBlock =
+      verification.stdout.split('\n\n').find((block) => block.includes('[untrusted_memory]')) ?? '';
     assert.doesNotMatch(untrustedBlock, /pmem update --confirm/);
 
     const migration = pmem(
@@ -75,7 +84,10 @@ describe('verify metadata migration guidance', () => {
       testDir,
     );
     assert.strictEqual(migration.code, 0, `metadata migration failed: ${migration.stdout}`);
-    const card = fs.readFileSync(path.join(testDir, '.pmem/modules/module.missing-trust.md'), 'utf8');
+    const card = fs.readFileSync(
+      path.join(testDir, '.pmem/modules/module.missing-trust.md'),
+      'utf8',
+    );
     assert.match(card, /^trust_label: application_trusted$/m);
     assert.match(card, /^sensitivity: internal$/m);
     assert.match(card, /^classification: fact$/m);
@@ -96,7 +108,9 @@ describe('configurable verify fix mode', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
     writeFile(path.join(testDir, 'AGENTS.md'), '# Test\n');
-    writeFile(cardPath, `---
+    writeFile(
+      cardPath,
+      `---
 id: decision.auto
 type: decision
 status: active
@@ -108,19 +122,23 @@ source_files:
 # User-authored decision
 
 Never rewrite this body during metadata repair.
-`);
+`,
+    );
     writeFile(path.join(testDir, 'src/source.ts'), 'export const source = true;\n');
     const rebuilt = pmem('rebuild --full', testDir);
     assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
   });
 
   after(() => {
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   });
 
   it('requires confirmation for metadata repair, supports dry-run, and is idempotent', () => {
     assert.throws(
-      () => verifyCommand({ cwd: testDir, fix: true, only: ['metadata'], noExit: true, silent: true }),
+      () =>
+        verifyCommand({ cwd: testDir, fix: true, only: ['metadata'], noExit: true, silent: true }),
       /requires explicit confirmation/,
     );
     const original = fs.readFileSync(cardPath, 'utf8');
@@ -148,7 +166,9 @@ Never rewrite this body during metadata repair.
 
   it('honors maxChanges for stale repair and leaves later cards untouched', () => {
     const secondPath = path.join(testDir, '.pmem/modules/decision.second.md');
-    writeFile(secondPath, `---
+    writeFile(
+      secondPath,
+      `---
 id: decision.second
 type: decision
 status: active
@@ -159,10 +179,14 @@ source_files:
   - src/source.ts
 ---
 # Second decision
-`);
+`,
+    );
     const rebuilt = pmem('rebuild --full', testDir);
     assert.strictEqual(rebuilt.code, 0, `second rebuild failed: ${rebuilt.stdout}`);
-    runSqlScript(testDir, `db.prepare("UPDATE cards SET updated_at = '2000-01-01T00:00:00.000Z', last_verified_at = '2000-01-01T00:00:00.000Z'").run();`);
+    runSqlScript(
+      testDir,
+      `db.prepare("UPDATE cards SET updated_at = '2000-01-01T00:00:00.000Z', last_verified_at = '2000-01-01T00:00:00.000Z'").run();`,
+    );
     const beforeFirst = fs.readFileSync(cardPath, 'utf8');
     const beforeSecond = fs.readFileSync(secondPath, 'utf8');
     const repaired = pmem('verify --fix-stale --max-changes 1', testDir);
@@ -173,11 +197,11 @@ source_files:
     assert.strictEqual(afterSecond, beforeSecond);
     assert.match(afterFirst, /^last_verified:/m);
     const rollbackDir = path.join(testDir, '.pmem', 'rollback');
-    const checkpoints = fs.readdirSync(rollbackDir).filter(name => name.endsWith('.json'));
+    const checkpoints = fs.readdirSync(rollbackDir).filter((name) => name.endsWith('.json'));
     assert.ok(checkpoints.length >= 1);
     const checkpoint = checkpoints
-      .map(name => JSON.parse(fs.readFileSync(path.join(rollbackDir, name), 'utf8')))
-      .find(value => value.changes?.[0]?.action === 'refresh_last_verified');
+      .map((name) => JSON.parse(fs.readFileSync(path.join(rollbackDir, name), 'utf8')))
+      .find((value) => value.changes?.[0]?.action === 'refresh_last_verified');
     assert.ok(checkpoint);
     assert.equal(checkpoint.reversible, true);
     assert.equal(checkpoint.changes.length, 1);
@@ -191,10 +215,17 @@ source_files:
     fs.writeFileSync(path.join(lockPath, 'pid'), '999999', 'utf8');
     const old = new Date(Date.now() - 120_000);
     fs.utimesSync(lockPath, old, old);
-    const before = fs.readdirSync(lockPath).map(name => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]);
+    const before = fs
+      .readdirSync(lockPath)
+      .map((name) => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]);
     const result = pmem('verify --fix-locks --dry-run', testDir);
     assert.strictEqual(result.code, 0, result.stdout);
-    assert.deepEqual(fs.readdirSync(lockPath).map(name => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]), before);
+    assert.deepEqual(
+      fs
+        .readdirSync(lockPath)
+        .map((name) => [name, fs.readFileSync(path.join(lockPath, name), 'utf8')]),
+      before,
+    );
   });
 });
 
@@ -209,7 +240,9 @@ describe('verify card size accounting', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
     const body = 'word '.repeat(780);
-    writeFile(path.join(testDir, '.pmem/modules/module.metadata-only.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem/modules/module.metadata-only.md'),
+      `---
 id: module.metadata-only
 type: module
 classification: fact
@@ -220,13 +253,16 @@ token_policy: normal
 ---
 # Large but within user-content budget
 ${body}
-`);
+`,
+    );
     const rebuilt = pmem('rebuild --full', testDir);
     assert.strictEqual(rebuilt.code, 0, `seed rebuild failed: ${rebuilt.stdout}`);
   });
 
   after(() => {
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   });
 
   it('does not bill managed metadata but still warns when the body grows past the limit', () => {
@@ -265,8 +301,10 @@ function writeFile(p: string, content: string): void {
 
 function runSqlScript(testDir: string, body: string): void {
   const dbPath = path.join(testDir, '.pmem', 'pmem.db');
-  const scriptPath = path.join(os.tmpdir(),
-    `pmem-u5-verify-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `pmem-u5-verify-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`,
+  );
   const betterSqlitePath = path.resolve(__dirname, '../../node_modules/better-sqlite3');
   const script = `const Database = require(${JSON.stringify(betterSqlitePath)});
 const db = new Database(${JSON.stringify(dbPath)});
@@ -276,7 +314,9 @@ db.close();`;
   try {
     execSync(`node ${JSON.stringify(scriptPath)}`, { encoding: 'utf8' });
   } finally {
-    try { fs.unlinkSync(scriptPath); } catch {}
+    try {
+      fs.unlinkSync(scriptPath);
+    } catch {}
   }
 }
 
@@ -427,30 +467,39 @@ describe('U5 (issue #10): verify too_many_relations surfaces top_edges + pruning
   });
 
   after(() => {
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   it('Test 1: explicit high-confidence edges only — top_edges populated, pruning_candidates empty', () => {
     // 4 explicit edges hub → spoke, all confidence 1.0, no inferred, none < 0.5.
     // Threshold is 2 → 4 > 2, expect the warning.
     for (const s of SPOKES.slice(0, 4)) {
-      runSqlScript(testDir,
+      runSqlScript(
+        testDir,
         `db.prepare("INSERT INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(s)}, 'depends_on', 'explicit', 1.0, new Date().toISOString(), new Date().toISOString());`);
+       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(s)}, 'depends_on', 'explicit', 1.0, new Date().toISOString(), new Date().toISOString());`,
+      );
     }
 
     const r = pmem('verify', testDir);
     // We don't care about the exit code here (could be 0 or 2 depending on
     // other warnings in the minimal fixture), only the stdout content.
-    assert.ok(r.stdout.includes('too_many_relations'),
-      `expected too_many_relations warning in stdout, got: ${r.stdout}`);
-    assert.ok(r.stdout.includes(HUB_ID),
-      `expected hub id in stdout, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes('too_many_relations'),
+      `expected too_many_relations warning in stdout, got: ${r.stdout}`,
+    );
+    assert.ok(r.stdout.includes(HUB_ID), `expected hub id in stdout, got: ${r.stdout}`);
     // The new fix hint replaces the old generic message.
-    assert.ok(r.stdout.includes('pmem relations'),
-      `expected new 'pmem relations' fix hint, got: ${r.stdout}`);
-    assert.ok(!r.stdout.includes('Review whether all relations are necessary'),
-      `old generic fix message should be gone, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes('pmem relations'),
+      `expected new 'pmem relations' fix hint, got: ${r.stdout}`,
+    );
+    assert.ok(
+      !r.stdout.includes('Review whether all relations are necessary'),
+      `old generic fix message should be gone, got: ${r.stdout}`,
+    );
   });
 
   it('Test 2: inferred and low-confidence edges appear in pruning_candidates', () => {
@@ -472,20 +521,28 @@ describe('U5 (issue #10): verify too_many_relations surfaces top_edges + pruning
     ];
 
     for (const [to, source, conf] of inserts) {
-      runSqlScript(testDir,
+      runSqlScript(
+        testDir,
         `db.prepare("INSERT INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(to)}, 'depends_on', ${JSON.stringify(source)}, ${conf}, new Date().toISOString(), new Date().toISOString());`);
+       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(to)}, 'depends_on', ${JSON.stringify(source)}, ${conf}, new Date().toISOString(), new Date().toISOString());`,
+      );
     }
 
     const r = pmem('verify', testDir);
-    assert.ok(r.stdout.includes('too_many_relations'),
-      `expected too_many_relations warning, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes('too_many_relations'),
+      `expected too_many_relations warning, got: ${r.stdout}`,
+    );
     // The fix hint must point to pmem relations for further inspection.
-    assert.ok(r.stdout.includes(`pmem relations ${HUB_ID}`),
-      `expected hint to name the hub card, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes(`pmem relations ${HUB_ID}`),
+      `expected hint to name the hub card, got: ${r.stdout}`,
+    );
     // And the warn count should reflect 4 relations.
-    assert.ok(r.stdout.includes('4 relations'),
-      `expected "4 relations" in message, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes('4 relations'),
+      `expected "4 relations" in message, got: ${r.stdout}`,
+    );
   });
 
   it('Test 3: VerifyIssue with top_edges + pruning_candidates serializes to JSON', () => {
@@ -501,14 +558,50 @@ describe('U5 (issue #10): verify too_many_relations surfaces top_edges + pruning
       relation_count: 4,
       threshold: 2,
       top_edges: [
-        { from_id: 'module.hub', to_id: 'module.d', type: 'depends_on', source: 'explicit', confidence: 0.3 },
-        { from_id: 'module.hub', to_id: 'module.c', type: 'depends_on', source: 'inferred', confidence: 0.9 },
-        { from_id: 'module.hub', to_id: 'module.a', type: 'depends_on', source: 'explicit', confidence: 1.0 },
-        { from_id: 'module.hub', to_id: 'module.b', type: 'depends_on', source: 'explicit', confidence: 1.0 },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.d',
+          type: 'depends_on',
+          source: 'explicit',
+          confidence: 0.3,
+        },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.c',
+          type: 'depends_on',
+          source: 'inferred',
+          confidence: 0.9,
+        },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.a',
+          type: 'depends_on',
+          source: 'explicit',
+          confidence: 1.0,
+        },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.b',
+          type: 'depends_on',
+          source: 'explicit',
+          confidence: 1.0,
+        },
       ],
       pruning_candidates: [
-        { from_id: 'module.hub', to_id: 'module.d', type: 'depends_on', source: 'explicit', confidence: 0.3 },
-        { from_id: 'module.hub', to_id: 'module.c', type: 'depends_on', source: 'inferred', confidence: 0.9 },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.d',
+          type: 'depends_on',
+          source: 'explicit',
+          confidence: 0.3,
+        },
+        {
+          from_id: 'module.hub',
+          to_id: 'module.c',
+          type: 'depends_on',
+          source: 'inferred',
+          confidence: 0.9,
+        },
       ],
     };
 
@@ -517,28 +610,33 @@ describe('U5 (issue #10): verify too_many_relations surfaces top_edges + pruning
     // All new fields must round-trip.
     assert.deepStrictEqual(serialized.relation_count, 4);
     assert.deepStrictEqual(serialized.threshold, 2);
-    assert.ok(Array.isArray(serialized.top_edges),
-      `top_edges should serialize as an array, got: ${typeof serialized.top_edges}`);
+    assert.ok(
+      Array.isArray(serialized.top_edges),
+      `top_edges should serialize as an array, got: ${typeof serialized.top_edges}`,
+    );
     assert.strictEqual(serialized.top_edges.length, 4);
-    assert.ok(Array.isArray(serialized.pruning_candidates),
-      `pruning_candidates should serialize as an array, got: ${typeof serialized.pruning_candidates}`);
+    assert.ok(
+      Array.isArray(serialized.pruning_candidates),
+      `pruning_candidates should serialize as an array, got: ${typeof serialized.pruning_candidates}`,
+    );
     assert.strictEqual(serialized.pruning_candidates.length, 2);
 
     // pruning_candidates must be a subset of top_edges that matches the
     // documented filter (source = 'inferred' OR confidence < 0.5).
     const expected = serialized.top_edges.filter(
-      (e: { source: string; confidence: number }) =>
-        e.source === 'inferred' || e.confidence < 0.5
+      (e: { source: string; confidence: number }) => e.source === 'inferred' || e.confidence < 0.5,
     );
     assert.deepStrictEqual(
       serialized.pruning_candidates.map((e: { to_id: string }) => e.to_id).sort(),
       expected.map((e: { to_id: string }) => e.to_id).sort(),
-      'pruning_candidates should be the inferred/low-confidence subset of top_edges'
+      'pruning_candidates should be the inferred/low-confidence subset of top_edges',
     );
 
     // And the fix hint should reference pmem relations.
-    assert.ok(serialized.fix.includes('pmem relations'),
-      `fix hint should reference pmem relations, got: ${serialized.fix}`);
+    assert.ok(
+      serialized.fix.includes('pmem relations'),
+      `fix hint should reference pmem relations, got: ${serialized.fix}`,
+    );
   });
 
   it('top_edges is capped at 10 even when the card has many relations', () => {
@@ -559,39 +657,49 @@ describe('U5 (issue #10): verify too_many_relations surfaces top_edges + pruning
     runSqlScript(testDir, `db.prepare("DELETE FROM edges").run();`);
 
     for (const s of extraSpokes) {
-      runSqlScript(testDir,
+      runSqlScript(
+        testDir,
         `db.prepare("INSERT INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(s)}, 'depends_on', 'explicit', 1.0, new Date().toISOString(), new Date().toISOString());`);
+       .run(${JSON.stringify(HUB_ID)}, ${JSON.stringify(s)}, 'depends_on', 'explicit', 1.0, new Date().toISOString(), new Date().toISOString());`,
+      );
     }
 
     // The warning still fires (15 > 2). For the JSON-serialized form,
     // mirror what verify.ts would produce: top_edges capped at 10.
     const r = pmem('verify', testDir);
-    assert.ok(r.stdout.includes('too_many_relations'),
-      `expected too_many_relations warning, got: ${r.stdout}`);
-    assert.ok(r.stdout.includes('15 relations'),
-      `expected "15 relations" in message, got: ${r.stdout}`);
+    assert.ok(
+      r.stdout.includes('too_many_relations'),
+      `expected too_many_relations warning, got: ${r.stdout}`,
+    );
+    assert.ok(
+      r.stdout.includes('15 relations'),
+      `expected "15 relations" in message, got: ${r.stdout}`,
+    );
 
     // Independently verify the SQL LIMIT 10 logic via the DB.
     // (We can't directly inspect top_edges from the text output, so we
     // simulate what verify.ts would return and assert on the count.)
-    const driverScript = path.join(os.tmpdir(),
-      `pmem-u5-limit-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
+    const driverScript = path.join(
+      os.tmpdir(),
+      `pmem-u5-limit-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`,
+    );
     const betterSqlitePath = path.resolve(__dirname, '../../node_modules/better-sqlite3');
     const dbPath = path.join(testDir, '.pmem', 'pmem.db');
-    fs.writeFileSync(driverScript,
+    fs.writeFileSync(
+      driverScript,
       `const Database = require(${JSON.stringify(betterSqlitePath)});
 const db = new Database(${JSON.stringify(dbPath)}, { readonly: true });
 const rows = db.prepare(
   "SELECT from_id, to_id, type, source, confidence FROM edges WHERE from_id = ? OR to_id = ? ORDER BY confidence ASC LIMIT 10"
 ).all(${JSON.stringify(HUB_ID)}, ${JSON.stringify(HUB_ID)});
 db.close();
-process.stdout.write(JSON.stringify(rows));`, 'utf8');
+process.stdout.write(JSON.stringify(rows));`,
+      'utf8',
+    );
     const out = execSync(`node ${JSON.stringify(driverScript)}`, { encoding: 'utf8' });
     fs.unlinkSync(driverScript);
     const rows = JSON.parse(out);
-    assert.strictEqual(rows.length, 10,
-      `LIMIT 10 should cap top_edges at 10, got ${rows.length}`);
+    assert.strictEqual(rows.length, 10, `LIMIT 10 should cap top_edges at 10, got ${rows.length}`);
   });
 });
 
@@ -637,8 +745,12 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
 
   after(() => {
     // Best-effort: ensure no leftover .lock from a failed/aborted test.
-    try { fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true }); } catch {}
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true });
+    } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   it('Test A: with an active lock, verify emits info-level `active_lock` and skips stale_index', () => {
@@ -690,7 +802,8 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
         // Exit code should be 0 (info-only → passed) — this is different
         // from the old behavior where `active_lock` was a warning.
         assert.strictEqual(
-          r.code, 0,
+          r.code,
+          0,
           `expected exit 0 for info-only result, got ${r.code}\nstdout:\n${r.stdout}`,
         );
       } finally {
@@ -700,7 +813,9 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
       }
     } finally {
       // Release the lock so the next test starts clean.
-      try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+      } catch {}
     }
   });
 
@@ -743,11 +858,16 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
       );
 
       // Exit code 0 for info-only result.
-      assert.strictEqual(r.code, 0,
-        `expected exit 0 for info-only result, got ${r.code}\nstdout:\n${r.stdout}`);
+      assert.strictEqual(
+        r.code,
+        0,
+        `expected exit 0 for info-only result, got ${r.code}\nstdout:\n${r.stdout}`,
+      );
     } finally {
       // Restore DB (only if we moved it) and release lock.
-      try { fs.rmSync(lockPath, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(lockPath, { recursive: true, force: true });
+      } catch {}
       if (dbBackup && fs.existsSync(dbBackup)) {
         fs.renameSync(dbBackup, dbPath);
       }
@@ -760,7 +880,9 @@ describe('FIX-1 (issue #9): verify/rebuild lock protocol', () => {
     // emit a `stale_index` warning for the mutated card.
     //
     // Make sure no leftover .lock from the previous test is hanging around.
-    try { fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(path.join(testDir, '.pmem', '.lock'), { recursive: true, force: true });
+    } catch {}
 
     // Inject a hash mismatch so the stale_index check fires.
     const alphaFile = path.join(testDir, '.pmem', 'modules', 'module.alpha.md');

@@ -54,7 +54,11 @@ export function stripManagedFrontmatter(text: string): string {
   return userFrontmatter ? `${userFrontmatter}\n${body}` : body;
 }
 
-export function computeCardHashes(fullContent: string, frontmatterText: string, bodyText: string): CardHashes {
+export function computeCardHashes(
+  fullContent: string,
+  frontmatterText: string,
+  bodyText: string,
+): CardHashes {
   return {
     fileHash: computeHash(fullContent),
     frontmatterHash: computeHash(frontmatterText),

@@ -9,7 +9,10 @@ import Database from 'better-sqlite3';
 const PMEM_BIN = path.resolve(__dirname, '../../dist/index.js');
 const tempDirs: string[] = [];
 
-function run(cwd: string, ...args: string[]): { stdout: string; stderr: string; status: number | null } {
+function run(
+  cwd: string,
+  ...args: string[]
+): { stdout: string; stderr: string; status: number | null } {
   const result = spawnSync(process.execPath, [PMEM_BIN, ...args], { cwd, encoding: 'utf8' });
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }

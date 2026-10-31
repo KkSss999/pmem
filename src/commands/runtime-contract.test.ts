@@ -17,7 +17,10 @@ describe('CLI command Runtime injection boundary', () => {
     roots.push(root);
     const backend = new SqliteMemoryBackend(path.join(root, '.pmem'));
     const registry = new SchemaRegistry();
-    const schema = { resolve: (ref: { id: string; version: string }) => registry.resolve(ref), list: () => registry.list() };
+    const schema = {
+      resolve: (ref: { id: string; version: string }) => registry.resolve(ref),
+      list: () => registry.list(),
+    };
     const runtime = await openCommandRuntime(root, { backend, schema });
     try {
       assert.equal(runtime.backend, backend);

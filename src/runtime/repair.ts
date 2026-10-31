@@ -88,11 +88,16 @@ function cloneJson(value: RepairJsonValue): RepairJsonValue {
 }
 
 function validateChange(change: RepairChange, index: number): RepairChange {
-  if (!change || typeof change !== 'object') throw new TypeError(`Repair change at index ${index} must be an object`);
-  if (typeof change.id !== 'string' || change.id.trim() === '') throw new TypeError(`Repair change at index ${index} has an invalid id`);
-  if (typeof change.action !== 'string' || change.action.trim() === '') throw new TypeError(`Repair change ${change.id} has an invalid action`);
-  if (typeof change.reason !== 'string' || change.reason.trim() === '') throw new TypeError(`Repair change ${change.id} has an invalid reason`);
-  if (!isJsonValue(change.before) || !isJsonValue(change.after)) throw new TypeError(`Repair change ${change.id} snapshots must be JSON-compatible`);
+  if (!change || typeof change !== 'object')
+    throw new TypeError(`Repair change at index ${index} must be an object`);
+  if (typeof change.id !== 'string' || change.id.trim() === '')
+    throw new TypeError(`Repair change at index ${index} has an invalid id`);
+  if (typeof change.action !== 'string' || change.action.trim() === '')
+    throw new TypeError(`Repair change ${change.id} has an invalid action`);
+  if (typeof change.reason !== 'string' || change.reason.trim() === '')
+    throw new TypeError(`Repair change ${change.id} has an invalid reason`);
+  if (!isJsonValue(change.before) || !isJsonValue(change.after))
+    throw new TypeError(`Repair change ${change.id} snapshots must be JSON-compatible`);
   return {
     id: change.id,
     action: change.action,
@@ -107,7 +112,8 @@ export function buildRepairPlan(
   candidates: readonly RepairChange[],
   options: RepairPlanOptions = {},
 ): RepairPlan {
-  if (options.dryRun && options.apply) throw new Error('Repair plan cannot be both dry-run and apply.');
+  if (options.dryRun && options.apply)
+    throw new Error('Repair plan cannot be both dry-run and apply.');
   const mode: RepairPlanMode = options.apply ? 'apply' : 'dry-run';
   const changes = candidates.map(validateChange);
   const ids = new Set<string>();
@@ -115,7 +121,9 @@ export function buildRepairPlan(
     if (ids.has(change.id)) throw new Error(`Repair plan contains duplicate id ${change.id}`);
     ids.add(change.id);
   }
-  changes.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : a.action < b.action ? -1 : a.action > b.action ? 1 : 0);
+  changes.sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : a.action < b.action ? -1 : a.action > b.action ? 1 : 0,
+  );
   return {
     version: 1,
     mode,
@@ -134,9 +142,15 @@ export function applyRepairPlan(
   plan: RepairPlan,
   execute: (change: RepairChange) => void,
 ): RepairApplyResult {
-  if (plan.version !== 1) throw new Error(`Unsupported repair plan version ${String(plan.version)}`);
+  if (plan.version !== 1)
+    throw new Error(`Unsupported repair plan version ${String(plan.version)}`);
   if (plan.dryRun || plan.mode === 'dry-run') {
-    return { status: 'dry-run', appliedIds: [], skippedIds: plan.changes.map(change => change.id), failures: [] };
+    return {
+      status: 'dry-run',
+      appliedIds: [],
+      skippedIds: plan.changes.map((change) => change.id),
+      failures: [],
+    };
   }
   const appliedIds: string[] = [];
   const failures: RepairApplyFailure[] = [];
@@ -157,8 +171,10 @@ export function applyRepairPlan(
     }
   }
   const applied = new Set(appliedIds);
-  const failedIds = new Set(failures.map(failure => failure.id));
-  const skippedIds = plan.changes.map(change => change.id).filter(id => !applied.has(id) && !failedIds.has(id));
+  const failedIds = new Set(failures.map((failure) => failure.id));
+  const skippedIds = plan.changes
+    .map((change) => change.id)
+    .filter((id) => !applied.has(id) && !failedIds.has(id));
   return {
     status: failures.length === 0 ? 'applied' : appliedIds.length === 0 ? 'failed' : 'partial',
     appliedIds,

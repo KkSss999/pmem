@@ -6,8 +6,16 @@ import { DOMAIN_PRESETS } from './domainPresets';
 // v0.7.0: v0.6.4 id_pattern whitelist — the exact types accepted at runtime.
 // Sourced from src/core/manifest.ts:113 (card_policy.id_pattern regex).
 export const V064_DEFAULT_TYPES = [
-  'project', 'module', 'feature', 'task', 'decision',
-  'trace', 'risk', 'assumption', 'resource', 'integration',
+  'project',
+  'module',
+  'feature',
+  'task',
+  'decision',
+  'trace',
+  'risk',
+  'assumption',
+  'resource',
+  'integration',
 ];
 
 // v0.7.0: v0.6.4 distill merge target types (hardcoded in distill.ts).
@@ -17,7 +25,14 @@ export const V064_DEFAULT_MERGE_TYPES = ['module', 'decision', 'task', 'feature'
 // accepted before v0.7.0. Narrower than id_pattern (10 types) because
 // project/assumption/resource/integration exist for compat but are not
 // creatable (their directories may be excluded from rebuild).
-export const V064_DEFAULT_CREATABLE_TYPES = ['decision', 'module', 'task', 'feature', 'risk', 'trace'];
+export const V064_DEFAULT_CREATABLE_TYPES = [
+  'decision',
+  'module',
+  'task',
+  'feature',
+  'risk',
+  'trace',
+];
 
 /**
  * Compute a ResolvedConfig from a manifest object.
@@ -54,7 +69,9 @@ export function resolveConfig(manifest: Manifest): ResolvedConfig {
     foundational_types: schema?.foundational_types ?? preset?.foundational_types ?? ['module'],
     evidence_types: schema?.evidence_types ?? preset?.evidence_types ?? ['decision', 'trace'],
     default_type: schema?.default_type ?? preset?.default_type ?? 'trace',
-    merge_target_types: (manifest as ManifestV03).distill?.merge_target_types ?? [...V064_DEFAULT_MERGE_TYPES],
+    merge_target_types: (manifest as ManifestV03).distill?.merge_target_types ?? [
+      ...V064_DEFAULT_MERGE_TYPES,
+    ],
 
     // creatable_types: types accepted by `pmem new`.
     // - If schema.creatable_types is defined → use it.
@@ -64,11 +81,14 @@ export function resolveConfig(manifest: Manifest): ResolvedConfig {
     //   - Otherwise → v0.6.4 default creatable types
     creatable_types: schema?.creatable_types
       ? schema.creatable_types
-      : (preset?.creatable_types
-          ? preset.creatable_types
-          : (schema?.card_types
-              ? card_types.filter(t => t !== 'integration' && t !== 'project' && t !== 'assumption' && t !== 'resource')
-              : [...V064_DEFAULT_CREATABLE_TYPES])),
+      : preset?.creatable_types
+        ? preset.creatable_types
+        : schema?.card_types
+          ? card_types.filter(
+              (t) =>
+                t !== 'integration' && t !== 'project' && t !== 'assumption' && t !== 'resource',
+            )
+          : [...V064_DEFAULT_CREATABLE_TYPES],
   };
 }
 
@@ -82,11 +102,14 @@ export function resolveConfig(manifest: Manifest): ResolvedConfig {
  */
 export function renderIdPattern(idPattern: string, cardTypes: string[]): string {
   if (!idPattern.includes('{types}')) return idPattern;
-  const escaped = cardTypes.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const escaped = cardTypes.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return idPattern.replace('{types}', escaped.join('|'));
 }
 
-export function getDefaultManifest(projectName: string, initMode: InitMode = 'minimal'): ManifestV03 {
+export function getDefaultManifest(
+  projectName: string,
+  initMode: InitMode = 'minimal',
+): ManifestV03 {
   return {
     pmem: {
       schema_version: '0.3',
@@ -189,9 +212,7 @@ export function getDefaultManifest(projectName: string, initMode: InitMode = 'mi
       on_git_commit: 'suggest_trace',
       min_trace_interval: '30m',
       max_auto_traces_per_day: 5,
-      ignore_patterns: [
-        'node_modules/**', 'dist/**', 'build/**', '*.lock', '*.log',
-      ],
+      ignore_patterns: ['node_modules/**', 'dist/**', 'build/**', '*.lock', '*.log'],
       trace_policy: {
         require_meaningful_change: true,
         require_summary: true,
@@ -199,7 +220,8 @@ export function getDefaultManifest(projectName: string, initMode: InitMode = 'mi
       },
     },
     card_policy: {
-      id_pattern: '^(project|module|feature|task|decision|trace|risk|assumption|resource|integration)\\.[a-z0-9._-]+$',
+      id_pattern:
+        '^(project|module|feature|task|decision|trace|risk|assumption|resource|integration)\\.[a-z0-9._-]+$',
       max_tokens: { module: 1200, feature: 1000, decision: 1000, task: 800, trace: 1000 },
       max_sections: { module: 8, feature: 8, decision: 6, task: 6 },
       warn_when_related_count_gt: 12,
@@ -225,7 +247,10 @@ export function getDefaultManifest(projectName: string, initMode: InitMode = 'mi
   };
 }
 
-export function getDefaultManifestV03(projectName: string, initMode: InitMode = 'minimal'): ManifestV03 {
+export function getDefaultManifestV03(
+  projectName: string,
+  initMode: InitMode = 'minimal',
+): ManifestV03 {
   return getDefaultManifest(projectName, initMode);
 }
 

@@ -9,7 +9,7 @@ rm -rf "$PROJECT"
 mkdir -p "$PROJECT"
 
 cd "$ROOT"
-npm run build >/dev/null
+bun run build >/dev/null
 
 cd "$PROJECT"
 git init -q

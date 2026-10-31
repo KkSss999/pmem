@@ -205,11 +205,17 @@ describe('pmem mark-dirty --auto (issue #10 agent contract)', () => {
 
       // Now modify the file so git --porcelain reports it as changed,
       // but no card references it (so no card should be marked dirty).
-      fs.writeFileSync(path.join(cwd, 'src', 'untracked-area.ts'), 'console.log("changed");', 'utf8');
+      fs.writeFileSync(
+        path.join(cwd, 'src', 'untracked-area.ts'),
+        'console.log("changed");',
+        'utf8',
+      );
     });
 
     after(() => {
-      try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(cwd, { recursive: true, force: true });
+      } catch {}
     });
 
     it('exits 0 (not 1) and emits state=no_related_cards JSON', () => {
@@ -222,23 +228,35 @@ describe('pmem mark-dirty --auto (issue #10 agent contract)', () => {
       assert.ok(jsonMatch, `expected JSON object in stdout, got: ${r.stdout}`);
 
       const payload = JSON.parse(jsonMatch![0]);
-      assert.strictEqual(payload.state, 'no_related_cards',
-        `expected state=no_related_cards, got: ${payload.state}`);
-      assert.deepStrictEqual(payload.marked_card_ids, [],
-        `expected empty marked_card_ids, got: ${JSON.stringify(payload.marked_card_ids)}`);
+      assert.strictEqual(
+        payload.state,
+        'no_related_cards',
+        `expected state=no_related_cards, got: ${payload.state}`,
+      );
+      assert.deepStrictEqual(
+        payload.marked_card_ids,
+        [],
+        `expected empty marked_card_ids, got: ${JSON.stringify(payload.marked_card_ids)}`,
+      );
       assert.strictEqual(payload.command, 'mark-dirty --auto');
-      assert.ok(Array.isArray(payload.changed_files),
-        `expected changed_files array, got: ${typeof payload.changed_files}`);
-      assert.ok(Array.isArray(payload.next_actions),
-        `expected next_actions array`);
+      assert.ok(
+        Array.isArray(payload.changed_files),
+        `expected changed_files array, got: ${typeof payload.changed_files}`,
+      );
+      assert.ok(Array.isArray(payload.next_actions), `expected next_actions array`);
     });
 
     it('compact mode also exits 0 (no process.exit(1))', () => {
       const r = pmem('mark-dirty --auto', cwd);
-      assert.strictEqual(r.code, 0,
-        `expected exit 0 in compact mode too, got ${r.code}: ${r.stdout}\n${r.stderr}`);
-      assert.ok(r.stdout.includes('No related cards found for changed files.'),
-        `expected compact "No related cards" message in: ${r.stdout}`);
+      assert.strictEqual(
+        r.code,
+        0,
+        `expected exit 0 in compact mode too, got ${r.code}: ${r.stdout}\n${r.stderr}`,
+      );
+      assert.ok(
+        r.stdout.includes('No related cards found for changed files.'),
+        `expected compact "No related cards" message in: ${r.stdout}`,
+      );
     });
   });
 
@@ -256,7 +274,8 @@ describe('pmem mark-dirty --auto (issue #10 agent contract)', () => {
 
       // Create a card that references src/core.ts.
       fs.mkdirSync(path.join(cwd, '.pmem', 'modules'), { recursive: true });
-      fs.writeFileSync(path.join(cwd, '.pmem', 'modules', 'module.core.md'),
+      fs.writeFileSync(
+        path.join(cwd, '.pmem', 'modules', 'module.core.md'),
         `---
 id: module.core
 type: module
@@ -267,7 +286,9 @@ source_files:
   - src/core.ts
 ---
 # Core Module
-`, 'utf8');
+`,
+        'utf8',
+      );
 
       commitAll(cwd, 'initial commit');
       pmem('rebuild --full', cwd);
@@ -277,7 +298,9 @@ source_files:
     });
 
     after(() => {
-      try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+      try {
+        fs.rmSync(cwd, { recursive: true, force: true });
+      } catch {}
     });
 
     it('exits 0 and emits state=marked_dirty JSON with the matching card_id', () => {
@@ -288,24 +311,31 @@ source_files:
       assert.ok(jsonMatch, `expected JSON object in stdout, got: ${r.stdout}`);
 
       const payload = JSON.parse(jsonMatch![0]);
-      assert.strictEqual(payload.state, 'marked_dirty',
-        `expected state=marked_dirty, got: ${payload.state}`);
-      assert.ok(Array.isArray(payload.marked_card_ids) && payload.marked_card_ids.length >= 1,
-        `expected non-empty marked_card_ids, got: ${JSON.stringify(payload.marked_card_ids)}`);
-      assert.ok(payload.marked_card_ids.includes('module.core'),
-        `expected marked_card_ids to include module.core, got: ${JSON.stringify(payload.marked_card_ids)}`);
+      assert.strictEqual(
+        payload.state,
+        'marked_dirty',
+        `expected state=marked_dirty, got: ${payload.state}`,
+      );
+      assert.ok(
+        Array.isArray(payload.marked_card_ids) && payload.marked_card_ids.length >= 1,
+        `expected non-empty marked_card_ids, got: ${JSON.stringify(payload.marked_card_ids)}`,
+      );
+      assert.ok(
+        payload.marked_card_ids.includes('module.core'),
+        `expected marked_card_ids to include module.core, got: ${JSON.stringify(payload.marked_card_ids)}`,
+      );
       assert.strictEqual(payload.command, 'mark-dirty --auto');
-      assert.ok(Array.isArray(payload.changed_files),
-        `expected changed_files array`);
-      assert.ok(Array.isArray(payload.next_actions),
-        `expected next_actions array`);
+      assert.ok(Array.isArray(payload.changed_files), `expected changed_files array`);
+      assert.ok(Array.isArray(payload.next_actions), `expected next_actions array`);
     });
 
     it('compact mode keeps the existing message and exits 0', () => {
       const r = pmem('mark-dirty --auto', cwd);
       assert.strictEqual(r.code, 0, `expected exit 0, got ${r.code}: ${r.stdout}\n${r.stderr}`);
-      assert.ok(r.stdout.includes('Auto-marked'),
-        `expected "Auto-marked" message in compact output: ${r.stdout}`);
+      assert.ok(
+        r.stdout.includes('Auto-marked'),
+        `expected "Auto-marked" message in compact output: ${r.stdout}`,
+      );
     });
   });
 });
@@ -319,13 +349,17 @@ describe('pmem mark-dirty --auto non-git fallback (issue #22)', () => {
     fs.mkdirSync(path.join(cwd, 'src'), { recursive: true });
     fs.writeFileSync(path.join(cwd, 'src', 'core.ts'), 'export const value = 1;\n', 'utf8');
     fs.mkdirSync(path.join(cwd, '.pmem', 'modules'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, '.pmem', 'modules', 'module.core.md'), `---
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', 'modules', 'module.core.md'),
+      `---
 id: module.core
 type: module
 source_files: [src/core.ts]
 ---
 # Core
-`, 'utf8');
+`,
+      'utf8',
+    );
     const rebuild = pmem('rebuild --full', cwd);
     assert.strictEqual(rebuild.code, 0, rebuild.stdout);
   });
@@ -344,10 +378,16 @@ source_files: [src/core.ts]
     assert.strictEqual(status.code, 0, status.stdout);
     const statusPayload = JSON.parse(status.stdout);
     assert.strictEqual(statusPayload.source, 'mtime');
-    assert.ok(statusPayload.changes.some((change: { path: string }) => change.path === 'src/core.ts'));
+    assert.ok(
+      statusPayload.changes.some((change: { path: string }) => change.path === 'src/core.ts'),
+    );
 
     const dirty = pmem('mark-dirty --auto --format json', cwd);
-    assert.strictEqual(dirty.code, 0, `expected mtime fallback success: ${dirty.stdout}\n${dirty.stderr}`);
+    assert.strictEqual(
+      dirty.code,
+      0,
+      `expected mtime fallback success: ${dirty.stdout}\n${dirty.stderr}`,
+    );
     const payload = JSON.parse(dirty.stdout);
     assert.strictEqual(payload.state, 'marked_dirty');
     assert.ok(payload.changed_files.includes('src/core.ts'));
@@ -379,5 +419,7 @@ source_files: [src/core.ts]
 
 // Clean up temp root after all tests
 after(() => {
-  try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+  try {
+    fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+  } catch {}
 });

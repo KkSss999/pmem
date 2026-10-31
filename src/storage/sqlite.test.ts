@@ -47,26 +47,54 @@ test('SQLite backend exposes a bounded, deterministic event history port', () =>
   try {
     const tx = backend.beginTransaction();
     tx.appendEvent({
-      id: 'history-one', type: 'commit', scope: 'project', occurred_at: '2026-08-03T10:00:00.000Z',
-      recorded_at: '2026-08-03T10:00:00.000Z', record_id: 'memory.database', payload: { summary: 'mysql' },
+      id: 'history-one',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T10:00:00.000Z',
+      recorded_at: '2026-08-03T10:00:00.000Z',
+      record_id: 'memory.database',
+      payload: { summary: 'mysql' },
     });
     tx.appendEvent({
-      id: 'history-two', type: 'commit', scope: 'project', occurred_at: '2026-08-03T11:00:00.000Z',
-      recorded_at: '2026-08-03T11:00:00.000Z', payload: { target_id: 'memory.database', changes: [{ path: 'db', before: 'mysql', after: 'postgres' }] },
+      id: 'history-two',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T11:00:00.000Z',
+      recorded_at: '2026-08-03T11:00:00.000Z',
+      payload: {
+        target_id: 'memory.database',
+        changes: [{ path: 'db', before: 'mysql', after: 'postgres' }],
+      },
     });
     tx.appendEvent({
-      id: 'history-three', type: 'commit', scope: 'project', occurred_at: '2026-08-03T12:00:00.000Z',
-      recorded_at: '2026-08-03T12:00:00.000Z', record_id: 'memory.database', payload: { summary: 'postgres + migrated' },
+      id: 'history-three',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T12:00:00.000Z',
+      recorded_at: '2026-08-03T12:00:00.000Z',
+      record_id: 'memory.database',
+      payload: { summary: 'postgres + migrated' },
     });
     tx.appendEvent({
-      id: 'history-other', type: 'commit', scope: 'project', occurred_at: '2026-08-03T12:00:00.000Z',
-      recorded_at: '2026-08-03T12:00:00.000Z', record_id: 'memory.other', payload: {},
+      id: 'history-other',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T12:00:00.000Z',
+      recorded_at: '2026-08-03T12:00:00.000Z',
+      record_id: 'memory.other',
+      payload: {},
     });
     tx.commit();
     const history = backend.listEvents?.({ recordId: 'memory.database', limit: 10 });
-    assert.deepEqual(history?.map(event => event.id), ['1', '2', '3']);
+    assert.deepEqual(
+      history?.map((event) => event.id),
+      ['1', '2', '3'],
+    );
     assert.equal(history?.[1]?.payload.target_id, 'memory.database');
-    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.database', limit: 2 }).map(event => event.id), ['2', '3']);
+    assert.deepEqual(
+      backend.listEvents?.({ recordId: 'memory.database', limit: 2 }).map((event) => event.id),
+      ['2', '3'],
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -78,21 +106,41 @@ test('SQLite record-scoped history filters before the bounded global event windo
   try {
     const tx = backend.beginTransaction();
     tx.appendEvent({
-      id: 'target-before', type: 'commit', scope: 'project', occurred_at: '2026-08-03T10:00:00.000Z',
-      recorded_at: '2026-08-03T10:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target' },
+      id: 'target-before',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T10:00:00.000Z',
+      recorded_at: '2026-08-03T10:00:00.000Z',
+      record_id: 'memory.target',
+      payload: { summary: 'target' },
     });
     for (let index = 0; index < 600; index += 1) {
       tx.appendEvent({
-        id: `other-${index}`, type: 'commit', scope: 'project', occurred_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`,
-        recorded_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`, record_id: 'memory.other', payload: {},
+        id: `other-${index}`,
+        type: 'commit',
+        scope: 'project',
+        occurred_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`,
+        recorded_at: `2026-08-03T11:${String(index % 60).padStart(2, '0')}:00.000Z`,
+        record_id: 'memory.other',
+        payload: {},
       });
     }
     tx.appendEvent({
-      id: 'target-after', type: 'commit', scope: 'project', occurred_at: '2026-08-03T23:00:00.000Z',
-      recorded_at: '2026-08-03T23:00:00.000Z', record_id: 'memory.target', payload: { summary: 'target latest' },
+      id: 'target-after',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: '2026-08-03T23:00:00.000Z',
+      recorded_at: '2026-08-03T23:00:00.000Z',
+      record_id: 'memory.target',
+      payload: { summary: 'target latest' },
     });
     tx.commit();
-    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.target', limit: 10 }).map(event => event.record_id), ['memory.target', 'memory.target']);
+    assert.deepEqual(
+      backend
+        .listEvents?.({ recordId: 'memory.target', limit: 10 })
+        .map((event) => event.record_id),
+      ['memory.target', 'memory.target'],
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -104,10 +152,31 @@ test('SQLite history preserves insertion order for equal timestamps', () => {
   try {
     const tx = backend.beginTransaction();
     const at = '2026-08-03T10:00:00.000Z';
-    tx.appendEvent({ id: 'nine', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 9 } });
-    tx.appendEvent({ id: 'ten', type: 'commit', scope: 'project', occurred_at: at, recorded_at: at, record_id: 'memory.tie', payload: { value: 10 } });
+    tx.appendEvent({
+      id: 'nine',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: at,
+      recorded_at: at,
+      record_id: 'memory.tie',
+      payload: { value: 9 },
+    });
+    tx.appendEvent({
+      id: 'ten',
+      type: 'commit',
+      scope: 'project',
+      occurred_at: at,
+      recorded_at: at,
+      record_id: 'memory.tie',
+      payload: { value: 10 },
+    });
     tx.commit();
-    assert.deepEqual(backend.listEvents?.({ recordId: 'memory.tie', limit: 10 }).map(event => event.payload.value), [9, 10]);
+    assert.deepEqual(
+      backend
+        .listEvents?.({ recordId: 'memory.tie', limit: 10 })
+        .map((event) => event.payload.value),
+      [9, 10],
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -129,8 +198,23 @@ test('SQLite codec persists arbitrary schema data without creating a Card row', 
     });
     tx.commit();
     assert.deepEqual(backend.getRecord('character.alice')?.data, { name: 'Alice', age: 20 });
-    assert.deepEqual(backend.query({ schema: { id: 'character', version: '1' }, filters: [{ field: 'age', operator: 'gte', value: 18 }] }).records.map(record => record.id), ['character.alice']);
-    assert.equal((backend.database!.prepare('SELECT COUNT(*) AS count FROM cards WHERE id = ?').get('character.alice') as { count: number }).count, 0);
+    assert.deepEqual(
+      backend
+        .query({
+          schema: { id: 'character', version: '1' },
+          filters: [{ field: 'age', operator: 'gte', value: 18 }],
+        })
+        .records.map((record) => record.id),
+      ['character.alice'],
+    );
+    assert.equal(
+      (
+        backend
+          .database!.prepare('SELECT COUNT(*) AS count FROM cards WHERE id = ?')
+          .get('character.alice') as { count: number }
+      ).count,
+      0,
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -158,9 +242,30 @@ test('SQLite transaction rollback removes records and all atomic side effects', 
 
     assert.equal(backend.getRecord('memory.rollback'), null);
     const db = backend.database!;
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM edges WHERE from_id = ?').get('memory.rollback') as { count: number }).count, 0);
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM events WHERE memory_id = ?').get('memory.rollback') as { count: number }).count, 0);
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM memory_search WHERE record_id = ?').get('memory.rollback') as { count: number }).count, 0);
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM edges WHERE from_id = ?')
+          .get('memory.rollback') as { count: number }
+      ).count,
+      0,
+    );
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM events WHERE memory_id = ?')
+          .get('memory.rollback') as { count: number }
+      ).count,
+      0,
+    );
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM memory_search WHERE record_id = ?')
+          .get('memory.rollback') as { count: number }
+      ).count,
+      0,
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -187,11 +292,35 @@ test('SQLite transaction commit persists record, event, relation, and search doc
 
     const db = backend.database!;
     assert.equal(backend.getRecord('memory.commit')?.data.title, 'Commit memory');
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM edges WHERE from_id = ?').get('memory.commit') as { count: number }).count, 1);
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM events WHERE memory_id = ?').get('memory.commit') as { count: number }).count, 1);
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM memory_search WHERE record_id = ?').get('memory.commit') as { count: number }).count, 1);
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM edges WHERE from_id = ?')
+          .get('memory.commit') as { count: number }
+      ).count,
+      1,
+    );
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM events WHERE memory_id = ?')
+          .get('memory.commit') as { count: number }
+      ).count,
+      1,
+    );
+    assert.equal(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS count FROM memory_search WHERE record_id = ?')
+          .get('memory.commit') as { count: number }
+      ).count,
+      1,
+    );
     const graph = backend.query({ relation: { from_id: 'memory.commit', type: 'depends_on' } });
-    assert.deepEqual(graph.records.map(item => item.id), []);
+    assert.deepEqual(
+      graph.records.map((item) => item.id),
+      [],
+    );
   } finally {
     backend.close();
     fs.rmSync(root, { recursive: true, force: true });
@@ -207,7 +336,9 @@ test('SQLite graph query returns related target records through edges', () => {
     tx.putRelation({ from_id: 'memory.source', to_id: 'memory.target', type: 'depends_on' });
     tx.commit();
     assert.deepEqual(
-      backend.query({ relation: { from_id: 'memory.source', type: 'depends_on' } }).records.map(item => item.id),
+      backend
+        .query({ relation: { from_id: 'memory.source', type: 'depends_on' } })
+        .records.map((item) => item.id),
       ['memory.target'],
     );
   } finally {
@@ -222,7 +353,10 @@ test('SQLite semantic adapter is opt-in and never contaminates deterministic sea
     assert.equal(backend.capabilities.query.semantic, false);
     backend.setSemanticAdapter({
       search: async (text, limit) => ({
-        hits: [{ record_id: `semantic:${text}`, score: 0.9, channels: ['semantic'] }].slice(0, limit),
+        hits: [{ record_id: `semantic:${text}`, score: 0.9, channels: ['semantic'] }].slice(
+          0,
+          limit,
+        ),
       }),
     });
     assert.equal(backend.capabilities.query.semantic, true);

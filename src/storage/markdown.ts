@@ -84,11 +84,7 @@ export class MarkdownProjectionError extends Error {
   readonly code: 'INVALID_MARKDOWN' | 'INVALID_JOURNAL' | 'IO_ERROR' | 'RECOVERY_FAILED';
   readonly filePath?: string;
 
-  constructor(
-    code: MarkdownProjectionError['code'],
-    message: string,
-    filePath?: string,
-  ) {
+  constructor(code: MarkdownProjectionError['code'], message: string, filePath?: string) {
     super(message);
     this.name = 'MarkdownProjectionError';
     this.code = code;
@@ -116,7 +112,11 @@ function fsyncDirectory(directory: string): void {
   // opening a directory; rename has still completed, so this is best effort.
   try {
     const fd = fs.openSync(directory, 'r');
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch {
     // Deliberately ignored: durability is still protected by journal state.
   }
@@ -136,7 +136,9 @@ function writeAtomic(filePath: string, content: string): void {
     fs.renameSync(tempPath, filePath);
     fsyncDirectory(path.dirname(filePath));
   } catch (error) {
-    try { fs.unlinkSync(tempPath); } catch {}
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {}
     throw error;
   }
 }
@@ -150,22 +152,52 @@ function readJournal(journalPath: string): ProjectionJournal {
   try {
     parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
   } catch (error: any) {
-    throw new MarkdownProjectionError('INVALID_JOURNAL', `Cannot read projection journal: ${error?.message ?? String(error)}`, journalPath);
+    throw new MarkdownProjectionError(
+      'INVALID_JOURNAL',
+      `Cannot read projection journal: ${error?.message ?? String(error)}`,
+      journalPath,
+    );
   }
-  if (!isRecord(parsed) || parsed.protocol !== MARKDOWN_PROJECTION_PROTOCOL ||
-      typeof parsed.operationId !== 'string' || typeof parsed.targetPath !== 'string' ||
-      typeof parsed.tempPath !== 'string' || typeof parsed.state !== 'string' ||
-      typeof parsed.createdAt !== 'string' || typeof parsed.updatedAt !== 'string') {
-    throw new MarkdownProjectionError('INVALID_JOURNAL', 'Projection journal is malformed or uses an unknown protocol.', journalPath);
+  if (
+    !isRecord(parsed) ||
+    parsed.protocol !== MARKDOWN_PROJECTION_PROTOCOL ||
+    typeof parsed.operationId !== 'string' ||
+    typeof parsed.targetPath !== 'string' ||
+    typeof parsed.tempPath !== 'string' ||
+    typeof parsed.state !== 'string' ||
+    typeof parsed.createdAt !== 'string' ||
+    typeof parsed.updatedAt !== 'string'
+  ) {
+    throw new MarkdownProjectionError(
+      'INVALID_JOURNAL',
+      'Projection journal is malformed or uses an unknown protocol.',
+      journalPath,
+    );
   }
-  const states: ProjectionJournalState[] = ['prepared', 'temp_written', 'backup_created', 'published', 'recovered', 'rollback_failed'];
+  const states: ProjectionJournalState[] = [
+    'prepared',
+    'temp_written',
+    'backup_created',
+    'published',
+    'recovered',
+    'rollback_failed',
+  ];
   if (!states.includes(parsed.state as ProjectionJournalState)) {
-    throw new MarkdownProjectionError('INVALID_JOURNAL', `Unknown projection journal state '${String(parsed.state)}'.`, journalPath);
+    throw new MarkdownProjectionError(
+      'INVALID_JOURNAL',
+      `Unknown projection journal state '${String(parsed.state)}'.`,
+      journalPath,
+    );
   }
   return parsed as unknown as ProjectionJournal;
 }
 
-function updateJournal(journalPath: string, journal: ProjectionJournal, state: ProjectionJournalState, error?: string): ProjectionJournal {
+function updateJournal(
+  journalPath: string,
+  journal: ProjectionJournal,
+  state: ProjectionJournalState,
+  error?: string,
+): ProjectionJournal {
   const updated: ProjectionJournal = {
     ...journal,
     state,
@@ -199,33 +231,61 @@ export class MarkdownSerializer {
   }
 
   parse(content: string, filePath: string): MemoryRecord {
-  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
-  if (!match) {
-    throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown projection is missing YAML frontmatter delimiters.', filePath);
-  }
-  let frontmatter: unknown;
-  try {
-    frontmatter = yaml.load(match[1]);
-  } catch (error: any) {
-    throw new MarkdownProjectionError('INVALID_MARKDOWN', `Invalid YAML frontmatter: ${error?.message ?? String(error)}`, filePath);
-  }
-  if (!isRecord(frontmatter)) {
-    throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown frontmatter must be a YAML object.', filePath);
-  }
+    const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
+    if (!match) {
+      throw new MarkdownProjectionError(
+        'INVALID_MARKDOWN',
+        'Markdown projection is missing YAML frontmatter delimiters.',
+        filePath,
+      );
+    }
+    let frontmatter: unknown;
+    try {
+      frontmatter = yaml.load(match[1]);
+    } catch (error: any) {
+      throw new MarkdownProjectionError(
+        'INVALID_MARKDOWN',
+        `Invalid YAML frontmatter: ${error?.message ?? String(error)}`,
+        filePath,
+      );
+    }
+    if (!isRecord(frontmatter)) {
+      throw new MarkdownProjectionError(
+        'INVALID_MARKDOWN',
+        'Markdown frontmatter must be a YAML object.',
+        filePath,
+      );
+    }
     const envelope = frontmatter.pmem;
     const data = frontmatter.data;
-    if (!isRecord(envelope) || envelope.protocol !== MARKDOWN_PROJECTION_PROTOCOL ||
-        typeof envelope.id !== 'string' || !isRecord(envelope.schema) ||
-        typeof envelope.schema.id !== 'string' || typeof envelope.schema.version !== 'string' ||
-        !isRecord(data) || typeof envelope.created_at !== 'string' || typeof envelope.updated_at !== 'string') {
-      throw new MarkdownProjectionError('INVALID_MARKDOWN', 'Markdown projection is not a canonical v1.3 record. Use LegacyCardImporter for v1.2 cards.', filePath);
+    if (
+      !isRecord(envelope) ||
+      envelope.protocol !== MARKDOWN_PROJECTION_PROTOCOL ||
+      typeof envelope.id !== 'string' ||
+      !isRecord(envelope.schema) ||
+      typeof envelope.schema.id !== 'string' ||
+      typeof envelope.schema.version !== 'string' ||
+      !isRecord(data) ||
+      typeof envelope.created_at !== 'string' ||
+      typeof envelope.updated_at !== 'string'
+    ) {
+      throw new MarkdownProjectionError(
+        'INVALID_MARKDOWN',
+        'Markdown projection is not a canonical v1.3 record. Use LegacyCardImporter for v1.2 cards.',
+        filePath,
+      );
     }
     return {
       id: envelope.id,
       schema: { id: envelope.schema.id, version: envelope.schema.version },
       data: { ...data, ...(match[2] ? { body: match[2] } : {}) },
-      scope: typeof envelope.scope === 'string' || isRecord(envelope.scope) ? envelope.scope as MemoryRecord['scope'] : 'workspace',
-      provenance: isRecord(envelope.provenance) ? envelope.provenance : { source: 'markdown', source_id: filePath },
+      scope:
+        typeof envelope.scope === 'string' || isRecord(envelope.scope)
+          ? (envelope.scope as MemoryRecord['scope'])
+          : 'workspace',
+      provenance: isRecord(envelope.provenance)
+        ? envelope.provenance
+        : { source: 'markdown', source_id: filePath },
       created_at: envelope.created_at,
       updated_at: envelope.updated_at,
       ...(typeof envelope.state === 'string' ? { state: envelope.state } : {}),
@@ -242,7 +302,11 @@ export function importMarkdownRecord(filePath: string): MemoryRecord {
   try {
     content = fs.readFileSync(filePath, 'utf8');
   } catch (error: any) {
-    throw new MarkdownProjectionError('IO_ERROR', `Cannot read Markdown projection: ${error?.message ?? String(error)}`, filePath);
+    throw new MarkdownProjectionError(
+      'IO_ERROR',
+      `Cannot read Markdown projection: ${error?.message ?? String(error)}`,
+      filePath,
+    );
   }
   return DEFAULT_MARKDOWN_SERIALIZER.parse(content, filePath);
 }
@@ -291,26 +355,62 @@ export async function rebuildMarkdownProjection(
     ownedTransaction = true;
   }
   if (!transaction) {
-    return { scanned: files.length, imported: records.length, records, errors, committed: false, rolledBack: false };
+    return {
+      scanned: files.length,
+      imported: records.length,
+      records,
+      errors,
+      committed: false,
+      rolledBack: false,
+    };
   }
 
   const shouldRollback = errors.length > 0 && options.allowPartial !== true;
   try {
     if (shouldRollback) {
       await transaction.rollback(errors);
-      return { scanned: files.length, imported: records.length, records, errors, committed: false, rolledBack: true };
+      return {
+        scanned: files.length,
+        imported: records.length,
+        records,
+        errors,
+        committed: false,
+        rolledBack: true,
+      };
     }
     for (const record of records) await transaction.putRecord(record);
     await transaction.commit();
-    return { scanned: files.length, imported: records.length, records, errors, committed: true, rolledBack: false };
+    return {
+      scanned: files.length,
+      imported: records.length,
+      records,
+      errors,
+      committed: true,
+      rolledBack: false,
+    };
   } catch (error) {
     if (ownedTransaction || options.transaction) {
-      try { await transaction.rollback(error); } catch (rollbackError) {
-        errors.push({ filePath: path.resolve(directory), message: `rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}` });
+      try {
+        await transaction.rollback(error);
+      } catch (rollbackError) {
+        errors.push({
+          filePath: path.resolve(directory),
+          message: `rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+        });
       }
     }
-    errors.push({ filePath: path.resolve(directory), message: error instanceof Error ? error.message : String(error) });
-    return { scanned: files.length, imported: records.length, records, errors, committed: false, rolledBack: true };
+    errors.push({
+      filePath: path.resolve(directory),
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      scanned: files.length,
+      imported: records.length,
+      records,
+      errors,
+      committed: false,
+      rolledBack: true,
+    };
   }
 }
 
@@ -373,9 +473,13 @@ export function exportMarkdownRecord(
     options.hooks?.afterPublish?.();
 
     if (journal.backupPath) {
-      try { fs.unlinkSync(journal.backupPath); } catch {}
+      try {
+        fs.unlinkSync(journal.backupPath);
+      } catch {}
     }
-    try { fs.unlinkSync(journalPath); } catch {}
+    try {
+      fs.unlinkSync(journalPath);
+    } catch {}
     return { targetPath: absoluteTarget, journalPath, state: 'published', recovered: false };
   } catch (error: any) {
     const detail = error?.message ?? String(error);
@@ -388,11 +492,26 @@ export function exportMarkdownRecord(
       }
       journal = updateJournal(journalPath, journal, 'recovered', detail);
     } catch (recoveryError: any) {
-      journal = updateJournal(journalPath, journal, 'rollback_failed', `${detail}; recovery: ${recoveryError?.message ?? String(recoveryError)}`);
-      throw new MarkdownProjectionError('RECOVERY_FAILED', `Projection publish failed and rollback failed: ${journal.error}`, absoluteTarget);
+      journal = updateJournal(
+        journalPath,
+        journal,
+        'rollback_failed',
+        `${detail}; recovery: ${recoveryError?.message ?? String(recoveryError)}`,
+      );
+      throw new MarkdownProjectionError(
+        'RECOVERY_FAILED',
+        `Projection publish failed and rollback failed: ${journal.error}`,
+        absoluteTarget,
+      );
     }
-    try { fs.unlinkSync(journalPath); } catch {}
-    throw new MarkdownProjectionError('IO_ERROR', `Projection publish failed; previous content recovered: ${detail}`, absoluteTarget);
+    try {
+      fs.unlinkSync(journalPath);
+    } catch {}
+    throw new MarkdownProjectionError(
+      'IO_ERROR',
+      `Projection publish failed; previous content recovered: ${detail}`,
+      absoluteTarget,
+    );
   }
 }
 
@@ -403,10 +522,19 @@ export function recoverMarkdownProjection(journalPath: string): ProjectionWriteR
   const journal = readJournal(absoluteJournal);
   if (journal.state === 'published' || journal.state === 'recovered') {
     if (journal.backupPath && fs.existsSync(journal.backupPath)) {
-      try { fs.unlinkSync(journal.backupPath); } catch {}
+      try {
+        fs.unlinkSync(journal.backupPath);
+      } catch {}
     }
-    try { fs.unlinkSync(absoluteJournal); } catch {}
-    return { targetPath: journal.targetPath, journalPath: absoluteJournal, state: journal.state, recovered: true };
+    try {
+      fs.unlinkSync(absoluteJournal);
+    } catch {}
+    return {
+      targetPath: journal.targetPath,
+      journalPath: absoluteJournal,
+      state: journal.state,
+      recovered: true,
+    };
   }
 
   try {
@@ -417,12 +545,23 @@ export function recoverMarkdownProjection(journalPath: string): ProjectionWriteR
       fsyncDirectory(path.dirname(journal.targetPath));
     }
     const recovered = updateJournal(absoluteJournal, journal, 'recovered');
-    try { fs.unlinkSync(absoluteJournal); } catch {}
-    return { targetPath: recovered.targetPath, journalPath: absoluteJournal, state: 'recovered', recovered: true };
+    try {
+      fs.unlinkSync(absoluteJournal);
+    } catch {}
+    return {
+      targetPath: recovered.targetPath,
+      journalPath: absoluteJournal,
+      state: 'recovered',
+      recovered: true,
+    };
   } catch (error: any) {
     const detail = error?.message ?? String(error);
     updateJournal(absoluteJournal, journal, 'rollback_failed', detail);
-    throw new MarkdownProjectionError('RECOVERY_FAILED', `Projection recovery failed: ${detail}`, journal.targetPath);
+    throw new MarkdownProjectionError(
+      'RECOVERY_FAILED',
+      `Projection recovery failed: ${detail}`,
+      journal.targetPath,
+    );
   }
 }
 

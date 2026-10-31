@@ -10,7 +10,10 @@ export function healthBaselinePath(pmemPath: string): string {
   return path.join(pmemPath, HEALTH_BASELINE_FILE);
 }
 
-export function readHealthBaseline(pmemPath: string): { status: 'missing' | 'loaded' | 'invalid'; value: HealthBaselineFile | null } {
+export function readHealthBaseline(pmemPath: string): {
+  status: 'missing' | 'loaded' | 'invalid';
+  value: HealthBaselineFile | null;
+} {
   const raw = readFile(healthBaselinePath(pmemPath));
   if (raw === null) return { status: 'missing', value: null };
   try {
@@ -19,19 +22,24 @@ export function readHealthBaseline(pmemPath: string): { status: 'missing' | 'loa
       value.schema_version !== 1 ||
       !Array.isArray(value.entries) ||
       value.project !== path.basename(path.dirname(pmemPath))
-    ) throw new Error('invalid schema or project');
+    )
+      throw new Error('invalid schema or project');
     return { status: 'loaded', value };
   } catch {
     return { status: 'invalid', value: null };
   }
 }
 
-export function writeHealthBaseline(pmemPath: string, issues: readonly VerifyIssue[], now = new Date()): HealthBaselineFile {
+export function writeHealthBaseline(
+  pmemPath: string,
+  issues: readonly VerifyIssue[],
+  now = new Date(),
+): HealthBaselineFile {
   const value: HealthBaselineFile = {
     schema_version: 1,
     created_at: now.toISOString(),
     project: path.basename(path.dirname(pmemPath)),
-    entries: aggregateHealthIssues(issues).map(issue => ({
+    entries: aggregateHealthIssues(issues).map((issue) => ({
       fingerprint: issue.fingerprint!,
       severity: issue.severity,
       dimension: issue.dimension!,

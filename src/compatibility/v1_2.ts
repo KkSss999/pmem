@@ -81,7 +81,11 @@ function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
 
 function requireString(value: unknown, code: CompatibilityErrorCode, field: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new CompatibilityError(code, `Compatibility field '${field}' must be a non-empty string.`, field);
+    throw new CompatibilityError(
+      code,
+      `Compatibility field '${field}' must be a non-empty string.`,
+      field,
+    );
   }
   return value;
 }
@@ -93,7 +97,11 @@ function requireText(value: unknown, code: CompatibilityErrorCode, field: string
   return value;
 }
 
-function optionalString(value: unknown, code: CompatibilityErrorCode, field: string): string | undefined {
+function optionalString(
+  value: unknown,
+  code: CompatibilityErrorCode,
+  field: string,
+): string | undefined {
   if (value === undefined || value === null) return undefined;
   return requireString(value, code, field);
 }
@@ -107,20 +115,27 @@ function optionalString(value: unknown, code: CompatibilityErrorCode, field: str
  */
 export function v12OpenOptionsToCanonical(input: unknown): CanonicalOpenOptionsCandidate {
   if (!isRecord(input)) {
-    throw new CompatibilityError('INVALID_OPEN_OPTIONS', 'v1.2 Pmem.open options must be an object.');
+    throw new CompatibilityError(
+      'INVALID_OPEN_OPTIONS',
+      'v1.2 Pmem.open options must be an object.',
+    );
   }
 
   const rootValue = input.root;
   const pmemPathValue = input.pmemPath;
-  const root = rootValue === undefined
-    ? undefined
-    : requireString(rootValue, 'INVALID_OPEN_OPTIONS', 'root');
-  const pmemPath = pmemPathValue === undefined
-    ? undefined
-    : requireString(pmemPathValue, 'INVALID_OPEN_OPTIONS', 'pmemPath');
+  const root =
+    rootValue === undefined ? undefined : requireString(rootValue, 'INVALID_OPEN_OPTIONS', 'root');
+  const pmemPath =
+    pmemPathValue === undefined
+      ? undefined
+      : requireString(pmemPathValue, 'INVALID_OPEN_OPTIONS', 'pmemPath');
 
   if (!root && !pmemPath) {
-    throw new CompatibilityError('INVALID_OPEN_OPTIONS', "v1.2 Pmem.open options require 'root'.", 'root');
+    throw new CompatibilityError(
+      'INVALID_OPEN_OPTIONS',
+      "v1.2 Pmem.open options require 'root'.",
+      'root',
+    );
   }
 
   const legacyRoot = root ?? path.dirname(pmemPath!);
@@ -139,7 +154,11 @@ export function v12OpenOptionsToCanonical(input: unknown): CanonicalOpenOptionsC
   let config: Record<string, unknown> | undefined;
   if (input.config !== undefined && input.config !== null) {
     if (!isRecord(input.config)) {
-      throw new CompatibilityError('INVALID_OPEN_OPTIONS', "Compatibility field 'config' must be an object.", 'config');
+      throw new CompatibilityError(
+        'INVALID_OPEN_OPTIONS',
+        "Compatibility field 'config' must be an object.",
+        'config',
+      );
     }
     config = cloneRecord(input.config);
   }
@@ -147,7 +166,11 @@ export function v12OpenOptionsToCanonical(input: unknown): CanonicalOpenOptionsC
   let capabilities: readonly unknown[] | undefined;
   if (input.capabilities !== undefined && input.capabilities !== null) {
     if (!Array.isArray(input.capabilities)) {
-      throw new CompatibilityError('INVALID_OPEN_OPTIONS', "Compatibility field 'capabilities' must be an array.", 'capabilities');
+      throw new CompatibilityError(
+        'INVALID_OPEN_OPTIONS',
+        "Compatibility field 'capabilities' must be an array.",
+        'capabilities',
+      );
     }
     capabilities = [...input.capabilities];
   }
@@ -170,7 +193,11 @@ function normalizeCard(value: unknown): {
     throw new CompatibilityError('INVALID_CARD', 'v1.2 card must be an object.');
   }
   if (!isRecord(value.frontmatter)) {
-    throw new CompatibilityError('INVALID_CARD', "v1.2 card is missing an object 'frontmatter'.", 'frontmatter');
+    throw new CompatibilityError(
+      'INVALID_CARD',
+      "v1.2 card is missing an object 'frontmatter'.",
+      'frontmatter',
+    );
   }
   const frontmatter = cloneRecord(value.frontmatter);
   requireString(frontmatter.id, 'INVALID_CARD', 'frontmatter.id');
@@ -186,11 +213,25 @@ export function v12CardToRecord(value: unknown): CanonicalMemoryRecordCandidate 
   const card = normalizeCard(value);
   const cardId = String(card.frontmatter.id);
   const schema = String(card.frontmatter.type);
-  const schemaVersion = optionalString(card.frontmatter.schema_version, 'INVALID_CARD', 'frontmatter.schema_version');
-  const now = String(card.frontmatter.updated ?? card.frontmatter.last_verified ?? '1970-01-01T00:00:00.000Z');
+  const schemaVersion = optionalString(
+    card.frontmatter.schema_version,
+    'INVALID_CARD',
+    'frontmatter.schema_version',
+  );
+  const now = String(
+    card.frontmatter.updated ?? card.frontmatter.last_verified ?? '1970-01-01T00:00:00.000Z',
+  );
   const relations = [
-    ...(Array.isArray(card.frontmatter.related) ? card.frontmatter.related.filter((target): target is string => typeof target === 'string').map(toRelation(cardId, 'related')) : []),
-    ...(Array.isArray(card.frontmatter.depends_on) ? card.frontmatter.depends_on.filter((target): target is string => typeof target === 'string').map(toRelation(cardId, 'depends_on')) : []),
+    ...(Array.isArray(card.frontmatter.related)
+      ? card.frontmatter.related
+          .filter((target): target is string => typeof target === 'string')
+          .map(toRelation(cardId, 'related'))
+      : []),
+    ...(Array.isArray(card.frontmatter.depends_on)
+      ? card.frontmatter.depends_on
+          .filter((target): target is string => typeof target === 'string')
+          .map(toRelation(cardId, 'depends_on'))
+      : []),
   ];
   return {
     id: cardId,
@@ -210,7 +251,10 @@ export function v12CardToRecord(value: unknown): CanonicalMemoryRecordCandidate 
   };
 }
 
-function toRelation(fromId: string, type: string): (target: string) => { from_id: string; to_id: string; type: string } {
+function toRelation(
+  fromId: string,
+  type: string,
+): (target: string) => { from_id: string; to_id: string; type: string } {
   return (target: string) => ({ from_id: fromId, to_id: target, type });
 }
 
@@ -220,21 +264,34 @@ function normalizeRecord(value: unknown): CanonicalMemoryRecordCandidate {
   }
   const id = requireString(value.id, 'INVALID_RECORD', 'id');
   if (!isRecord(value.schema)) {
-    throw new CompatibilityError('INVALID_RECORD', "Canonical memory record is missing object 'schema'.", 'schema');
+    throw new CompatibilityError(
+      'INVALID_RECORD',
+      "Canonical memory record is missing object 'schema'.",
+      'schema',
+    );
   }
   const schemaId = requireString(value.schema.id, 'INVALID_RECORD', 'schema.id');
   const schemaVersion = requireString(value.schema.version, 'INVALID_RECORD', 'schema.version');
   if (!isRecord(value.data)) {
-    throw new CompatibilityError('INVALID_RECORD', "Canonical memory record is missing object 'data'.", 'data');
+    throw new CompatibilityError(
+      'INVALID_RECORD',
+      "Canonical memory record is missing object 'data'.",
+      'data',
+    );
   }
   const provenance = isRecord(value.provenance) ? value.provenance : {};
-  const filePath = typeof provenance.source_id === 'string'
-    ? provenance.source_id
-    : isRecord(provenance.metadata) && typeof provenance.metadata.file_path === 'string'
-      ? provenance.metadata.file_path
-      : undefined;
+  const filePath =
+    typeof provenance.source_id === 'string'
+      ? provenance.source_id
+      : isRecord(provenance.metadata) && typeof provenance.metadata.file_path === 'string'
+        ? provenance.metadata.file_path
+        : undefined;
   if (!filePath) {
-    throw new CompatibilityError('INVALID_RECORD', "Canonical memory record is missing Markdown provenance source_id.", 'provenance.source_id');
+    throw new CompatibilityError(
+      'INVALID_RECORD',
+      'Canonical memory record is missing Markdown provenance source_id.',
+      'provenance.source_id',
+    );
   }
   const data = cloneRecord(value.data);
   const body = data.body === undefined ? '' : requireText(data.body, 'INVALID_RECORD', 'data.body');
@@ -247,10 +304,14 @@ function normalizeRecord(value: unknown): CanonicalMemoryRecordCandidate {
     );
   }
   if (data.type !== undefined && data.type !== schemaId) {
-    throw new CompatibilityError('INVALID_RECORD', `Record data must agree with schema '${schemaId}'.`, 'data.type');
+    throw new CompatibilityError(
+      'INVALID_RECORD',
+      `Record data must agree with schema '${schemaId}'.`,
+      'data.type',
+    );
   }
   return {
-    ...value as unknown as MemoryRecord,
+    ...(value as unknown as MemoryRecord),
     id,
     schema: { id: schemaId, version: schemaVersion },
     data: { ...data, body },
@@ -260,7 +321,11 @@ function normalizeRecord(value: unknown): CanonicalMemoryRecordCandidate {
 
 export function recordToV12Card(value: unknown, filePathOverride?: string): MemoryCard {
   const record = normalizeRecord(value);
-  const filePath = requireString(filePathOverride ?? record.provenance.source_id, 'INVALID_RECORD', 'filePath');
+  const filePath = requireString(
+    filePathOverride ?? record.provenance.source_id,
+    'INVALID_RECORD',
+    'filePath',
+  );
   const attributes = cloneRecord(record.data);
   const body = typeof attributes.body === 'string' ? attributes.body : '';
   delete attributes.body;
@@ -276,16 +341,36 @@ export function recordToV12Card(value: unknown, filePathOverride?: string): Memo
 function readManifestVersion(manifest: Record<string, unknown>): string {
   const pmem = manifest.pmem;
   if (!isRecord(pmem)) {
-    throw new CompatibilityError('INVALID_MANIFEST', "v1.2 manifest is missing object 'pmem'.", 'pmem');
+    throw new CompatibilityError(
+      'INVALID_MANIFEST',
+      "v1.2 manifest is missing object 'pmem'.",
+      'pmem',
+    );
   }
-  const schemaVersion = optionalString(pmem.schema_version, 'INVALID_MANIFEST', 'pmem.schema_version');
-  const protocolVersion = optionalString(pmem.protocol_version, 'INVALID_MANIFEST', 'pmem.protocol_version');
+  const schemaVersion = optionalString(
+    pmem.schema_version,
+    'INVALID_MANIFEST',
+    'pmem.schema_version',
+  );
+  const protocolVersion = optionalString(
+    pmem.protocol_version,
+    'INVALID_MANIFEST',
+    'pmem.protocol_version',
+  );
   const version = schemaVersion ?? protocolVersion;
   if (!version) {
-    throw new CompatibilityError('INVALID_MANIFEST', 'v1.2 manifest is missing pmem.schema_version.', 'pmem.schema_version');
+    throw new CompatibilityError(
+      'INVALID_MANIFEST',
+      'v1.2 manifest is missing pmem.schema_version.',
+      'pmem.schema_version',
+    );
   }
   if (version !== '0.2' && version !== '0.3') {
-    throw new CompatibilityError('UNSUPPORTED_VERSION', `Unsupported v1.2 manifest version '${version}'.`, 'pmem.schema_version');
+    throw new CompatibilityError(
+      'UNSUPPORTED_VERSION',
+      `Unsupported v1.2 manifest version '${version}'.`,
+      'pmem.schema_version',
+    );
   }
   return version;
 }
@@ -296,7 +381,11 @@ export function v12ManifestToLegacySchema(value: unknown): LegacyManifestSchema 
   }
   const version = readManifestVersion(value);
   if (!isRecord(value.project)) {
-    throw new CompatibilityError('INVALID_MANIFEST', "v1.2 manifest is missing object 'project'.", 'project');
+    throw new CompatibilityError(
+      'INVALID_MANIFEST',
+      "v1.2 manifest is missing object 'project'.",
+      'project',
+    );
   }
   const projectName = requireString(value.project.name, 'INVALID_MANIFEST', 'project.name');
   const domain = optionalString(value.project.domain, 'INVALID_MANIFEST', 'project.domain');
@@ -304,7 +393,8 @@ export function v12ManifestToLegacySchema(value: unknown): LegacyManifestSchema 
   // resolveConfig is the legacy resolver. Keeping that call here makes this
   // the sole compatibility boundary for presets and v0.6 fallback defaults.
   const resolved = resolveConfig(value as unknown as Manifest);
-  const cardTypes = resolved.card_types.length > 0 ? [...resolved.card_types] : [...V064_DEFAULT_TYPES];
+  const cardTypes =
+    resolved.card_types.length > 0 ? [...resolved.card_types] : [...V064_DEFAULT_TYPES];
   return {
     id: projectName,
     version,

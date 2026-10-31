@@ -4,7 +4,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { askQuery, askQueryWithSemantic } from './ask';
-import { closeDatabase, createSchema, insertEdge, insertPath, openOwnedDatabase, upsertCard } from '../db';
+import {
+  closeDatabase,
+  createSchema,
+  insertEdge,
+  insertPath,
+  openOwnedDatabase,
+  upsertCard,
+} from '../db';
 import { rebuildSemanticIndex, type EmbeddingProvider } from '../semantic';
 import type { CardRow } from '../../types';
 import type Database from 'better-sqlite3';
@@ -40,15 +47,18 @@ function card(id: string, title: string): CardRow {
 }
 
 function provider(): EmbeddingProvider {
-  const vectorFor = (value: string): readonly number[] => value.includes('authentication') || value.includes('登录')
-    ? [1, 0]
-    : [0, 1];
+  const vectorFor = (value: string): readonly number[] =>
+    value.includes('authentication') || value.includes('登录') ? [1, 0] : [0, 1];
   return {
     modelId: 'test/e5',
     revision: 'fixed',
     dimension: 2,
-    async embedPassages(texts) { return texts.map(vectorFor); },
-    async embedQuery(text) { return vectorFor(text); },
+    async embedPassages(texts) {
+      return texts.map(vectorFor);
+    },
+    async embedQuery(text) {
+      return vectorFor(text);
+    },
   };
 }
 
@@ -59,8 +69,14 @@ async function fixture() {
   fs.mkdirSync(pmemPath, { recursive: true });
   const manifest = getDefaultManifest('semantic-ask-test');
   manifest.embedding = {
-    enabled: true, provider: 'local', model: 'test/e5', revision: 'fixed',
-    dtype: 'uint8', dimension: 2, store: 'sqlite', index: 'flat',
+    enabled: true,
+    provider: 'local',
+    model: 'test/e5',
+    revision: 'fixed',
+    dtype: 'uint8',
+    dimension: 2,
+    store: 'sqlite',
+    index: 'flat',
   };
   saveManifest(pmemPath, manifest);
   const db = openOwnedDatabase(pmemPath);
@@ -73,7 +89,10 @@ async function fixture() {
   for (const value of [auth, neighbor, pathCard]) {
     const absolute = path.join(root, value.file_path);
     fs.mkdirSync(path.dirname(absolute), { recursive: true });
-    fs.writeFileSync(absolute, `---\nid: ${value.id}\ntype: ${value.type}\nstatus: active\ntrust_label: user_confirmed\nsensitivity: internal\n---\n# ${value.title}\n`);
+    fs.writeFileSync(
+      absolute,
+      `---\nid: ${value.id}\ntype: ${value.type}\nstatus: active\ntrust_label: user_confirmed\nsensitivity: internal\n---\n# ${value.title}\n`,
+    );
   }
   insertPath(db, pathCard.id, 'src/auth/login.ts', 'source_file');
   insertEdge(db, {
@@ -83,26 +102,31 @@ async function fixture() {
     source: 'explicit',
     confidence: 1,
   });
-  await rebuildSemanticIndex(db, [
-    {
-      id: auth.id,
-      title: auth.title,
-      body: '# Authentication\n\nHandles authentication, passwords, and 登录 credentials.',
-      frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
-    },
-    {
-      id: neighbor.id,
-      title: neighbor.title,
-      body: '# Sessions\n\nTracks session lifecycle.',
-      frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
-    },
-    {
-      id: pathCard.id,
-      title: pathCard.title,
-      body: '# Files\n\nOwns filesystem mappings.',
-      frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
-    },
-  ], provider(), { mode: 'full' });
+  await rebuildSemanticIndex(
+    db,
+    [
+      {
+        id: auth.id,
+        title: auth.title,
+        body: '# Authentication\n\nHandles authentication, passwords, and 登录 credentials.',
+        frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
+      },
+      {
+        id: neighbor.id,
+        title: neighbor.title,
+        body: '# Sessions\n\nTracks session lifecycle.',
+        frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
+      },
+      {
+        id: pathCard.id,
+        title: pathCard.title,
+        body: '# Files\n\nOwns filesystem mappings.',
+        frontmatter: { trust_label: 'user_confirmed', sensitivity: 'internal' },
+      },
+    ],
+    provider(),
+    { mode: 'full' },
+  );
   return { db, pmemPath };
 }
 
@@ -121,18 +145,18 @@ describe('v1.1.1 semantic ask fusion', () => {
       limit: 5,
       now: Date.parse('2026-07-24T00:00:00.000Z'),
     });
-    const auth = result.matched.find(match => match.id === 'decision.auth');
+    const auth = result.matched.find((match) => match.id === 'decision.auth');
     assert.ok(auth, 'semantic parent card should be returned');
-    const reason = auth.reasons?.find(item => item.channel === 'semantic');
+    const reason = auth.reasons?.find((item) => item.channel === 'semantic');
     assert.ok(reason?.chunk_id);
     assert.strictEqual(reason?.parent_card, 'decision.auth');
     assert.strictEqual(reason?.model_revision, 'fixed');
     assert.strictEqual(auth.rerank?.version, 'contextual-v1');
-    const expanded = result.matched.find(match => match.id === 'module.session');
+    const expanded = result.matched.find((match) => match.id === 'module.session');
     assert.strictEqual(expanded?.match_type, 'graph_expansion');
     assert.strictEqual(expanded?.from_card, 'decision.auth');
     assert.strictEqual(expanded?.edge_type, 'depends_on');
-    assert.ok(expanded?.reasons?.some(item => item.channel === 'graph'));
+    assert.ok(expanded?.reasons?.some((item) => item.channel === 'graph'));
     assert.strictEqual(result.diagnostics?.semantic.accepted_card_hits, 1);
   });
 
@@ -142,7 +166,16 @@ describe('v1.1.1 semantic ask fusion', () => {
     const pmemPath = path.join(root, '.pmem');
     fs.mkdirSync(path.join(pmemPath, 'cards'), { recursive: true });
     const manifest = getDefaultManifest('semantic-untrusted-test');
-    manifest.embedding = { enabled: true, provider: 'local', model: 'test/e5', revision: 'fixed', dtype: 'uint8', dimension: 2, store: 'sqlite', index: 'flat' };
+    manifest.embedding = {
+      enabled: true,
+      provider: 'local',
+      model: 'test/e5',
+      revision: 'fixed',
+      dtype: 'uint8',
+      dimension: 2,
+      store: 'sqlite',
+      index: 'flat',
+    };
     saveManifest(pmemPath, manifest);
     const db = openOwnedDatabase(pmemPath);
     databases.push(db);
@@ -150,16 +183,32 @@ describe('v1.1.1 semantic ask fusion', () => {
     const value = card('decision.private', 'Private Boundary');
     value.trust_label = null;
     upsertCard(db, value);
-    fs.writeFileSync(path.join(pmemPath, 'cards', 'decision.private.md'), '---\nid: decision.private\ntype: decision\nstatus: active\nsensitivity: internal\n---\n# Private Boundary\n\npassword=never-print-this\n');
-    await rebuildSemanticIndex(db, [{
-      id: value.id, title: value.title, body: 'password=never-print-this',
-      frontmatter: { sensitivity: 'internal' },
-    }], provider(), { mode: 'full' });
+    fs.writeFileSync(
+      path.join(pmemPath, 'cards', 'decision.private.md'),
+      '---\nid: decision.private\ntype: decision\nstatus: active\nsensitivity: internal\n---\n# Private Boundary\n\npassword=never-print-this\n',
+    );
+    await rebuildSemanticIndex(
+      db,
+      [
+        {
+          id: value.id,
+          title: value.title,
+          body: 'password=never-print-this',
+          frontmatter: { sensitivity: 'internal' },
+        },
+      ],
+      provider(),
+      { mode: 'full' },
+    );
 
-    const result = await askQueryWithSemantic(pmemPath, 'unrelated astronomy query', provider(), { db });
+    const result = await askQueryWithSemantic(pmemPath, 'unrelated astronomy query', provider(), {
+      db,
+    });
     assert.deepStrictEqual(result.matched, []);
     assert.strictEqual(result.diagnostics?.no_result_reason, 'semantic_all_cards_excluded');
-    assert.deepStrictEqual(result.diagnostics?.semantic.excluded_by_trust_detail, { missing_trust_label: 1 });
+    assert.deepStrictEqual(result.diagnostics?.semantic.excluded_by_trust_detail, {
+      missing_trust_label: 1,
+    });
     assert.strictEqual(JSON.stringify(result.diagnostics).includes('never-print-this'), false);
   });
 

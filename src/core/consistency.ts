@@ -31,15 +31,13 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
   const issues: ConsistencyIssue[] = [];
 
   try {
-    const cards = db.prepare(
-      'SELECT * FROM cards WHERE is_deleted = 0'
-    ).all() as CardRow[];
+    const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
 
     for (const card of cards) {
       if (card.type === 'trace') continue;
-      const sourceFiles = db.prepare(
-        "SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'"
-      ).all(card.id) as Array<{ path: string }>;
+      const sourceFiles = db
+        .prepare("SELECT p.path FROM paths p WHERE p.card_id = ? AND p.relation = 'source_file'")
+        .all(card.id) as Array<{ path: string }>;
 
       const t1 = card.updated_at ? new Date(card.updated_at).getTime() : 0;
       const t2 = card.last_verified_at ? new Date(card.last_verified_at).getTime() : 0;
@@ -74,9 +72,10 @@ export function checkStaleMemory(pmemPath: string): ConsistencyIssue[] {
           file_path: stalePaths[0],
           file_paths: stalePaths,
           evidence_count: stalePaths.length,
-          message: stalePaths.length === 1
-            ? `${card.id} may be stale — ${stalePaths[0]} modified after last card update`
-            : `${card.id} may be stale — ${stalePaths.length} source files modified after last card update`,
+          message:
+            stalePaths.length === 1
+              ? `${card.id} may be stale — ${stalePaths[0]} modified after last card update`
+              : `${card.id} may be stale — ${stalePaths.length} source files modified after last card update`,
         });
       }
     }
@@ -96,7 +95,11 @@ export function checkLowConfidence(pmemPath: string): ConsistencyIssue[] {
   if (!fileExists(dbPath)) return [];
 
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
 
   const issues: ConsistencyIssue[] = [];
   try {
@@ -110,7 +113,8 @@ export function checkLowConfidence(pmemPath: string): ConsistencyIssue[] {
       if (!parsed) continue;
       const raw = parsed.data.confidence;
       if (raw === undefined || raw === null) continue;
-      const confNum = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseFloat(raw) : NaN;
+      const confNum =
+        typeof raw === 'number' ? raw : typeof raw === 'string' ? parseFloat(raw) : NaN;
       if (!isNaN(confNum) && confNum < 0.4) {
         issues.push({
           type: 'low_confidence',
@@ -120,7 +124,9 @@ export function checkLowConfidence(pmemPath: string): ConsistencyIssue[] {
         });
       }
     }
-  } finally { /* Don't close DB — may be reused by caller */ }
+  } finally {
+    /* Don't close DB — may be reused by caller */
+  }
   return issues;
 }
 
@@ -133,7 +139,11 @@ export function checkUnclassifiedCard(pmemPath: string): ConsistencyIssue[] {
   if (!fileExists(dbPath)) return [];
 
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
 
   const issues: ConsistencyIssue[] = [];
   try {
@@ -155,7 +165,9 @@ export function checkUnclassifiedCard(pmemPath: string): ConsistencyIssue[] {
         });
       }
     }
-  } finally { /* Don't close DB — may be reused by caller */ }
+  } finally {
+    /* Don't close DB — may be reused by caller */
+  }
   return issues;
 }
 
@@ -168,7 +180,11 @@ export function checkSupersededReference(pmemPath: string): ConsistencyIssue[] {
   if (!fileExists(dbPath)) return [];
 
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
 
   const issues: ConsistencyIssue[] = [];
   try {
@@ -187,9 +203,11 @@ export function checkSupersededReference(pmemPath: string): ConsistencyIssue[] {
     }
     for (const card of cards) {
       if (card.type === 'trace') continue;
-      const edges = db.prepare(
-        "SELECT to_id, type FROM edges WHERE from_id = ? AND type IN ('depends_on', 'related_to')"
-      ).all(card.id) as Array<{ to_id: string; type: string }>;
+      const edges = db
+        .prepare(
+          "SELECT to_id, type FROM edges WHERE from_id = ? AND type IN ('depends_on', 'related_to')",
+        )
+        .all(card.id) as Array<{ to_id: string; type: string }>;
       for (const edge of edges) {
         if (supersededByMap.has(edge.to_id)) {
           issues.push({
@@ -201,7 +219,9 @@ export function checkSupersededReference(pmemPath: string): ConsistencyIssue[] {
         }
       }
     }
-  } finally { /* Don't close DB — may be reused by caller */ }
+  } finally {
+    /* Don't close DB — may be reused by caller */
+  }
   return issues;
 }
 
@@ -216,14 +236,18 @@ export function checkStaleNextStep(pmemPath: string): ConsistencyIssue[] {
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs > 14 * 24 * 60 * 60 * 1000) {
       const ageDays = Math.round(ageMs / (24 * 60 * 60 * 1000));
-      return [{
-        type: 'stale_next_step',
-        severity: 'info',
-        file_path: '.pmem/next.md',
-        message: `.pmem/next.md was last updated ~${ageDays} days ago. The next step may be stale.`,
-      }];
+      return [
+        {
+          type: 'stale_next_step',
+          severity: 'info',
+          file_path: '.pmem/next.md',
+          message: `.pmem/next.md was last updated ~${ageDays} days ago. The next step may be stale.`,
+        },
+      ];
     }
-  } catch { /* skip */ }
+  } catch {
+    /* skip */
+  }
   return [];
 }
 
@@ -236,7 +260,11 @@ export function checkConflictingClassifications(pmemPath: string): ConsistencyIs
   if (!fileExists(dbPath)) return [];
 
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
 
   const issues: ConsistencyIssue[] = [];
   try {
@@ -250,7 +278,8 @@ export function checkConflictingClassifications(pmemPath: string): ConsistencyIs
       const parsed = parseFrontmatter(content);
       if (!parsed) continue;
       const classification = parsed.data.classification;
-      if (!classification || typeof classification !== 'string' || classification.trim() === '') continue;
+      if (!classification || typeof classification !== 'string' || classification.trim() === '')
+        continue;
       const tags = parsed.data.tags;
       if (!tags || !Array.isArray(tags)) continue;
       for (const tag of tags) {
@@ -263,16 +292,18 @@ export function checkConflictingClassifications(pmemPath: string): ConsistencyIs
     }
     for (const [tag, entries] of tagMap) {
       if (entries.length < 2) continue;
-      const classes = new Set(entries.map(e => e.classification));
+      const classes = new Set(entries.map((e) => e.classification));
       if (classes.size < 2) continue;
-      const cardList = entries.map(e => `${e.card_id} (${e.classification})`).join(', ');
+      const cardList = entries.map((e) => `${e.card_id} (${e.classification})`).join(', ');
       issues.push({
         type: 'conflicting_classifications',
         severity: 'info',
         message: `Tag "${tag}" has conflicting classifications: ${cardList}. Review for consistency.`,
       });
     }
-  } finally { /* Don't close DB — may be reused by caller */ }
+  } finally {
+    /* Don't close DB — may be reused by caller */
+  }
   return issues;
 }
 
@@ -284,7 +315,11 @@ export function checkTrustLabels(pmemPath: string): ConsistencyIssue[] {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) return [];
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
   const issues: ConsistencyIssue[] = [];
   try {
     const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
@@ -335,7 +370,9 @@ export function checkTrustLabels(pmemPath: string): ConsistencyIssue[] {
         });
       }
     }
-  } finally { /* Don't close DB */ }
+  } finally {
+    /* Don't close DB */
+  }
   return issues;
 }
 
@@ -348,11 +385,15 @@ export function checkMemoryPoisoning(pmemPath: string): ConsistencyIssue[] {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) return [];
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
   const issues: ConsistencyIssue[] = [];
   try {
     const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
-    const totalCards = cards.filter(c => c.type !== 'trace').length;
+    const totalCards = cards.filter((c) => c.type !== 'trace').length;
     if (totalCards === 0) return [];
     let untrustedCount = 0;
     for (const card of cards) {
@@ -376,8 +417,10 @@ export function checkMemoryPoisoning(pmemPath: string): ConsistencyIssue[] {
         }
       }
       if (
-        typeof trustLabel === 'string' && trustLabel.trim() === 'agent_generated' &&
-        typeof classification === 'string' && classification.trim() === 'decision' &&
+        typeof trustLabel === 'string' &&
+        trustLabel.trim() === 'agent_generated' &&
+        typeof classification === 'string' &&
+        classification.trim() === 'decision' &&
         !parsed.data.user_confirmed
       ) {
         issues.push({
@@ -400,7 +443,9 @@ export function checkMemoryPoisoning(pmemPath: string): ConsistencyIssue[] {
         });
       }
     }
-  } finally { /* Don't close DB */ }
+  } finally {
+    /* Don't close DB */
+  }
   return issues;
 }
 
@@ -413,10 +458,16 @@ export function checkModuleContracts(pmemPath: string): ConsistencyIssue[] {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) return [];
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
   const issues: ConsistencyIssue[] = [];
   try {
-    const cards = db.prepare("SELECT * FROM cards WHERE type = 'module' AND is_deleted = 0").all() as CardRow[];
+    const cards = db
+      .prepare("SELECT * FROM cards WHERE type = 'module' AND is_deleted = 0")
+      .all() as CardRow[];
     for (const card of cards) {
       const absPath = path.join(cwd, card.file_path);
       const content = readFile(absPath);
@@ -441,7 +492,10 @@ export function checkModuleContracts(pmemPath: string): ConsistencyIssue[] {
           message: `${card.id} module contract is missing 'owner'.`,
         });
       }
-      if (!contract.interface || (typeof contract.interface === 'string' && contract.interface.trim() === '')) {
+      if (
+        !contract.interface ||
+        (typeof contract.interface === 'string' && contract.interface.trim() === '')
+      ) {
         issues.push({
           type: 'missing_contract_field',
           severity: 'info',
@@ -459,7 +513,9 @@ export function checkModuleContracts(pmemPath: string): ConsistencyIssue[] {
         });
       }
     }
-  } finally { /* Don't close DB */ }
+  } finally {
+    /* Don't close DB */
+  }
   return issues;
 }
 
@@ -472,7 +528,11 @@ export function checkDocSync(pmemPath: string): ConsistencyIssue[] {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!fileExists(dbPath)) return [];
   let db: ReturnType<typeof openDatabase>;
-  try { db = openDatabase(pmemPath); } catch { return []; }
+  try {
+    db = openDatabase(pmemPath);
+  } catch {
+    return [];
+  }
   const issues: ConsistencyIssue[] = [];
   try {
     const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
@@ -510,7 +570,9 @@ export function checkDocSync(pmemPath: string): ConsistencyIssue[] {
         }
       }
     }
-  } finally { /* Don't close DB */ }
+  } finally {
+    /* Don't close DB */
+  }
   return issues;
 }
 

@@ -24,12 +24,18 @@ export function moduleInferCommand(options: ModuleInferOptions): void {
 
   if (inferred.length === 0) {
     if (format === 'json') {
-      console.log(JSON.stringify({
-        command: 'module.infer',
-        state: 'empty',
-        coarse_attribution: coarse,
-        modules: []
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            command: 'module.infer',
+            state: 'empty',
+            coarse_attribution: coarse,
+            modules: [],
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log('No modules could be inferred from the current project structure.');
     }
@@ -39,13 +45,19 @@ export function moduleInferCommand(options: ModuleInferOptions): void {
   if (options.write && !options.dryRun) {
     const written = writeInferredModules(pmemPath, inferred);
     if (format === 'json') {
-      console.log(JSON.stringify({
-        command: 'module.infer',
-        state: 'written',
-        coarse_attribution: coarse,
-        written: written.map(p => path.relative(cwd, p)),
-        modules: inferred
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            command: 'module.infer',
+            state: 'written',
+            coarse_attribution: coarse,
+            written: written.map((p) => path.relative(cwd, p)),
+            modules: inferred,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log(`Successfully wrote ${written.length} inferred module card(s):`);
       for (const p of written) {
@@ -55,12 +67,18 @@ export function moduleInferCommand(options: ModuleInferOptions): void {
     }
   } else {
     if (format === 'json') {
-      console.log(JSON.stringify({
-        command: 'module.infer',
-        state: 'dry-run',
-        coarse_attribution: coarse,
-        modules: inferred
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            command: 'module.infer',
+            state: 'dry-run',
+            coarse_attribution: coarse,
+            modules: inferred,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       console.log(`Inferred ${inferred.length} module candidate(s) (dry-run):`);
       for (const m of inferred) {

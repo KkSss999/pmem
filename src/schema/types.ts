@@ -18,8 +18,19 @@ export type MemorySchemaField = RuntimeMemorySchemaField;
 export type SchemaVersion = string;
 
 export type SchemaFieldType =
-  | 'string' | 'text' | 'number' | 'integer' | 'boolean' | 'date' | 'json'
-  | 'relation' | 'object' | 'array' | 'id' | 'unknown' | (string & {});
+  | 'string'
+  | 'text'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'date'
+  | 'json'
+  | 'relation'
+  | 'object'
+  | 'array'
+  | 'id'
+  | 'unknown'
+  | (string & {});
 
 export interface MemoryFieldDefinition {
   name?: string;
@@ -72,8 +83,14 @@ export interface MemoryRecordLike {
 }
 
 export type SchemaValidationCode =
-  | 'invalid_record' | 'missing_field' | 'unknown_field' | 'invalid_type'
-  | 'invalid_value' | 'invalid_length' | 'out_of_range' | 'invalid_version';
+  | 'invalid_record'
+  | 'missing_field'
+  | 'unknown_field'
+  | 'invalid_type'
+  | 'invalid_value'
+  | 'invalid_length'
+  | 'out_of_range'
+  | 'invalid_version';
 
 export interface SchemaValidationIssue {
   path: string;

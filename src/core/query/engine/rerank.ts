@@ -71,8 +71,11 @@ const FACTUAL_GRAPH_WEIGHTS = {
 
 /** Exact identities are immutable anchors, not probabilistic rerank inputs. */
 export function isAuthorityResult(result: ScoredResult): boolean {
-  return result.reasons.some(reason =>
-    reason.channel === 'exact_id' || reason.channel === 'exact_title' || reason.channel === 'source_file'
+  return result.reasons.some(
+    (reason) =>
+      reason.channel === 'exact_id' ||
+      reason.channel === 'exact_title' ||
+      reason.channel === 'source_file',
   );
 }
 
@@ -89,7 +92,9 @@ export function rerankCandidates(
   if (!Number.isInteger(candidateLimit) || candidateLimit <= 0) return [...results];
 
   const originalRank = new Map(results.map((result, index) => [result.card.id, index + 1]));
-  const sourceScores = new Map(results.map(result => [result.card.id, normalizeStage1(result.score)]));
+  const sourceScores = new Map(
+    results.map((result) => [result.card.id, normalizeStage1(result.score)]),
+  );
   const profile = getRerankProfile(results, plan);
   const head = results.slice(0, candidateLimit);
   const protectedByIndex = new Map<number, ScoredResult>();
@@ -97,12 +102,16 @@ export function rerankCandidates(
 
   head.forEach((result, index) => {
     if (isAuthorityResult(result)) protectedByIndex.set(index, result);
-    else rerankable.push(withRerankScore(result, plan, originalRank.get(result.card.id)!, sourceScores, profile));
+    else
+      rerankable.push(
+        withRerankScore(result, plan, originalRank.get(result.card.id)!, sourceScores, profile),
+      );
   });
-  rerankable.sort((left, right) =>
-    (right.rerank!.score - left.rerank!.score)
-      || (originalRank.get(left.card.id)! - originalRank.get(right.card.id)!)
-      || left.card.id.localeCompare(right.card.id)
+  rerankable.sort(
+    (left, right) =>
+      right.rerank!.score - left.rerank!.score ||
+      originalRank.get(left.card.id)! - originalRank.get(right.card.id)! ||
+      left.card.id.localeCompare(right.card.id),
   );
 
   let cursor = 0;
@@ -121,22 +130,32 @@ export function rerankCandidates(
  */
 export function getRerankProfile(results: readonly ScoredResult[], plan: QueryPlan): RerankProfile {
   const similarities = results
-    .flatMap(result => result.reasons
-      .filter(reason => reason.channel === 'semantic' && reason.similarity != null)
-      .map(reason => reason.similarity!))
+    .flatMap((result) =>
+      result.reasons
+        .filter((reason) => reason.channel === 'semantic' && reason.similarity != null)
+        .map((reason) => reason.similarity!),
+    )
     .sort((left, right) => right - left);
   const top = similarities[0] ?? 0;
   const runnerUp = similarities[1] ?? top;
-  const median = similarities.length === 0 ? 0 : similarities[Math.floor((similarities.length - 1) / 2)];
+  const median =
+    similarities.length === 0 ? 0 : similarities[Math.floor((similarities.length - 1) / 2)];
   const semanticSpread = round6(top - median);
   const semanticHeadGap = round6(top - runnerUp);
-  const semanticFlat = similarities.length >= 3 && semanticSpread <= 0.09 && semanticHeadGap <= 0.04;
+  const semanticFlat =
+    similarities.length >= 3 && semanticSpread <= 0.09 && semanticHeadGap <= 0.04;
   const compactCandidateSet = results.length <= 24 && similarities.length >= 3;
   const factual = plan.shape === 'factual_relation';
-  const mode = factual ? 'factual_graph' : compactCandidateSet && semanticFlat ? 'compact_deterministic' : 'balanced';
+  const mode = factual
+    ? 'factual_graph'
+    : compactCandidateSet && semanticFlat
+      ? 'compact_deterministic'
+      : 'balanced';
   const weights = factual
     ? FACTUAL_GRAPH_WEIGHTS
-    : compactCandidateSet && semanticFlat ? COMPACT_DETERMINISTIC_WEIGHTS : WEIGHTS;
+    : compactCandidateSet && semanticFlat
+      ? COMPACT_DETERMINISTIC_WEIGHTS
+      : WEIGHTS;
   return {
     mode,
     candidate_count: results.length,
@@ -155,7 +174,7 @@ function withRerankScore(
   sourceScores: ReadonlyMap<string, number>,
   profile: RerankProfile,
 ): ScoredResult {
-  const semanticSimilarity = Math.max(0, ...result.reasons.map(reason => reason.similarity ?? 0));
+  const semanticSimilarity = Math.max(0, ...result.reasons.map((reason) => reason.similarity ?? 0));
   const factors: RerankFactors = {
     stage1: normalizeStage1(result.score),
     semantic: clamp((semanticSimilarity - 0.5) / 0.5),
@@ -165,12 +184,12 @@ function withRerankScore(
     graph: graphStrength(result, plan),
   };
   let score = round6(
-    factors.stage1 * profile.weights.stage1
-      + factors.semantic * profile.weights.semantic
-      + factors.lexical * profile.weights.lexical
-      + factors.intent * profile.weights.intent
-      + factors.evidence * profile.weights.evidence
-      + factors.graph * profile.weights.graph
+    factors.stage1 * profile.weights.stage1 +
+      factors.semantic * profile.weights.semantic +
+      factors.lexical * profile.weights.lexical +
+      factors.intent * profile.weights.intent +
+      factors.evidence * profile.weights.evidence +
+      factors.graph * profile.weights.graph,
   );
   if (result.graph_distance > 0 && result.from_card) {
     const sourceScore = sourceScores.get(result.from_card);
@@ -197,25 +216,30 @@ function searchableText(result: ScoredResult): string {
     result.card.summary ?? '',
     result.card.file_path,
     result.rerank_text ?? '',
-    ...result.reasons.map(reason => reason.heading ?? ''),
-  ].join('\n').toLowerCase();
+    ...result.reasons.map((reason) => reason.heading ?? ''),
+  ]
+    .join('\n')
+    .toLowerCase();
 }
 
 function lexicalCoverage(terms: readonly string[], text: string): number {
   if (terms.length === 0) return 0;
-  const matched = terms.filter(term => text.includes(term.toLowerCase())).length;
+  const matched = terms.filter((term) => text.includes(term.toLowerCase())).length;
   return clamp(matched / terms.length);
 }
 
 function intentStrength(result: ScoredResult, plan: QueryPlan): number {
-  const typeIntent = plan.preferredTypes.length === 0 ? 0.5 : (plan.preferredTypes.includes(result.card.type) ? 1 : 0);
+  const typeIntent =
+    plan.preferredTypes.length === 0 ? 0.5 : plan.preferredTypes.includes(result.card.type) ? 1 : 0;
   if (plan.shape !== 'factual_relation') return typeIntent;
   return Math.max(typeIntent, hasLexicalGraphEvidence(result) ? 1 : 0);
 }
 
 function graphStrength(result: ScoredResult, plan: QueryPlan): number {
   if (plan.shape === 'factual_relation' && hasLexicalGraphEvidence(result)) return 1;
-  return result.graph_distance === 0 && !result.graph_evidence ? 1 : 1 / (1 + (result.graph_evidence?.distance ?? result.graph_distance));
+  return result.graph_distance === 0 && !result.graph_evidence
+    ? 1
+    : 1 / (1 + (result.graph_evidence?.distance ?? result.graph_distance));
 }
 
 function hasLexicalGraphEvidence(result: ScoredResult): boolean {
@@ -223,10 +247,24 @@ function hasLexicalGraphEvidence(result: ScoredResult): boolean {
 }
 
 function evidenceStrength(result: ScoredResult): number {
-  if (result.reasons.some(reason => reason.channel === 'alias' || reason.channel === 'source_file_prefix')) return 0.95;
-  if (result.reasons.some(reason => reason.channel === 'semantic')) return 0.9;
-  if (result.reasons.some(reason => reason.channel === 'fts' || reason.channel === 'title_phrase' || reason.channel === 'title_token')) return 0.8;
-  if (result.reasons.some(reason => reason.channel === 'tag' || reason.channel === 'tag_token')) return 0.7;
+  if (
+    result.reasons.some(
+      (reason) => reason.channel === 'alias' || reason.channel === 'source_file_prefix',
+    )
+  )
+    return 0.95;
+  if (result.reasons.some((reason) => reason.channel === 'semantic')) return 0.9;
+  if (
+    result.reasons.some(
+      (reason) =>
+        reason.channel === 'fts' ||
+        reason.channel === 'title_phrase' ||
+        reason.channel === 'title_token',
+    )
+  )
+    return 0.8;
+  if (result.reasons.some((reason) => reason.channel === 'tag' || reason.channel === 'tag_token'))
+    return 0.7;
   if (result.graph_distance > 0) return 0.4;
   return 0.5;
 }

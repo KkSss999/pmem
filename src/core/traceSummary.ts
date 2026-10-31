@@ -42,12 +42,29 @@ const MODULE_HINTS: Record<string, string[]> = {
   api: ['api', 'client', 'server', 'routes'],
   storage: ['db', 'sqlite', 'storage', 'repo'],
   config: ['config', 'vite', 'webpack', 'tsconfig'],
-  tests: ['test', 'spec', '__tests__']
+  tests: ['test', 'spec', '__tests__'],
 };
 
 const DECISION_KEYWORDS = [
-  'decide', 'decision', 'use', 'adopt', 'choose', 'switch', 'keep', 'stabilize', 'fixed',
-  '决定', '采用', '固定', '改为', '放弃', '暂时不', '保持', '迁移到', '选择', '不用'
+  'decide',
+  'decision',
+  'use',
+  'adopt',
+  'choose',
+  'switch',
+  'keep',
+  'stabilize',
+  'fixed',
+  '决定',
+  '采用',
+  '固定',
+  '改为',
+  '放弃',
+  '暂时不',
+  '保持',
+  '迁移到',
+  '选择',
+  '不用',
 ];
 
 export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult {
@@ -72,7 +89,11 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   const fileStats = new Map<string, { additions: number; deletions: number }>();
   if (hasHead) {
     try {
-      const numstatOutput = execSync("git diff --numstat HEAD -- . ':!.pmem'", { cwd, encoding: 'utf8', timeout: 5000 });
+      const numstatOutput = execSync("git diff --numstat HEAD -- . ':!.pmem'", {
+        cwd,
+        encoding: 'utf8',
+        timeout: 5000,
+      });
       const numstatLines = numstatOutput.split('\n');
       for (const line of numstatLines) {
         const parts = line.trim().split(/\s+/);
@@ -89,12 +110,12 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   }
 
   // Populate additions/deletions on changedFiles
-  const updatedChangedFiles = changedFiles.map(cf => {
+  const updatedChangedFiles = changedFiles.map((cf) => {
     const stats = fileStats.get(cf.path);
     return {
       ...cf,
       additions: stats ? stats.additions : undefined,
-      deletions: stats ? stats.deletions : undefined
+      deletions: stats ? stats.deletions : undefined,
     };
   });
 
@@ -114,7 +135,12 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     let headContent = '';
     if (hasHead && cf.status !== 'A' && cf.status !== '??') {
       try {
-        headContent = execSync(`git show HEAD:${cf.path}`, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 });
+        headContent = execSync(`git show HEAD:${cf.path}`, {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 3000,
+        });
       } catch {}
     }
 
@@ -122,8 +148,8 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     const currentSymbols = extractSymbols(cf.path, currentContent);
     const headSymbols = extractSymbols(cf.path, headContent);
 
-    const addedSymbols = currentSymbols.filter(s => !headSymbols.includes(s));
-    const removedSymbols = headSymbols.filter(s => !currentSymbols.includes(s));
+    const addedSymbols = currentSymbols.filter((s) => !headSymbols.includes(s));
+    const removedSymbols = headSymbols.filter((s) => !currentSymbols.includes(s));
 
     const changeParts: string[] = [];
     if (cf.status === 'A' || cf.status === '??') {
@@ -140,10 +166,14 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
 
     const symbolChanges: string[] = [];
     if (addedSymbols.length > 0) {
-      symbolChanges.push(`added ${addedSymbols.slice(0, 5).join(', ')}${addedSymbols.length > 5 ? '...' : ''}`);
+      symbolChanges.push(
+        `added ${addedSymbols.slice(0, 5).join(', ')}${addedSymbols.length > 5 ? '...' : ''}`,
+      );
     }
     if (removedSymbols.length > 0) {
-      symbolChanges.push(`removed ${removedSymbols.slice(0, 5).join(', ')}${removedSymbols.length > 5 ? '...' : ''}`);
+      symbolChanges.push(
+        `removed ${removedSymbols.slice(0, 5).join(', ')}${removedSymbols.length > 5 ? '...' : ''}`,
+      );
     }
 
     if (symbolChanges.length > 0) {
@@ -156,7 +186,9 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     if (currentContent) {
       const lines = currentContent.split('\n');
       for (const line of lines) {
-        const commentMatch = line.match(/(?:\/\/|#|\/\*)\s*(?:decision|decide|we decided|we choose|we use|决定|采用|固定|使用)\b:?\s*(.+)/i);
+        const commentMatch = line.match(
+          /(?:\/\/|#|\/\*)\s*(?:decision|decide|we decided|we choose|we use|决定|采用|固定|使用)\b:?\s*(.+)/i,
+        );
         if (commentMatch) {
           decisions.push(commentMatch[1].trim());
         }
@@ -172,7 +204,10 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     try {
       const db = openDatabase(pmemPath);
       createSchema(db);
-      const allPaths = db.prepare("SELECT card_id, path FROM paths").all() as Array<{ card_id: string; path: string }>;
+      const allPaths = db.prepare('SELECT card_id, path FROM paths').all() as Array<{
+        card_id: string;
+        path: string;
+      }>;
       for (const cf of changedFiles) {
         for (const p of allPaths) {
           const isMatch = (() => {
@@ -192,7 +227,7 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   for (const cf of changedFiles) {
     const lowerPath = cf.path.toLowerCase();
     for (const [moduleName, hints] of Object.entries(MODULE_HINTS)) {
-      if (hints.some(hint => lowerPath.includes(hint.toLowerCase()))) {
+      if (hints.some((hint) => lowerPath.includes(hint.toLowerCase()))) {
         affectedModulesSet.add(`module.${moduleName}`);
       }
     }
@@ -204,13 +239,15 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   const sentences = textToScan.split(/[.!?。！？\n]/);
   for (const sentence of sentences) {
     const trimmed = sentence.trim();
-    if (trimmed.length > 5 && DECISION_KEYWORDS.some(kw => trimmed.includes(kw))) {
+    if (trimmed.length > 5 && DECISION_KEYWORDS.some((kw) => trimmed.includes(kw))) {
       decisions.push(trimmed);
     }
   }
 
   // Clean up decisions: limit length, unique
-  const finalDecisions = Array.from(new Set(decisions.map(d => d.replace(/^-\s*/, '').trim()))).filter(d => d.length > 0);
+  const finalDecisions = Array.from(
+    new Set(decisions.map((d) => d.replace(/^-\s*/, '').trim())),
+  ).filter((d) => d.length > 0);
 
   // Generate Title
   let title = '';
@@ -219,7 +256,7 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   } else if (latestTask) {
     title = latestTask;
   } else {
-    const names = changedFiles.map(cf => path.basename(cf.path));
+    const names = changedFiles.map((cf) => path.basename(cf.path));
     title = `Update ${names.slice(0, 3).join(', ')}${names.length > 3 ? ' and others' : ''}`;
   }
 
@@ -229,7 +266,9 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     if (latestTask) {
       summaryText = `Worked on task: ${latestTask}. `;
     }
-    const changesDesc = changedFiles.map(cf => `${path.basename(cf.path)} (${cf.status})`).join(', ');
+    const changesDesc = changedFiles
+      .map((cf) => `${path.basename(cf.path)} (${cf.status})`)
+      .join(', ');
     summaryText += `Captured changes in ${changesDesc}.`;
   }
 
@@ -260,11 +299,15 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
   // Architecture Notes
   const architectureNotes: string[] = [];
   if (affectedModules.length > 0) {
-    architectureNotes.push(`Modifications impact the following modules: ${affectedModules.join(', ')}.`);
+    architectureNotes.push(
+      `Modifications impact the following modules: ${affectedModules.join(', ')}.`,
+    );
   }
   for (const cf of changedFiles) {
     if (cf.path.endsWith('.jsx') || cf.path.endsWith('.tsx') || cf.path.endsWith('.ts')) {
-      architectureNotes.push(`Updated code symbols in [${path.basename(cf.path)}](file://${path.resolve(cf.path)}).`);
+      architectureNotes.push(
+        `Updated code symbols in [${path.basename(cf.path)}](file://${path.resolve(cf.path)}).`,
+      );
     }
   }
 
@@ -278,6 +321,6 @@ export function buildTraceSummary(input: TraceSummaryInput): TraceSummaryResult 
     affectedModules,
     changedFiles: updatedChangedFiles,
     next: nextSteps,
-    confidence: userSummary ? 'high' : 'medium'
+    confidence: userSummary ? 'high' : 'medium',
   };
 }

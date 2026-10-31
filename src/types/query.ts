@@ -57,7 +57,13 @@ export interface RecallResult {
   content_budget?: { requested: number; used: number; dropped: number };
 }
 
-export type MatchType = 'exact_id' | 'exact_title' | 'alias' | 'tag' | 'graph_expansion' | 'keyword_fallback';
+export type MatchType =
+  | 'exact_id'
+  | 'exact_title'
+  | 'alias'
+  | 'tag'
+  | 'graph_expansion'
+  | 'keyword_fallback';
 
 export interface AskMatch {
   node: GraphNode;

@@ -13,7 +13,10 @@ export interface ContextPackCommandOptions extends PackContextOptions {
 }
 
 /** Render the stable ContextPack wire shape for a human or machine caller. */
-export function renderContextPack(pack: ContextPack, format: ContextPackCliFormat = 'compact'): string {
+export function renderContextPack(
+  pack: ContextPack,
+  format: ContextPackCliFormat = 'compact',
+): string {
   return format === 'json' ? JSON.stringify(pack, null, 2) : pack.text;
 }
 
@@ -21,7 +24,10 @@ export function renderContextPack(pack: ContextPack, format: ContextPackCliForma
  * Retrieve a canonical ContextPack through the command Runtime bridge.
  * This command is read-only and never writes session or index state.
  */
-export async function contextPackCommand(query: string, options: ContextPackCommandOptions = {}): Promise<void> {
+export async function contextPackCommand(
+  query: string,
+  options: ContextPackCommandOptions = {},
+): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');

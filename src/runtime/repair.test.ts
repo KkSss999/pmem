@@ -3,8 +3,20 @@ import assert from 'node:assert/strict';
 import { applyRepairPlan, buildRepairPlan, type RepairChange } from './repair';
 
 const changes: RepairChange[] = [
-  { id: 'card.b', action: 'update_frontmatter', reason: 'refresh metadata', before: { value: 'old', nested: { z: 1, a: 2 } }, after: { value: 'new' } },
-  { id: 'card.a', action: 'update_frontmatter', reason: 'refresh metadata', before: null, after: { classification: 'decision' } },
+  {
+    id: 'card.b',
+    action: 'update_frontmatter',
+    reason: 'refresh metadata',
+    before: { value: 'old', nested: { z: 1, a: 2 } },
+    after: { value: 'new' },
+  },
+  {
+    id: 'card.a',
+    action: 'update_frontmatter',
+    reason: 'refresh metadata',
+    before: null,
+    after: { classification: 'decision' },
+  },
 ];
 
 describe('runtime repair protocol', () => {
@@ -15,7 +27,10 @@ describe('runtime repair protocol', () => {
     assert.equal(plan.mode, 'dry-run');
     assert.equal(plan.dryRun, true);
     assert.equal(plan.apply, false);
-    assert.deepEqual(plan.changes.map(change => change.id), ['card.a', 'card.b']);
+    assert.deepEqual(
+      plan.changes.map((change) => change.id),
+      ['card.a', 'card.b'],
+    );
     assert.deepEqual(plan.changes[1]?.before, { nested: { a: 2, z: 1 }, value: 'old' });
     assert.deepEqual(input, changes);
   });
@@ -23,19 +38,26 @@ describe('runtime repair protocol', () => {
   it('builds an explicit apply plan and reports successful execution', () => {
     const plan = buildRepairPlan(changes, { apply: true });
     const executed: string[] = [];
-    const result = applyRepairPlan(plan, change => executed.push(change.id));
+    const result = applyRepairPlan(plan, (change) => executed.push(change.id));
     assert.equal(plan.mode, 'apply');
     assert.deepEqual(executed, ['card.a', 'card.b']);
-    assert.deepEqual(result, { status: 'applied', appliedIds: ['card.a', 'card.b'], skippedIds: [], failures: [] });
+    assert.deepEqual(result, {
+      status: 'applied',
+      appliedIds: ['card.a', 'card.b'],
+      skippedIds: [],
+      failures: [],
+    });
   });
 
   it('never executes a dry-run and fails closed after an executor error', () => {
-    const dryRun = applyRepairPlan(buildRepairPlan(changes), () => { throw new Error('must not run'); });
+    const dryRun = applyRepairPlan(buildRepairPlan(changes), () => {
+      throw new Error('must not run');
+    });
     assert.equal(dryRun.status, 'dry-run');
     assert.deepEqual(dryRun.skippedIds, ['card.a', 'card.b']);
 
     const calls: string[] = [];
-    const partial = applyRepairPlan(buildRepairPlan(changes, { apply: true }), change => {
+    const partial = applyRepairPlan(buildRepairPlan(changes, { apply: true }), (change) => {
       calls.push(change.id);
       if (change.id === 'card.a') throw new Error('writer unavailable');
     });
@@ -47,14 +69,24 @@ describe('runtime repair protocol', () => {
 
   it('preserves machine-readable compensation status from a writer', () => {
     const plan = buildRepairPlan([changes[0]!], { apply: true });
-    const failure = Object.assign(new Error('audit insert failed; rolled_back'), { compensation: 'rolled_back' as const });
-    const result = applyRepairPlan(plan, () => { throw failure; });
+    const failure = Object.assign(new Error('audit insert failed; rolled_back'), {
+      compensation: 'rolled_back' as const,
+    });
+    const result = applyRepairPlan(plan, () => {
+      throw failure;
+    });
     assert.equal(result.failures[0]?.compensation, 'rolled_back');
   });
 
   it('rejects duplicate ids, invalid snapshots, and conflicting modes', () => {
     assert.throws(() => buildRepairPlan([changes[0]!, changes[0]!]), /duplicate id card.b/);
-    assert.throws(() => buildRepairPlan([{ ...changes[0]!, before: Number.NaN }]), /JSON-compatible/);
-    assert.throws(() => buildRepairPlan(changes, { dryRun: true, apply: true }), /both dry-run and apply/);
+    assert.throws(
+      () => buildRepairPlan([{ ...changes[0]!, before: Number.NaN }]),
+      /JSON-compatible/,
+    );
+    assert.throws(
+      () => buildRepairPlan(changes, { dryRun: true, apply: true }),
+      /both dry-run and apply/,
+    );
   });
 });

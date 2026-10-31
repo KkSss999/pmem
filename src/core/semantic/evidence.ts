@@ -27,7 +27,12 @@ export interface SemanticEvidenceParentRecord {
   title?: string | null;
 }
 
-export type SemanticFallbackStrategy = 'none' | 'deterministic' | 'exact' | 'lexical' | 'structured';
+export type SemanticFallbackStrategy =
+  | 'none'
+  | 'deterministic'
+  | 'exact'
+  | 'lexical'
+  | 'structured';
 
 /** Why semantic retrieval was unavailable or intentionally degraded. */
 export type SemanticDegradationReason = string;
@@ -78,7 +83,10 @@ function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function cloneParentRecord(value: SemanticEvidenceInput['parentRecord'], fallbackId?: string): SemanticEvidenceParentRecord {
+function cloneParentRecord(
+  value: SemanticEvidenceInput['parentRecord'],
+  fallbackId?: string,
+): SemanticEvidenceParentRecord {
   if (typeof value === 'string') return { id: value };
   if (value && typeof value === 'object') {
     return {
@@ -109,32 +117,64 @@ export function semanticEvidenceIssues(value: unknown): string[] {
     return ['evidence must be an object'];
   }
   const evidence = value as Partial<SemanticEvidence>;
-  if (evidence.evidenceVersion !== SEMANTIC_EVIDENCE_VERSION) errors.push(`evidenceVersion must be ${SEMANTIC_EVIDENCE_VERSION}`);
+  if (evidence.evidenceVersion !== SEMANTIC_EVIDENCE_VERSION)
+    errors.push(`evidenceVersion must be ${SEMANTIC_EVIDENCE_VERSION}`);
   if (evidence.authority !== 'supporting') errors.push('authority must be supporting');
   if (!evidence.provenance || typeof evidence.provenance !== 'object') {
     errors.push('provenance is required');
   } else {
     const provenance = evidence.provenance as Partial<SemanticEvidenceProvenance>;
-    if (!nonEmptyString(provenance.model)) errors.push('provenance.model must be a non-empty string');
-    if (!nonEmptyString(provenance.revision)) errors.push('provenance.revision must be a non-empty string');
-    if (!Number.isInteger(provenance.dimension) || (provenance.dimension ?? 0) <= 0) errors.push('provenance.dimension must be a positive integer');
-    if (!nonEmptyString(provenance.chunkStrategy)) errors.push('provenance.chunkStrategy must be a non-empty string');
+    if (!nonEmptyString(provenance.model))
+      errors.push('provenance.model must be a non-empty string');
+    if (!nonEmptyString(provenance.revision))
+      errors.push('provenance.revision must be a non-empty string');
+    if (!Number.isInteger(provenance.dimension) || (provenance.dimension ?? 0) <= 0)
+      errors.push('provenance.dimension must be a positive integer');
+    if (!nonEmptyString(provenance.chunkStrategy))
+      errors.push('provenance.chunkStrategy must be a non-empty string');
   }
   if (!nonEmptyString(evidence.chunkId)) errors.push('chunkId must be a non-empty string');
-  if (evidence.heading !== null && evidence.heading !== undefined && typeof evidence.heading !== 'string') errors.push('heading must be a string or null');
-  if (!Array.isArray(evidence.headingPath) || evidence.headingPath.some(value => typeof value !== 'string')) errors.push('headingPath must be an array of strings');
-  if (!finiteNumber(evidence.similarity) || evidence.similarity < -1 || evidence.similarity > 1) errors.push('similarity must be a finite number between -1 and 1');
-  if (!evidence.parentRecord || typeof evidence.parentRecord !== 'object' || !nonEmptyString(evidence.parentRecord.id)) errors.push('parentRecord.id must be a non-empty string');
+  if (
+    evidence.heading !== null &&
+    evidence.heading !== undefined &&
+    typeof evidence.heading !== 'string'
+  )
+    errors.push('heading must be a string or null');
+  if (
+    !Array.isArray(evidence.headingPath) ||
+    evidence.headingPath.some((value) => typeof value !== 'string')
+  )
+    errors.push('headingPath must be an array of strings');
+  if (!finiteNumber(evidence.similarity) || evidence.similarity < -1 || evidence.similarity > 1)
+    errors.push('similarity must be a finite number between -1 and 1');
+  if (
+    !evidence.parentRecord ||
+    typeof evidence.parentRecord !== 'object' ||
+    !nonEmptyString(evidence.parentRecord.id)
+  )
+    errors.push('parentRecord.id must be a non-empty string');
   if (evidence.fallback !== null && evidence.fallback !== undefined) {
     if (typeof evidence.fallback !== 'object') errors.push('fallback must be an object or null');
     else {
       const fallback = evidence.fallback as Partial<SemanticEvidenceFallback>;
-      if (!['none', 'deterministic', 'exact', 'lexical', 'structured'].includes(fallback.strategy ?? '')) errors.push('fallback.strategy is invalid');
-      if (!nonEmptyString(fallback.reason)) errors.push('fallback.reason must be a non-empty string');
-      if (fallback.strategy === 'none') errors.push('fallback.strategy cannot be none when fallback is present');
+      if (
+        !['none', 'deterministic', 'exact', 'lexical', 'structured'].includes(
+          fallback.strategy ?? '',
+        )
+      )
+        errors.push('fallback.strategy is invalid');
+      if (!nonEmptyString(fallback.reason))
+        errors.push('fallback.reason must be a non-empty string');
+      if (fallback.strategy === 'none')
+        errors.push('fallback.strategy cannot be none when fallback is present');
     }
   }
-  if (evidence.degradationReason !== null && evidence.degradationReason !== undefined && !nonEmptyString(evidence.degradationReason)) errors.push('degradationReason must be a non-empty string or null');
+  if (
+    evidence.degradationReason !== null &&
+    evidence.degradationReason !== undefined &&
+    !nonEmptyString(evidence.degradationReason)
+  )
+    errors.push('degradationReason must be a non-empty string or null');
   return errors;
 }
 
@@ -170,10 +210,12 @@ export function createSemanticEvidence(input: SemanticEvidenceInput): SemanticEv
     headingPath: [...(input.headingPath ?? [])],
     similarity: input.similarity,
     parentRecord,
-    fallback: input.fallback ? {
-      strategy: input.fallback.strategy,
-      reason: input.fallback.reason,
-    } : null,
+    fallback: input.fallback
+      ? {
+          strategy: input.fallback.strategy,
+          reason: input.fallback.reason,
+        }
+      : null,
     degradationReason: input.degradationReason ?? null,
   };
   assertSemanticEvidence(evidence);
@@ -182,16 +224,19 @@ export function createSemanticEvidence(input: SemanticEvidenceInput): SemanticEv
 
 /** Stable, non-mutating ordering for semantic evidence. */
 export function sortSemanticEvidence(values: readonly SemanticEvidence[]): SemanticEvidence[] {
-  return values.map(value => ({
-    ...value,
-    provenance: { ...value.provenance },
-    headingPath: [...value.headingPath],
-    parentRecord: { ...value.parentRecord },
-    fallback: value.fallback ? { ...value.fallback } : null,
-  })).sort((left, right) =>
-    right.similarity - left.similarity
-    || left.parentRecord.id.localeCompare(right.parentRecord.id)
-    || left.chunkId.localeCompare(right.chunkId)
-    || left.headingPath.join('\u0000').localeCompare(right.headingPath.join('\u0000'))
-  );
+  return values
+    .map((value) => ({
+      ...value,
+      provenance: { ...value.provenance },
+      headingPath: [...value.headingPath],
+      parentRecord: { ...value.parentRecord },
+      fallback: value.fallback ? { ...value.fallback } : null,
+    }))
+    .sort(
+      (left, right) =>
+        right.similarity - left.similarity ||
+        left.parentRecord.id.localeCompare(right.parentRecord.id) ||
+        left.chunkId.localeCompare(right.chunkId) ||
+        left.headingPath.join('\u0000').localeCompare(right.headingPath.join('\u0000')),
+    );
 }

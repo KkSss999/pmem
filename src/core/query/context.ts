@@ -15,7 +15,7 @@ export function contextQuery(
   cwd: string = process.cwd(),
 ): ContextQueryResult {
   const dbPath = path.join(pmemPath, 'pmem.db');
-  
+
   // Set up defaults
   const result: ContextQueryResult = {
     task,
@@ -23,13 +23,14 @@ export function contextQuery(
     current_focus: 'No focus recorded.',
     must_read: [
       { path: '.pmem/state.md', reason: 'Overall project stage and status' },
-      { path: '.pmem/next.md', reason: 'Recommended next steps from last update' }
+      { path: '.pmem/next.md', reason: 'Recommended next steps from last update' },
     ],
     relevant_memory: [],
     changed_files: [],
     dirty_memory: [],
     warnings: [],
-    recommended_next_action: 'Read the suggested files to understand the context, then proceed with your task. Run pmem capture when done.'
+    recommended_next_action:
+      'Read the suggested files to understand the context, then proceed with your task. Run pmem capture when done.',
   };
 
   if (!fileExists(pmemPath)) {
@@ -45,17 +46,17 @@ export function contextQuery(
     result.current_focus = recall.focus;
 
     if (recall.architecture) {
-      result.current_architecture = recall.architecture.map(m => {
+      result.current_architecture = recall.architecture.map((m) => {
         const sum = m.summary ? ` — ${m.summary}` : '';
         return `${m.id}${sum}`;
       });
     }
 
     if (recall.recent_traces) {
-      result.recent_session_memory = recall.recent_traces.map(t => t.summary);
+      result.recent_session_memory = recall.recent_traces.map((t) => t.summary);
     }
     if (recall.recent_events && recall.recent_events.length > 0) {
-      const eventSummaries = recall.recent_events.map(e => {
+      const eventSummaries = recall.recent_events.map((e) => {
         let payloadSummary = '';
         if (e.payload) {
           try {
@@ -113,9 +114,9 @@ export function contextQuery(
   // 3. Status
   try {
     const status = statusQuery(pmemPath, { db: dbOverride, cwd });
-    result.changed_files = (status.changes || []).map(c => ({
+    result.changed_files = (status.changes || []).map((c) => ({
       path: c.path,
-      status: c.status
+      status: c.status,
     }));
   } catch (err: any) {
     result.warnings.push(`Status query failed: ${err.message}`);
@@ -129,13 +130,20 @@ export function contextQuery(
 
       // Populate relevant_memory with titles and summaries
       for (const m of askMatched.slice(0, 10)) {
-        const card = db.prepare(
-          "SELECT type, title, summary, file_path FROM cards WHERE id = ? AND is_deleted = 0"
-        ).get(m.id) as { type: string; title: string; summary: string | null; file_path: string } | undefined;
-        
+        const card = db
+          .prepare(
+            'SELECT type, title, summary, file_path FROM cards WHERE id = ? AND is_deleted = 0',
+          )
+          .get(m.id) as
+          | { type: string; title: string; summary: string | null; file_path: string }
+          | undefined;
+
         if (card) {
           const reasons = Array.isArray(m.reasons)
-            ? m.reasons.map((r: any) => r.channel).filter(Boolean).join(', ')
+            ? m.reasons
+                .map((r: any) => r.channel)
+                .filter(Boolean)
+                .join(', ')
             : m.match_type;
           result.relevant_memory.push({
             id: m.id,
@@ -145,42 +153,41 @@ export function contextQuery(
             type: card.type,
             score: m.score,
             reason: reasons || undefined,
-            stale: m.stale === true
+            stale: m.stale === true,
           });
         }
       }
 
       // Populate must_read with details of foundational cards
-      const activeFoundationPaths = result.relevant_memory
-        .slice(0, 3)
-        .map(c => c.file_path);
+      const activeFoundationPaths = result.relevant_memory.slice(0, 3).map((c) => c.file_path);
 
       for (const fpath of activeFoundationPaths) {
-        if (!result.must_read.some(r => r.path === fpath)) {
-          const card = db.prepare(
-            "SELECT type, id FROM cards WHERE file_path = ? AND is_deleted = 0"
-          ).get(fpath) as { type: string; id: string } | undefined;
-          
+        if (!result.must_read.some((r) => r.path === fpath)) {
+          const card = db
+            .prepare('SELECT type, id FROM cards WHERE file_path = ? AND is_deleted = 0')
+            .get(fpath) as { type: string; id: string } | undefined;
+
           if (card) {
             result.must_read.push({
               path: fpath,
-              reason: `Task-relevant memory card: ${card.id} (${card.type})`
+              reason: `Task-relevant memory card: ${card.id} (${card.type})`,
             });
           }
         }
       }
 
       // Populate dirty_memory
-      const dirtyFlags = db.prepare(
-        "SELECT target, reason FROM dirty_flags WHERE resolved_at IS NULL"
-      ).all() as Array<{ target: string; reason: string }>;
+      const dirtyFlags = db
+        .prepare('SELECT target, reason FROM dirty_flags WHERE resolved_at IS NULL')
+        .all() as Array<{ target: string; reason: string }>;
 
-      result.dirty_memory = dirtyFlags.map(df => df.target);
+      result.dirty_memory = dirtyFlags.map((df) => df.target);
 
       if (dirtyFlags.length > 0) {
-        result.warnings.push(`There are ${dirtyFlags.length} unresolved dirty flags. Remember to run pmem capture --auto when done.`);
+        result.warnings.push(
+          `There are ${dirtyFlags.length} unresolved dirty flags. Remember to run pmem capture --auto when done.`,
+        );
       }
-
     } catch (err: any) {
       result.warnings.push(`Database context query enrichment failed: ${err.message}`);
     } finally {
@@ -190,11 +197,11 @@ export function contextQuery(
 
   // Generate recommended next action
   if (result.changed_files.length > 0) {
-    const filesToRead = result.relevant_memory.slice(0, 2).map(c => c.file_path);
+    const filesToRead = result.relevant_memory.slice(0, 2).map((c) => c.file_path);
     const filesStr = filesToRead.length > 0 ? `Read ${filesToRead.join(', ')} first. ` : '';
     result.recommended_next_action = `${filesStr}You have modified files. Review the suggested reads to see if their cards need updates, then run pmem capture when done.`;
   } else {
-    const filesToRead = result.relevant_memory.slice(0, 2).map(c => c.file_path);
+    const filesToRead = result.relevant_memory.slice(0, 2).map((c) => c.file_path);
     const filesStr = filesToRead.length > 0 ? `Read ${filesToRead.join(', ')} first. ` : '';
     result.recommended_next_action = `${filesStr}Read the suggested files to understand the context, then proceed with your task. Run pmem capture when done.`;
   }

@@ -5,11 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pmem-semantic-runtime.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-PACK_JSON="$TMP_DIR/pack.json"
-npm pack --dry-run --json "$ROOT" > "$PACK_JSON"
-node - "$PACK_JSON" <<'NODE'
+PACK_LIST="$TMP_DIR/pack.txt"
+(cd "$ROOT" && bun pm pack --dry-run) | grep '^packed ' | sed -E 's/^packed [^ ]+ //' > "$PACK_LIST"
+node - "$PACK_LIST" <<'NODE'
 const fs = require('node:fs');
-const files = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))[0].files.map(file => file.path);
+const files = fs.readFileSync(process.argv[2], 'utf8').split('\n').map(line => line.trim()).filter(Boolean);
 for (const expected of ['dist/core/semantic/transformers.js', 'package.json', 'README.md']) {
   if (!files.includes(expected)) throw new Error(`pmem-ai pack is missing ${expected}`);
 }
@@ -18,7 +18,7 @@ if (files.some(file => file.startsWith('src/') || file.includes('.test.') || fil
 }
 NODE
 
-TARBALL="$(npm pack --silent --pack-destination "$TMP_DIR" "$ROOT")"
+TARBALL="$(basename "$(cd "$ROOT" && bun pm pack --quiet --destination "$TMP_DIR")")"
 tar -xzf "$TMP_DIR/$TARBALL" -C "$TMP_DIR"
 FIXTURE="$TMP_DIR/package"
 

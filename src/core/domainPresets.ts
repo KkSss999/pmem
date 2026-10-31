@@ -15,8 +15,16 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
   software: {
     domain: 'software',
     card_types: [
-      'project', 'module', 'feature', 'task', 'decision',
-      'trace', 'risk', 'assumption', 'resource', 'integration'
+      'project',
+      'module',
+      'feature',
+      'task',
+      'decision',
+      'trace',
+      'risk',
+      'assumption',
+      'resource',
+      'integration',
     ],
     type_dirs: {
       module: 'modules',
@@ -35,9 +43,7 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
   },
   novel: {
     domain: 'novel',
-    card_types: [
-      'project', 'character', 'chapter', 'world', 'arc', 'decision', 'trace'
-    ],
+    card_types: ['project', 'character', 'chapter', 'world', 'arc', 'decision', 'trace'],
     type_dirs: {
       character: 'characters',
       chapter: 'chapters',
@@ -53,14 +59,19 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
     // Creative graphs are intentionally dense: characters commonly connect
     // to most of the cast, chapters, locations, and story decisions.
     warn_when_related_count_gt_by_type: { character: 30, chapter: 25, world: 25 },
-    max_tokens: { decision: 1000, trace: 1000, character: 1200, chapter: 1500, world: 1500, arc: 1000 },
+    max_tokens: {
+      decision: 1000,
+      trace: 1000,
+      character: 1200,
+      chapter: 1500,
+      world: 1500,
+      arc: 1000,
+    },
     max_sections: { decision: 6, character: 8, chapter: 8, world: 10 },
   },
   research: {
     domain: 'research',
-    card_types: [
-      'project', 'source', 'claim', 'note', 'experiment', 'decision', 'trace'
-    ],
+    card_types: ['project', 'source', 'claim', 'note', 'experiment', 'decision', 'trace'],
     type_dirs: {
       source: 'sources',
       claim: 'claims',
@@ -76,7 +87,14 @@ export const DOMAIN_PRESETS: Record<string, DomainPreset> = {
     // A source/claim graph is expected to accumulate many legitimate links
     // as evidence is cross-checked and claims are refined.
     warn_when_related_count_gt_by_type: { source: 20, claim: 20 },
-    max_tokens: { decision: 1000, trace: 1000, source: 1200, claim: 1000, note: 1000, experiment: 1200 },
+    max_tokens: {
+      decision: 1000,
+      trace: 1000,
+      source: 1200,
+      claim: 1000,
+      note: 1000,
+      experiment: 1200,
+    },
     max_sections: { decision: 6, source: 8, claim: 6, experiment: 8 },
   },
 };

@@ -10,7 +10,12 @@ export async function recallCommand(
   budget: number = 2000,
   format: CliFormat = 'compact',
   since?: string,
-  options?: { recent?: number; noTraces?: boolean; mode?: 'brief' | 'normal' | 'deep'; runtime?: CommandRuntimeOptions }
+  options?: {
+    recent?: number;
+    noTraces?: boolean;
+    mode?: 'brief' | 'normal' | 'deep';
+    runtime?: CommandRuntimeOptions;
+  },
 ): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
@@ -28,13 +33,13 @@ export async function recallCommand(
       budget,
       since,
       recent: options?.recent,
-      noTraces: options?.noTraces
+      noTraces: options?.noTraces,
     });
 
     const output = formatOutput(
       options?.mode && format !== 'json' ? { ...result, recall_mode: options.mode } : result,
       format,
-      budget
+      budget,
     );
     console.log(output);
   } catch (err: any) {

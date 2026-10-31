@@ -22,8 +22,11 @@ describe('v1.2 compatibility boundary', () => {
   });
 
   it('fails closed for missing or conflicting legacy roots', () => {
-    assert.throws(() => v12OpenOptionsToCanonical({}), (error: unknown) =>
-      error instanceof CompatibilityError && error.code === 'INVALID_OPEN_OPTIONS');
+    assert.throws(
+      () => v12OpenOptionsToCanonical({}),
+      (error: unknown) =>
+        error instanceof CompatibilityError && error.code === 'INVALID_OPEN_OPTIONS',
+    );
     assert.throws(
       () => v12OpenOptionsToCanonical({ root: '/tmp/a', pmemPath: '/tmp/b/.pmem' }),
       (error: unknown) => error instanceof CompatibilityError && error.field === 'pmemPath',
@@ -63,12 +66,24 @@ describe('v1.2 compatibility boundary', () => {
   });
 
   it('reports unknown and missing card fields as compatibility errors', () => {
-    assert.throws(() => v12CardToRecord({ body: 'content', filePath: 'a.md' }), (error: unknown) =>
-      error instanceof CompatibilityError && error.field === 'frontmatter');
-    assert.throws(() => v12CardToRecord({ frontmatter: { id: 'x' }, body: 'content', filePath: 'a.md' }), (error: unknown) =>
-      error instanceof CompatibilityError && error.field === 'frontmatter.type');
-    assert.throws(() => recordToV12Card({ id: 'x', schema: { id: 'decision', version: '1' }, data: { id: 'other', type: 'decision', body: 'x' }, provenance: { source: 'markdown', source_id: 'x.md' } }), (error: unknown) =>
-      error instanceof CompatibilityError && error.code === 'INVALID_RECORD');
+    assert.throws(
+      () => v12CardToRecord({ body: 'content', filePath: 'a.md' }),
+      (error: unknown) => error instanceof CompatibilityError && error.field === 'frontmatter',
+    );
+    assert.throws(
+      () => v12CardToRecord({ frontmatter: { id: 'x' }, body: 'content', filePath: 'a.md' }),
+      (error: unknown) => error instanceof CompatibilityError && error.field === 'frontmatter.type',
+    );
+    assert.throws(
+      () =>
+        recordToV12Card({
+          id: 'x',
+          schema: { id: 'decision', version: '1' },
+          data: { id: 'other', type: 'decision', body: 'x' },
+          provenance: { source: 'markdown', source_id: 'x.md' },
+        }),
+      (error: unknown) => error instanceof CompatibilityError && error.code === 'INVALID_RECORD',
+    );
   });
 
   it('maps a legacy software preset and custom manifest schema', () => {
@@ -106,11 +121,18 @@ describe('v1.2 compatibility boundary', () => {
   });
 
   it('rejects missing and unsupported manifest versions', () => {
-    assert.throws(() => v12ManifestToSchema({ project: { name: 'missing-version' } }), (error: unknown) =>
-      error instanceof CompatibilityError && error.field === 'pmem');
-    assert.throws(() => v12ManifestToSchema({ pmem: { schema_version: '1.3' }, project: { name: 'future' } }), (error: unknown) =>
-      error instanceof CompatibilityError && error.code === 'UNSUPPORTED_VERSION');
-    assert.throws(() => v12ManifestToSchema({ pmem: { schema_version: '0.3' } }), (error: unknown) =>
-      error instanceof CompatibilityError && error.field === 'project');
+    assert.throws(
+      () => v12ManifestToSchema({ project: { name: 'missing-version' } }),
+      (error: unknown) => error instanceof CompatibilityError && error.field === 'pmem',
+    );
+    assert.throws(
+      () => v12ManifestToSchema({ pmem: { schema_version: '1.3' }, project: { name: 'future' } }),
+      (error: unknown) =>
+        error instanceof CompatibilityError && error.code === 'UNSUPPORTED_VERSION',
+    );
+    assert.throws(
+      () => v12ManifestToSchema({ pmem: { schema_version: '0.3' } }),
+      (error: unknown) => error instanceof CompatibilityError && error.field === 'project',
+    );
   });
 });

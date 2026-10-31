@@ -32,7 +32,7 @@ function initGit(cwd: string) {
   execSync('git config user.email "test@example.com"', { cwd });
 }
 
-function commitAll(cwd: string, msg: string = "initial") {
+function commitAll(cwd: string, msg: string = 'initial') {
   try {
     execSync('git add .', { cwd });
     execSync('git commit -m "' + msg + '"', { cwd });
@@ -43,7 +43,9 @@ function commitAll(cwd: string, msg: string = "initial") {
 
 function writeManifest(pmemDir: string, extra: string = '') {
   const manifestPath = path.join(pmemDir, 'manifest.yml');
-  const cardPolicySection = extra.includes('card_policy:') ? '' : `card_policy:
+  const cardPolicySection = extra.includes('card_policy:')
+    ? ''
+    : `card_policy:
   id_pattern: ^(project|module|feature|task|decision|trace|risk|assumption|resource|integration)\\.[a-z0-9._-]+$
   max_tokens:
     module: 1000
@@ -178,17 +180,19 @@ describe('pmem sync and verify integration tests', () => {
     fs.mkdirSync(path.join(cwd, '.pmem'), { recursive: true });
     initGit(cwd);
     writeManifest(path.join(cwd, '.pmem'));
-    
+
     // Create AGENTS.md for verify checks
     fs.writeFileSync(path.join(cwd, 'AGENTS.md'), '# Agents', 'utf8');
-    
+
     // Create a mock source file
     fs.mkdirSync(path.join(cwd, 'src'), { recursive: true });
     fs.writeFileSync(path.join(cwd, 'src', 'index.ts'), 'console.log("hello");', 'utf8');
-    
+
     // Create a card matching index.ts
     fs.mkdirSync(path.join(cwd, '.pmem', 'modules'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, '.pmem', 'modules', 'module.core.md'), `---
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', 'modules', 'module.core.md'),
+      `---
 id: module.core
 type: module
 title: "Core Module"
@@ -198,15 +202,19 @@ source_files:
   - src/index.ts
 ---
 # Core Module
-`, 'utf8');
+`,
+      'utf8',
+    );
 
-    commitAll(cwd, "initial commit");
+    commitAll(cwd, 'initial commit');
     // Initial rebuild
     pmem('rebuild --full', cwd);
   });
 
   after(() => {
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   it('pmem sync with no changes should be clean', () => {
@@ -218,16 +226,16 @@ source_files:
   it('pmem sync with changes but no summary auto-marks dirty and prints recommendation', () => {
     // Modify index.ts
     fs.writeFileSync(path.join(cwd, 'src', 'index.ts'), 'console.log("hello 2");', 'utf8');
-    
+
     const r = pmem('sync', cwd);
     assert.strictEqual(r.code, 0);
     assert.ok(r.stdout.includes('Auto-marked 1 card(s) as dirty'));
     assert.ok(r.stdout.includes('Recommended: run `pmem sync -s "<summary>" -n "<next>"`'));
-    
+
     // Manifest memory_status.dirty should be true
     const manifest = fs.readFileSync(path.join(cwd, '.pmem', 'manifest.yml'), 'utf8');
     assert.ok(manifest.includes('dirty: true'));
-    
+
     // .dirty file should exist
     assert.ok(fs.existsSync(path.join(cwd, '.pmem', '.dirty')));
   });
@@ -236,20 +244,20 @@ source_files:
     const r = pmem('sync -s "modified index.ts to log hello 2" -n "implement next feature"', cwd);
     assert.strictEqual(r.code, 0);
     assert.ok(r.stdout.includes('Memory sync and update completed'));
-    
+
     // Manifest dirty should be false
     const manifest = fs.readFileSync(path.join(cwd, '.pmem', 'manifest.yml'), 'utf8');
     assert.ok(manifest.includes('dirty: false'));
-    
+
     // .dirty file should be cleaned up
     assert.ok(!fs.existsSync(path.join(cwd, '.pmem', '.dirty')));
-    
+
     // Trace file should be created
     const tracesDir = path.join(cwd, '.pmem', 'traces');
     const traces = fs.readdirSync(tracesDir);
     assert.strictEqual(traces.length, 1);
     assert.ok(traces[0].endsWith('.md'));
-    
+
     // next.md should be updated
     const nextContent = fs.readFileSync(path.join(cwd, '.pmem', 'next.md'), 'utf8');
     assert.ok(nextContent.includes('implement next feature'));
@@ -264,20 +272,25 @@ source_files:
     // Running verify should fail / show stale warning
     const rVerify = pmem('verify', cwd);
     assert.ok(rVerify.stdout.includes('stale_memory'));
-    
+
     // Run verify --fix-stale
     const rFix = pmem('verify --fix-stale', cwd);
     assert.strictEqual(rFix.code, 0);
     assert.ok(rFix.stdout.includes('Updated last_verified timestamp for card: module.core'));
-    
+
     const rVerify2 = pmem('verify', cwd);
-    assert.ok(rVerify2.stdout.includes('Score: 100/100') || rVerify2.stdout.includes('Memory verification passed'));
+    assert.ok(
+      rVerify2.stdout.includes('Score: 100/100') ||
+        rVerify2.stdout.includes('Memory verification passed'),
+    );
   });
 
   it('pmem verify relaxed token count warning policy', () => {
     // Create a card with token count > 6 (limit is 6 for task)
     fs.mkdirSync(path.join(cwd, '.pmem', 'tasks'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, '.pmem', 'tasks', 'task.large.md'), `---
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', 'tasks', 'task.large.md'),
+      `---
 id: task.large
 type: task
 title: "Large Task"
@@ -286,7 +299,9 @@ updated: "2026-06-01T00:00:00.000Z"
 ---
 # Large Task
 One two three four five six seven eight nine ten tactics.
-`, 'utf8');
+`,
+      'utf8',
+    );
     pmem('rebuild', cwd);
 
     // Running verify should warn about card_too_large and score < 100
@@ -301,7 +316,9 @@ One two three four five six seven eight nine ten tactics.
     assert.ok(rRelaxed.stdout.includes('Score: 100/100'));
 
     // Update frontmatter to have 'token_policy: relaxed'
-    fs.writeFileSync(path.join(cwd, '.pmem', 'tasks', 'task.large.md'), `---
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', 'tasks', 'task.large.md'),
+      `---
 id: task.large
 type: task
 title: "Large Task"
@@ -311,16 +328,20 @@ updated: "2026-06-01T00:00:00.000Z"
 ---
 # Large Task
 One two three four five six seven eight nine ten tactics.
-`, 'utf8');
+`,
+      'utf8',
+    );
     pmem('rebuild', cwd);
 
     // Verify should now pass with score 100/100 even without --relaxed flag!
     const rVerifyLocal = pmem('verify', cwd);
     assert.ok(rVerifyLocal.stdout.includes('card_too_large_relaxed'));
     assert.ok(rVerifyLocal.stdout.includes('Score: 100/100'));
-    
+
     // Testing manifest relaxed_cards
-    fs.writeFileSync(path.join(cwd, '.pmem', 'tasks', 'task.large.md'), `---
+    fs.writeFileSync(
+      path.join(cwd, '.pmem', 'tasks', 'task.large.md'),
+      `---
 id: task.large
 type: task
 title: "Large Task"
@@ -329,9 +350,13 @@ updated: "2026-06-01T00:00:00.000Z"
 ---
 # Large Task
 One two three four five six seven eight nine ten tactics.
-`, 'utf8');
+`,
+      'utf8',
+    );
     // Add relaxed_cards to manifest card_policy
-    writeManifest(path.join(cwd, '.pmem'), `
+    writeManifest(
+      path.join(cwd, '.pmem'),
+      `
 card_policy:
   id_pattern: ^(project|module|feature|task|decision|trace|risk|assumption|resource|integration)\\.[a-z0-9._-]+$
   max_tokens:
@@ -339,7 +364,8 @@ card_policy:
     task: 6
   relaxed_cards:
     - task.large
-`);
+`,
+    );
     pmem('rebuild', cwd);
 
     // Verify should pass with score 100/100 due to manifest relaxed_cards rule!

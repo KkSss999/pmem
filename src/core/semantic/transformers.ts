@@ -1,17 +1,17 @@
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { EmbeddingProvider } from './types';
+import type { EmbeddingProvider, SemanticDtype } from './types';
 
 export const DEFAULT_SEMANTIC_MODEL = 'Xenova/multilingual-e5-small';
 export const DEFAULT_SEMANTIC_MODEL_REVISION = '761b726dd34fb83930e26aab4e9ac3899aa1fa78';
-export const DEFAULT_SEMANTIC_DTYPE = 'uint8' as const;
+export const DEFAULT_SEMANTIC_DTYPE = 'q8' as const;
 export const DEFAULT_SEMANTIC_DIMENSION = 384;
 
 export interface TransformersModelSpec {
   model: string;
   revision: string;
-  dtype: 'uint8';
+  dtype: SemanticDtype;
   dimension: number;
   source?: 'modelscope' | 'huggingface';
   cachePath: string;
@@ -28,14 +28,16 @@ const packageRequire = createRequire(__filename);
 
 /** Preserve native import() in the CommonJS build for ESM-only Transformers.js. */
 export async function nativeDynamicImport(specifier: string): Promise<any> {
-  const importer = new Function('specifier', 'return import(specifier)') as (value: string) => Promise<any>;
+  const importer = new Function('specifier', 'return import(specifier)') as (
+    value: string,
+  ) => Promise<any>;
   return importer(specifier);
 }
 
 function transformersRuntimeError(cause: unknown): Error {
   const error = new Error(
-    'The local Transformers runtime is unavailable. '
-    + 'Reinstall pmem with npm install -g pmem-ai@latest, then retry.',
+    'The local Transformers runtime is unavailable. ' +
+      'Reinstall pmem with npm install -g pmem-ai@latest, then retry.',
     { cause },
   ) as Error & { code?: string };
   error.code = 'PMEM_TRANSFORMERS_MISSING';
@@ -50,7 +52,7 @@ async function loadTransformers(
     if (load === nativeDynamicImport) {
       specifier = pathToFileURL(packageRequire.resolve(TRANSFORMERS_PACKAGE)).href;
     }
-    const loaded = await load(specifier) as any;
+    const loaded = (await load(specifier)) as any;
     return loaded?.default ?? loaded;
   } catch (error) {
     throw transformersRuntimeError(error);
@@ -108,7 +110,10 @@ export async function createOfflineTransformersProvider(
     dimension: spec.dimension,
     async embedPassages(texts) {
       const result: any = await withTransformersEnvironment(transformers, spec, false, () =>
-        extractor(texts.map(text => `passage: ${text}`), { pooling: 'mean', normalize: true }),
+        extractor(
+          texts.map((text) => `passage: ${text}`),
+          { pooling: 'mean', normalize: true },
+        ),
       );
       return result.tolist();
     },

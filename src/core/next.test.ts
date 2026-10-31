@@ -27,7 +27,7 @@ test('writeManagedNext partial write preserves prior ## Why and ## Needed Contex
   writeManagedNext(pmemPath, {
     nextStep: 'Step A',
     why: 'Manually written rationale.',
-    context: ['[[card-alpha]]', '[[card-beta]]']
+    context: ['[[card-alpha]]', '[[card-beta]]'],
   });
 
   const seeded = readNext(pmemPath);
@@ -37,7 +37,7 @@ test('writeManagedNext partial write preserves prior ## Why and ## Needed Contex
 
   // Partial write: only nextStep changes; why/context should be preserved.
   const merged = writeManagedNext(pmemPath, {
-    nextStep: 'Step B'
+    nextStep: 'Step B',
   });
 
   assert.equal(merged.nextStep, 'Step B');
@@ -60,14 +60,14 @@ test('writeManagedNext with replaceManaged:true wipes prior ## Why and ## Needed
   writeManagedNext(pmemPath, {
     nextStep: 'Step A',
     why: 'Old why.',
-    context: ['old-1', 'old-2']
+    context: ['old-1', 'old-2'],
   });
 
   const merged = writeManagedNext(pmemPath, {
     nextStep: 'Step B',
     why: 'Fresh why.',
     context: ['fresh-1'],
-    replaceManaged: true
+    replaceManaged: true,
   });
 
   assert.equal(merged.nextStep, 'Step B');
@@ -89,7 +89,7 @@ test('writeManagedNext on a fresh (non-existent) next.md starts from defaults', 
 
   // No prior next.md exists
   const merged = writeManagedNext(pmemPath, {
-    nextStep: 'Brand new step'
+    nextStep: 'Brand new step',
   });
 
   assert.equal(merged.nextStep, 'Brand new step');
@@ -114,7 +114,7 @@ test('writeManagedNext preserves [[card-id]] wikilinks across partial writes', (
   writeManagedNext(pmemPath, {
     nextStep: 'Investigate [[card-x]]',
     why: 'Why we care about [[card-x]].',
-    context: ['[[card-x]]', '[[card-y]]', '[[card-z]]']
+    context: ['[[card-x]]', '[[card-y]]', '[[card-z]]'],
   });
 
   // Partial: only nextStep
@@ -128,7 +128,7 @@ test('writeManagedNext preserves [[card-id]] wikilinks across partial writes', (
   // Partial: only context updates, why preserved
   writeManagedNext(pmemPath, {
     nextStep: 'Finalize [[card-x]]',
-    context: ['[[card-x]]', '[[card-w]]']
+    context: ['[[card-x]]', '[[card-w]]'],
   });
 
   const final = readNext(pmemPath);

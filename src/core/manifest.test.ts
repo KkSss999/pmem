@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { getDefaultManifest, getDefaultManifestV03, resolveConfig, renderIdPattern, V064_DEFAULT_TYPES, V064_DEFAULT_MERGE_TYPES, V064_DEFAULT_CREATABLE_TYPES } from './manifest';
+import {
+  getDefaultManifest,
+  getDefaultManifestV03,
+  resolveConfig,
+  renderIdPattern,
+  V064_DEFAULT_TYPES,
+  V064_DEFAULT_MERGE_TYPES,
+  V064_DEFAULT_CREATABLE_TYPES,
+} from './manifest';
 import { DOMAIN_PRESETS } from './domainPresets';
 
 describe('getDefaultManifest', () => {
@@ -165,8 +173,15 @@ describe('resolveConfig', () => {
     const research = getDefaultManifest('research');
     research.project.domain = 'research';
 
-    assert.deepStrictEqual(DOMAIN_PRESETS.novel.warn_when_related_count_gt_by_type, { character: 30, chapter: 25, world: 25 });
-    assert.deepStrictEqual(DOMAIN_PRESETS.research.warn_when_related_count_gt_by_type, { source: 20, claim: 20 });
+    assert.deepStrictEqual(DOMAIN_PRESETS.novel.warn_when_related_count_gt_by_type, {
+      character: 30,
+      chapter: 25,
+      world: 25,
+    });
+    assert.deepStrictEqual(DOMAIN_PRESETS.research.warn_when_related_count_gt_by_type, {
+      source: 20,
+      claim: 20,
+    });
   });
   it('falls back to v0.6.4 defaults when manifest has no schema', () => {
     const manifest = getDefaultManifest('test-project');
@@ -194,7 +209,10 @@ describe('resolveConfig', () => {
 
   it('reads merge_target_types from distill, not schema', () => {
     const manifest = getDefaultManifest('test-project');
-    (manifest as any).distill = { ...manifest.distill, merge_target_types: ['module', 'character'] };
+    (manifest as any).distill = {
+      ...manifest.distill,
+      merge_target_types: ['module', 'character'],
+    };
     const cfg = resolveConfig(manifest);
     assert.deepStrictEqual(cfg.merge_target_types, ['module', 'character']);
   });
@@ -238,7 +256,14 @@ describe('resolveConfig', () => {
     assert.ok(cfg.card_types.includes('character'));
     assert.strictEqual(cfg.type_dirs.character, 'characters');
     assert.deepStrictEqual(cfg.foundational_types, ['character', 'chapter']);
-    assert.deepStrictEqual(cfg.creatable_types, ['character', 'chapter', 'world', 'arc', 'decision', 'trace']);
+    assert.deepStrictEqual(cfg.creatable_types, [
+      'character',
+      'chapter',
+      'world',
+      'arc',
+      'decision',
+      'trace',
+    ]);
   });
 
   it('schema fields override legacy project.domain preset semantics', () => {
@@ -264,7 +289,12 @@ describe('creatable_types', () => {
     const cfg = resolveConfig(manifest);
     assert.deepStrictEqual(cfg.creatable_types, V064_DEFAULT_CREATABLE_TYPES);
     assert.deepStrictEqual(V064_DEFAULT_CREATABLE_TYPES, [
-      'decision', 'module', 'task', 'feature', 'risk', 'trace',
+      'decision',
+      'module',
+      'task',
+      'feature',
+      'risk',
+      'trace',
     ]);
   });
 

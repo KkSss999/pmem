@@ -9,7 +9,11 @@ import { maintainCommand, type MaintainSemanticRunner } from './maintain';
 
 const tempDirs: string[] = [];
 
-function project(options: { semantic?: boolean } = {}): { cwd: string; cardPath: string; dbPath: string } {
+function project(options: { semantic?: boolean } = {}): {
+  cwd: string;
+  cardPath: string;
+  dbPath: string;
+} {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-maintain-'));
   tempDirs.push(cwd);
   const pmemPath = path.join(cwd, '.pmem');
@@ -18,7 +22,9 @@ function project(options: { semantic?: boolean } = {}): { cwd: string; cardPath:
   if (options.semantic) manifest.embedding.enabled = true;
   saveManifest(pmemPath, manifest);
   const cardPath = path.join(pmemPath, 'modules', 'core.md');
-  fs.writeFileSync(cardPath, `---
+  fs.writeFileSync(
+    cardPath,
+    `---
 id: module.core
 type: module
 title: Core
@@ -26,7 +32,9 @@ summary: Core module
 ---
 
 Body
-`, 'utf8');
+`,
+    'utf8',
+  );
   const dbPath = path.join(pmemPath, 'pmem.db');
   fs.writeFileSync(dbPath, 'db sentinel', 'utf8');
   return { cwd, cardPath, dbPath };
@@ -41,7 +49,9 @@ function migrationChoices() {
 }
 
 function fakeRebuild(calls: string[]) {
-  return () => { calls.push('rebuild'); };
+  return () => {
+    calls.push('rebuild');
+  };
 }
 
 afterEach(() => {
@@ -52,8 +62,11 @@ describe('maintain command orchestration', () => {
   it('dry-run returns card/field changes and does not touch Markdown, manifest, or DB', async () => {
     const { cwd, cardPath, dbPath } = project();
     const manifestPath = path.join(cwd, '.pmem', 'manifest.yml');
-    const before = [cardPath, manifestPath, dbPath].map(file => fs.readFileSync(file));
-    const result = await maintainCommand({ cwd, dryRun: true, format: 'json', ...migrationChoices() }, { log: () => {} });
+    const before = [cardPath, manifestPath, dbPath].map((file) => fs.readFileSync(file));
+    const result = await maintainCommand(
+      { cwd, dryRun: true, format: 'json', ...migrationChoices() },
+      { log: () => {} },
+    );
 
     assert.equal(result.status, 'dry-run');
     assert.equal(result.phase, 'complete');
@@ -63,14 +76,20 @@ describe('maintain command orchestration', () => {
       trust_label: 'user_confirmed',
       sensitivity: 'internal',
     });
-    assert.deepEqual([cardPath, manifestPath, dbPath].map(file => fs.readFileSync(file)), before);
+    assert.deepEqual(
+      [cardPath, manifestPath, dbPath].map((file) => fs.readFileSync(file)),
+      before,
+    );
   });
 
   it('reports a missing project as a structured failure', async () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-maintain-empty-'));
     tempDirs.push(cwd);
     const output: string[] = [];
-    const result = await maintainCommand({ cwd, dryRun: true, format: 'json' }, { log: line => output.push(line) });
+    const result = await maintainCommand(
+      { cwd, dryRun: true, format: 'json' },
+      { log: (line) => output.push(line) },
+    );
 
     assert.equal(result.status, 'failed');
     assert.equal(result.phase, 'preflight');
@@ -82,7 +101,10 @@ describe('maintain command orchestration', () => {
     const { cwd, cardPath } = project();
     const before = fs.readFileSync(cardPath, 'utf8');
     const output: string[] = [];
-    const result = await maintainCommand({ cwd, yes: true, format: 'json' }, { log: line => output.push(line) });
+    const result = await maintainCommand(
+      { cwd, yes: true, format: 'json' },
+      { log: (line) => output.push(line) },
+    );
 
     assert.equal(result.status, 'failed');
     assert.equal(result.phase, 'preflight');
@@ -108,10 +130,13 @@ describe('maintain command orchestration', () => {
     const { cwd, cardPath } = project();
     const before = fs.readFileSync(cardPath, 'utf8');
     const calls: string[] = [];
-    const result = await maintainCommand({ cwd, repair: true, ...migrationChoices() }, {
-      rebuildCommand: fakeRebuild(calls),
-      log: () => {},
-    });
+    const result = await maintainCommand(
+      { cwd, repair: true, ...migrationChoices() },
+      {
+        rebuildCommand: fakeRebuild(calls),
+        log: () => {},
+      },
+    );
 
     assert.equal(result.status, 'cancelled');
     assert.deepEqual(calls, []);
@@ -122,10 +147,13 @@ describe('maintain command orchestration', () => {
     const { cwd, cardPath } = project();
     const before = fs.readFileSync(cardPath, 'utf8');
     const calls: string[] = [];
-    const result = await maintainCommand({ cwd, repair: true, yes: true }, {
-      rebuildCommand: fakeRebuild(calls),
-      log: () => {},
-    });
+    const result = await maintainCommand(
+      { cwd, repair: true, yes: true },
+      {
+        rebuildCommand: fakeRebuild(calls),
+        log: () => {},
+      },
+    );
 
     assert.equal(result.status, 'failed');
     assert.equal(result.phase, 'migration');
@@ -138,14 +166,20 @@ describe('maintain command orchestration', () => {
     const { cwd, cardPath } = project();
     const calls: string[] = [];
     const semantic: MaintainSemanticRunner = {
-      rebuild: async () => { calls.push('semantic'); return {}; },
+      rebuild: async () => {
+        calls.push('semantic');
+        return {};
+      },
       status: async () => ({}),
     };
-    const result = await maintainCommand({ cwd, repair: true, yes: true, ...migrationChoices() }, {
-      rebuildCommand: fakeRebuild(calls),
-      semantic,
-      log: () => {},
-    });
+    const result = await maintainCommand(
+      { cwd, repair: true, yes: true, ...migrationChoices() },
+      {
+        rebuildCommand: fakeRebuild(calls),
+        semantic,
+        log: () => {},
+      },
+    );
 
     assert.equal(result.status, 'completed');
     assert.equal(result.rebuild.status, 'completed');
@@ -158,20 +192,25 @@ describe('maintain command orchestration', () => {
   it('marks semantic exceptions failed and explicitly reports the cross-stage rollback limit', async () => {
     const { cwd } = project({ semantic: true });
     const calls: string[] = [];
-    const result = await maintainCommand({ cwd, repair: true, yes: true, semantic: true, ...migrationChoices() }, {
-      rebuildCommand: fakeRebuild(calls),
-      semantic: {
-        rebuild: async () => { throw new Error('provider interrupted'); },
-        status: async () => ({}),
+    const result = await maintainCommand(
+      { cwd, repair: true, yes: true, semantic: true, ...migrationChoices() },
+      {
+        rebuildCommand: fakeRebuild(calls),
+        semantic: {
+          rebuild: async () => {
+            throw new Error('provider interrupted');
+          },
+          status: async () => ({}),
+        },
+        log: () => {},
       },
-      log: () => {},
-    });
+    );
 
     assert.equal(result.status, 'failed');
     assert.equal(result.phase, 'semantic');
     assert.equal(result.semantic.status, 'failed');
     assert.match(result.errors[0], /provider interrupted/);
-    assert.ok(result.recovery.some(line => /Cross-stage rollback is not available/.test(line)));
+    assert.ok(result.recovery.some((line) => /Cross-stage rollback is not available/.test(line)));
     assert.deepEqual(calls, ['rebuild']);
   });
 
@@ -179,7 +218,13 @@ describe('maintain command orchestration', () => {
     const cases: MaintainSemanticRunner[] = [
       {
         rebuild: async () => ({ indexedCards: 2, indexedChunks: 4 }),
-        status: async () => ({ buildStatus: 'partial', cardsFailed: 1, failedCardIds: ['module.bad'], indexedCards: 2, indexedChunks: 4 }),
+        status: async () => ({
+          buildStatus: 'partial',
+          cardsFailed: 1,
+          failedCardIds: ['module.bad'],
+          indexedCards: 2,
+          indexedChunks: 4,
+        }),
       },
       {
         rebuild: async () => ({ indexedCards: 0, indexedChunks: 0 }),
@@ -188,11 +233,14 @@ describe('maintain command orchestration', () => {
     ];
     for (const semantic of cases) {
       const { cwd } = project({ semantic: true });
-      const result = await maintainCommand({ cwd, repair: true, yes: true, semantic: true, ...migrationChoices() }, {
-        rebuildCommand: () => {},
-        semantic,
-        log: () => {},
-      });
+      const result = await maintainCommand(
+        { cwd, repair: true, yes: true, semantic: true, ...migrationChoices() },
+        {
+          rebuildCommand: () => {},
+          semantic,
+          log: () => {},
+        },
+      );
       assert.equal(result.status, 'failed');
       assert.equal(result.phase, 'semantic');
       assert.equal(result.semantic.status, 'failed');

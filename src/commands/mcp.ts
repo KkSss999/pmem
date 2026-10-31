@@ -12,7 +12,10 @@ import { findProjectPaths } from '../core/projectRoot';
  * MCP protocol transport channel. Any non-JSON output will cause protocol
  * errors. Use stderr for diagnostics if absolutely necessary.
  */
-export async function mcpCommand(writeMode: 'readonly' | 'append-only' = 'readonly', runtimeOptions?: CommandRuntimeOptions): Promise<void> {
+export async function mcpCommand(
+  writeMode: 'readonly' | 'append-only' = 'readonly',
+  runtimeOptions?: CommandRuntimeOptions,
+): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');

@@ -21,14 +21,8 @@ import {
   SEMANTIC_EVIDENCE_METADATA_KEY,
 } from '../core/semantic';
 import { defaultSemanticModelSpec } from '../core/semantic/defaults';
-export {
-  askQuery,
-  askQueryWithSemantic,
-} from '../core/query/ask';
-export type {
-  AskOptions,
-  AskResultV03,
-} from '../core/query/ask';
+export { askQuery, askQueryWithSemantic } from '../core/query/ask';
+export type { AskOptions, AskResultV03 } from '../core/query/ask';
 export type { RecallQueryResult } from '../core/query/recall';
 export type { RelatedResult } from '../core/query/related';
 export type { StatusResult } from '../core/query/status';
@@ -67,13 +61,17 @@ import type { SqliteSemanticSearchAdapter } from '../storage/sqlite';
 import type { MemorySearchResult } from '../runtime/model';
 
 export async function openV12Pmem(
-  options: Omit<PmemOpenOptions, 'backend' | 'legacy'> & { backend?: import('../runtime/model').MemoryBackend },
+  options: Omit<PmemOpenOptions, 'backend' | 'legacy'> & {
+    backend?: import('../runtime/model').MemoryBackend;
+  },
 ): Promise<Pmem> {
   const pmemPath = require('node:path').join(options.root, '.pmem');
   ensureDefaultSemanticManifest(pmemPath);
   const backend = options.backend ?? new SqliteMemoryBackend(pmemPath);
   if (!(backend instanceof SqliteMemoryBackend)) {
-    throw new Error('legacyV12 compatibility requires an explicit legacy adapter for a non-SQLite backend. Pmem.open will not create a hidden SQLite backend.');
+    throw new Error(
+      'legacyV12 compatibility requires an explicit legacy adapter for a non-SQLite backend. Pmem.open will not create a hidden SQLite backend.',
+    );
   }
   await backend.open({ root: options.root, schema: options.schema ?? EMPTY_SCHEMA_REGISTRY });
   const database = backend.database;
@@ -82,18 +80,24 @@ export async function openV12Pmem(
   if (embedding?.enabled && embedding.auto_enabled !== false) {
     try {
       const cache = await inspectModelCache({
-        model: embedding.model, revision: embedding.revision, dtype: embedding.dtype,
-        dimension: embedding.dimension, source: embedding.source, cachePath: embedding.cache_path,
+        model: embedding.model,
+        revision: embedding.revision,
+        dtype: embedding.dtype,
+        dimension: embedding.dimension,
+        source: embedding.source,
+        cachePath: embedding.cache_path,
       });
       if (cache.cached) {
-        backend.setSemanticAdapter(createV12SemanticSearchAdapter(database, {
-          model: embedding.model,
-          revision: embedding.revision,
-          dtype: embedding.dtype,
-          dimension: embedding.dimension,
-          source: embedding.source,
-          cachePath: embedding.cache_path,
-        }));
+        backend.setSemanticAdapter(
+          createV12SemanticSearchAdapter(database, {
+            model: embedding.model,
+            revision: embedding.revision,
+            dtype: embedding.dtype,
+            dimension: embedding.dimension,
+            source: embedding.source,
+            cachePath: embedding.cache_path,
+          }),
+        );
       }
     } catch {
       // A malformed or stale semantic manifest must not block deterministic
@@ -134,9 +138,10 @@ export function createV12SemanticSearchAdapter(
         try {
           const detailed = await searchSemanticCardsDetailed(db, text, provider, limit);
           const status = getSemanticStatus(db);
-          const hits = detailed.matches.map(match => {
-            const parent = db.prepare('SELECT type, title FROM cards WHERE id = ? LIMIT 1').get(match.cardId) as
-              { type?: string | null; title?: string | null } | undefined;
+          const hits = detailed.matches.map((match) => {
+            const parent = db
+              .prepare('SELECT type, title FROM cards WHERE id = ? LIMIT 1')
+              .get(match.cardId) as { type?: string | null; title?: string | null } | undefined;
             const evidence = createSemanticEvidence({
               provenance: {
                 model: match.modelId,
@@ -187,46 +192,92 @@ export function createV12RuntimeAdapter(
   const events = new EventStore(db, workingTtl);
   return {
     async ask(query, opts) {
-      const deterministic = askQuery(pmemPath, query, { ...opts, now: opts?.now ?? Date.now(), db });
+      const deterministic = askQuery(pmemPath, query, {
+        ...opts,
+        now: opts?.now ?? Date.now(),
+        db,
+      });
       const manifest = loadManifest(pmemPath) as any;
       const embedding = manifest?.embedding;
       if (!embedding?.enabled) return deterministic;
       const cache = await inspectModelCache({
-        model: embedding.model, revision: embedding.revision, dtype: embedding.dtype,
-        dimension: embedding.dimension, source: embedding.source, cachePath: embedding.cache_path,
+        model: embedding.model,
+        revision: embedding.revision,
+        dtype: embedding.dtype,
+        dimension: embedding.dimension,
+        source: embedding.source,
+        cachePath: embedding.cache_path,
       });
       if (!cache.cached) {
-        return { ...deterministic, warnings: [`Semantic retrieval degraded to deterministic recall: Semantic model cache is ${cache.integrity}. Re-run \`pmem semantic setup\` while online.`] };
+        return {
+          ...deterministic,
+          warnings: [
+            `Semantic retrieval degraded to deterministic recall: Semantic model cache is ${cache.integrity}. Re-run \`pmem semantic setup\` while online.`,
+          ],
+        };
       }
       try {
         const provider = await createOfflineTransformersProvider({
-          model: embedding.model, revision: embedding.revision, dtype: embedding.dtype,
-          dimension: embedding.dimension, source: embedding.source, cachePath: embedding.cache_path,
+          model: embedding.model,
+          revision: embedding.revision,
+          dtype: embedding.dtype,
+          dimension: embedding.dimension,
+          source: embedding.source,
+          cachePath: embedding.cache_path,
         });
         try {
-          return await askQueryWithSemantic(pmemPath, query, provider, { ...opts, now: opts?.now ?? Date.now(), db });
+          return await askQueryWithSemantic(pmemPath, query, provider, {
+            ...opts,
+            now: opts?.now ?? Date.now(),
+            db,
+          });
         } finally {
           await provider.dispose();
         }
       } catch (error: any) {
-        return { ...deterministic, warnings: [`Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`] };
+        return {
+          ...deterministic,
+          warnings: [
+            `Semantic retrieval degraded to deterministic recall: ${error?.message ?? String(error)}`,
+          ],
+        };
       }
     },
-    async recall(opts) { return recallQuery(pmemPath, { ...opts, db, cwd: root }); },
+    async recall(opts) {
+      return recallQuery(pmemPath, { ...opts, db, cwd: root });
+    },
     async context(task, budget) {
       const result = contextQuery(pmemPath, task, budget, db, root);
       const ask = await this.ask(task, { limit: 12, explain: true });
       if (ask.warnings) result.warnings.push(...ask.warnings);
       return result;
     },
-    async related(id, opts) { return relatedQuery(pmemPath, id, { ...opts, db }); },
-    async status(opts) { return statusQuery(pmemPath, { ...opts, db, cwd: root }); },
-    async capture(summary, options) {
-      return { ...captureCore(pmemPath, { ...options, summary: summary || options.summary, cwd: root, deferRuntimeEvent: true }), branch: getCurrentBranch(root) ?? undefined };
+    async related(id, opts) {
+      return relatedQuery(pmemPath, id, { ...opts, db });
     },
-    findEvent(id) { return events.find(id); },
-    expireEvents() { events.expire(); },
-    mergeBranchMemory(sourceBranch, targetBranch) { return events.mergeBranch(sourceBranch, targetBranch); },
+    async status(opts) {
+      return statusQuery(pmemPath, { ...opts, db, cwd: root });
+    },
+    async capture(summary, options) {
+      return {
+        ...captureCore(pmemPath, {
+          ...options,
+          summary: summary || options.summary,
+          cwd: root,
+          deferRuntimeEvent: true,
+        }),
+        branch: getCurrentBranch(root) ?? undefined,
+      };
+    },
+    findEvent(id) {
+      return events.find(id);
+    },
+    expireEvents() {
+      events.expire();
+    },
+    mergeBranchMemory(sourceBranch, targetBranch) {
+      return events.mergeBranch(sourceBranch, targetBranch);
+    },
     async refreshSemanticIndex(mode) {
       const manifest = loadManifest(pmemPath) as any;
       const embedding = manifest?.embedding;
@@ -238,13 +289,19 @@ export function createV12RuntimeAdapter(
         embedding.source ?? 'modelscope',
       );
       const cache = await inspectModelCache(spec);
-      if (!cache.cached) return { status: 'unavailable' as const, reason: `model cache ${cache.integrity}` };
+      if (!cache.cached)
+        return { status: 'unavailable' as const, reason: `model cache ${cache.integrity}` };
       try {
         const provider = await createOfflineTransformersProvider(spec);
         try {
           const core = await import('../core/semantic');
           const result = await core.rebuildSemanticProject(pmemPath, provider, { mode });
-          return { status: result.buildStatus === 'complete' ? 'ready' as const : 'degraded' as const, indexedCards: result.cardsIndexed, indexedChunks: result.chunksTotal, ...(result.buildStatus === 'partial' ? { reason: 'semantic index is partial' } : {}) };
+          return {
+            status: result.buildStatus === 'complete' ? ('ready' as const) : ('degraded' as const),
+            indexedCards: result.cardsIndexed,
+            indexedChunks: result.chunksTotal,
+            ...(result.buildStatus === 'partial' ? { reason: 'semantic index is partial' } : {}),
+          };
         } finally {
           await provider.dispose();
         }
@@ -262,7 +319,12 @@ export function createV12RuntimeAdapter(
  */
 function ensureDefaultSemanticManifest(pmemPath: string): void {
   const manifest = loadManifest(pmemPath) as any;
-  if (!manifest?.embedding || manifest.embedding.auto_enabled === false || manifest.embedding.enabled) return;
+  if (
+    !manifest?.embedding ||
+    manifest.embedding.auto_enabled === false ||
+    manifest.embedding.enabled
+  )
+    return;
   const spec = defaultSemanticModelSpec();
   manifest.embedding = {
     enabled: true,
@@ -286,7 +348,8 @@ export function loadV12RuntimeConfig(
   overrides?: import('../runtime/types').PartialRuntimeConfig,
 ): import('../runtime/types').RuntimeConfig {
   const manifest = loadManifest(require('node:path').join(root, '.pmem')) as any;
-  const manifestPreset = typeof manifest?.project?.domain === 'string' ? manifest.project.domain : undefined;
+  const manifestPreset =
+    typeof manifest?.project?.domain === 'string' ? manifest.project.domain : undefined;
   const selected = preset ?? manifestPreset ?? 'software';
   const memory = manifest?.memory ?? {};
   return loadRuntimeConfig(selected, {

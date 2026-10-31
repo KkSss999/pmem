@@ -39,7 +39,10 @@ function queryEdges(testDir: string, sql: string): Array<Record<string, string>>
   // Write a small driver script to a temp .js file so we don't have to
   // wrestle with shell escaping when passing multi-line JS via -e.
   const dbPath = path.join(testDir, '.pmem', 'pmem.db');
-  const scriptPath = path.join(os.tmpdir(), `pmem-issue6-query-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `pmem-issue6-query-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`,
+  );
   const betterSqlitePath = path.resolve(__dirname, '../../node_modules/better-sqlite3');
   const script = `const Database = require(${JSON.stringify(betterSqlitePath)});
 const db = new Database(${JSON.stringify(dbPath)}, { readonly: true });
@@ -51,13 +54,18 @@ process.stdout.write(JSON.stringify(rows));`;
     const out = execSync(`node ${JSON.stringify(scriptPath)}`, { encoding: 'utf8' });
     return JSON.parse(out);
   } finally {
-    try { fs.unlinkSync(scriptPath); } catch {}
+    try {
+      fs.unlinkSync(scriptPath);
+    } catch {}
   }
 }
 
 function runSqlScript(testDir: string, body: string): void {
   const dbPath = path.join(testDir, '.pmem', 'pmem.db');
-  const scriptPath = path.join(os.tmpdir(), `pmem-issue6-inject-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `pmem-issue6-inject-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`,
+  );
   const betterSqlitePath = path.resolve(__dirname, '../../node_modules/better-sqlite3');
   const script = `const Database = require(${JSON.stringify(betterSqlitePath)});
 const db = new Database(${JSON.stringify(dbPath)});
@@ -67,7 +75,9 @@ db.close();`;
   try {
     execSync(`node ${JSON.stringify(scriptPath)}`, { encoding: 'utf8' });
   } finally {
-    try { fs.unlinkSync(scriptPath); } catch {}
+    try {
+      fs.unlinkSync(scriptPath);
+    } catch {}
   }
 }
 
@@ -96,7 +106,10 @@ source_of_truth:
   type: markdown_cards
   path: .pmem
   card_globs:
-${cardGlobs.split('\n').map(g => `    - ${g}`).join('\n')}
+${cardGlobs
+  .split('\n')
+  .map((g) => `    - ${g}`)
+  .join('\n')}
 runtime:
   mode: sqlite
   db_path: .pmem/pmem.db
@@ -209,28 +222,27 @@ describe('extractWikilinks', () => {
 
 They discuss the events of [[chapter.vol1]].`;
     const ids = extractWikilinks(body);
-    assert.deepStrictEqual(ids.sort(), [
-      'chapter.vol1',
-      'character.lin-zhixu',
-      'character.zero',
-      'world.shiyu',
-    ].sort());
+    assert.deepStrictEqual(
+      ids.sort(),
+      ['chapter.vol1', 'character.lin-zhixu', 'character.zero', 'world.shiyu'].sort(),
+    );
   });
 
   it('deduplicates repeated references', () => {
-    const body = '[[character.zero]] appears. Then [[character.zero]] speaks. [[character.zero]] leaves.';
+    const body =
+      '[[character.zero]] appears. Then [[character.zero]] speaks. [[character.zero]] leaves.';
     const ids = extractWikilinks(body);
     assert.deepStrictEqual(ids, ['character.zero']);
   });
 
   it('matches IDs with dots and hyphens', () => {
-    const body = 'See [[module.auth_service]], [[decision.jwt_tokens]], and [[feature.user-login]].';
+    const body =
+      'See [[module.auth_service]], [[decision.jwt_tokens]], and [[feature.user-login]].';
     const ids = extractWikilinks(body);
-    assert.deepStrictEqual(ids.sort(), [
-      'decision.jwt_tokens',
-      'feature.user-login',
-      'module.auth_service',
-    ].sort());
+    assert.deepStrictEqual(
+      ids.sort(),
+      ['decision.jwt_tokens', 'feature.user-login', 'module.auth_service'].sort(),
+    );
   });
 
   it('matches IDs with underscores', () => {
@@ -240,7 +252,8 @@ They discuss the events of [[chapter.vol1]].`;
   });
 
   it('only matches lowercase IDs (pmem id_pattern is lowercase)', () => {
-    const body = 'Valid: [[character.zero]] Invalid: [[Character.Zero]] Also invalid: [[CHARACTER.ZERO]].';
+    const body =
+      'Valid: [[character.zero]] Invalid: [[Character.Zero]] Also invalid: [[CHARACTER.ZERO]].';
     const ids = extractWikilinks(body);
     // Only the lowercase version matches per pmem id_pattern rules
     assert.deepStrictEqual(ids, ['character.zero']);
@@ -260,7 +273,8 @@ They discuss the events of [[chapter.vol1]].`;
   });
 
   it('returns empty array for body with no wikilinks', () => {
-    const body = '## Just a heading\n\nSome paragraph text with **bold** and *italic*.\n\n- list item';
+    const body =
+      '## Just a heading\n\nSome paragraph text with **bold** and *italic*.\n\n- list item';
     const ids = extractWikilinks(body);
     assert.deepStrictEqual(ids, []);
   });
@@ -279,13 +293,16 @@ They discuss the events of [[chapter.vol1]].`;
 
 > "Quote from [[character.zero]]" — referenced in [[decision.plot_twist]]`;
     const ids = extractWikilinks(body);
-    assert.deepStrictEqual(ids.sort(), [
-      'arc.main_plot',
-      'character.lin-zhixu',
-      'character.zero',
-      'decision.plot_twist',
-      'world.shiyu',
-    ].sort());
+    assert.deepStrictEqual(
+      ids.sort(),
+      [
+        'arc.main_plot',
+        'character.lin-zhixu',
+        'character.zero',
+        'decision.plot_twist',
+        'world.shiyu',
+      ].sort(),
+    );
   });
 
   it('handles wikilinks with numbers in the type part', () => {
@@ -304,22 +321,36 @@ describe('issue #19: rebuild reports invalid cards without aborting valid siblin
   });
 
   after(() => {
-    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    } catch {}
   });
 
   it('warns once per path, indexes valid cards, and invalidates a card that becomes invalid', () => {
-    writeFile(path.join(testDir, '.pmem', 'modules', 'module.valid.md'), card('module.valid', 'module'));
-    writeFile(path.join(testDir, '.pmem', 'modules', 'module.missing-type.md'), `---
+    writeFile(
+      path.join(testDir, '.pmem', 'modules', 'module.valid.md'),
+      card('module.valid', 'module'),
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'modules', 'module.missing-type.md'),
+      `---
 id: module.missing-type
 ---
 # Missing type
-`);
-    writeFile(path.join(testDir, '.pmem', 'modules', 'module.missing-id.md'), `---
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'modules', 'module.missing-id.md'),
+      `---
 type: module
 ---
 # Missing id
-`);
-    writeFile(path.join(testDir, '.pmem', 'modules', 'module.bad-frontmatter.md'), '# No frontmatter\n');
+`,
+    );
+    writeFile(
+      path.join(testDir, '.pmem', 'modules', 'module.bad-frontmatter.md'),
+      '# No frontmatter\n',
+    );
 
     const first = pmem('rebuild --full', testDir);
     assert.strictEqual(first.code, 0, first.stdout);
@@ -328,32 +359,48 @@ type: module
       ['.pmem/modules/module.missing-id.md', 'missing required frontmatter field "id"'],
       ['.pmem/modules/module.bad-frontmatter.md', 'missing or malformed YAML frontmatter'],
     ]) {
-      const matchingLines = first.stdout.split('\n').filter(line => line.includes(expected[0]!) && line.includes(expected[1]!));
-      assert.strictEqual(matchingLines.length, 1, `expected one diagnostic for ${expected[0]}: ${first.stdout}`);
+      const matchingLines = first.stdout
+        .split('\n')
+        .filter((line) => line.includes(expected[0]!) && line.includes(expected[1]!));
+      assert.strictEqual(
+        matchingLines.length,
+        1,
+        `expected one diagnostic for ${expected[0]}: ${first.stdout}`,
+      );
     }
-    assert.deepStrictEqual(queryEdges(testDir, "SELECT id FROM cards WHERE is_deleted = 0 ORDER BY id"), [
-      { id: 'module.valid' },
-    ]);
+    assert.deepStrictEqual(
+      queryEdges(testDir, 'SELECT id FROM cards WHERE is_deleted = 0 ORDER BY id'),
+      [{ id: 'module.valid' }],
+    );
 
     const changingPath = path.join(testDir, '.pmem', 'modules', 'module.changing.md');
     writeFile(changingPath, card('module.changing', 'module'));
     assert.strictEqual(pmem('rebuild', testDir).code, 0);
-    assert.deepStrictEqual(queryEdges(testDir, "SELECT id FROM cards WHERE id = 'module.changing' AND is_deleted = 0"), [
-      { id: 'module.changing' },
-    ]);
+    assert.deepStrictEqual(
+      queryEdges(testDir, "SELECT id FROM cards WHERE id = 'module.changing' AND is_deleted = 0"),
+      [{ id: 'module.changing' }],
+    );
 
-    writeFile(changingPath, `---
+    writeFile(
+      changingPath,
+      `---
 type: module
 ---
 # Lost id
-`);
+`,
+    );
     const invalidated = pmem('rebuild', testDir);
     assert.strictEqual(invalidated.code, 0, invalidated.stdout);
-    assert.ok(invalidated.stdout.includes('Warning: skipped .pmem/modules/module.changing.md: missing required frontmatter field "id"'));
+    assert.ok(
+      invalidated.stdout.includes(
+        'Warning: skipped .pmem/modules/module.changing.md: missing required frontmatter field "id"',
+      ),
+    );
     assert.ok(invalidated.stdout.includes('Invalidated 1 stale indexed card'));
-    assert.deepStrictEqual(queryEdges(testDir, "SELECT id, is_deleted FROM cards WHERE id = 'module.changing'"), [
-      { id: 'module.changing', is_deleted: 1 } as any,
-    ]);
+    assert.deepStrictEqual(
+      queryEdges(testDir, "SELECT id, is_deleted FROM cards WHERE id = 'module.changing'"),
+      [{ id: 'module.changing', is_deleted: 1 } as any],
+    );
   });
 });
 
@@ -373,7 +420,9 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
   });
 
   after(() => {
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   it('Bug 1+2: deleting a target card and shrinking depends_on/related leaves only the current explicit edges', () => {
@@ -381,103 +430,149 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     // siblings B depends on.  After the second rebuild, A's file is
     // gone, B depends only on X, C has no relations — so the only
     // edge that should survive is B→X.
-    writeFile(path.join(testDir, '.pmem/modules/module.A.md'),
-      card('module.A', 'module'));
-    writeFile(path.join(testDir, '.pmem/modules/module.B.md'),
-      card('module.B', 'module', 'depends_on:\n  - module.A\n  - module.X\n  - module.Y\n'));
-    writeFile(path.join(testDir, '.pmem/modules/module.C.md'),
-      card('module.C', 'module', 'related:\n  - module.A\n'));
-    writeFile(path.join(testDir, '.pmem/modules/module.X.md'),
-      card('module.X', 'module'));
-    writeFile(path.join(testDir, '.pmem/modules/module.Y.md'),
-      card('module.Y', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.A.md'), card('module.A', 'module'));
+    writeFile(
+      path.join(testDir, '.pmem/modules/module.B.md'),
+      card('module.B', 'module', 'depends_on:\n  - module.A\n  - module.X\n  - module.Y\n'),
+    );
+    writeFile(
+      path.join(testDir, '.pmem/modules/module.C.md'),
+      card('module.C', 'module', 'related:\n  - module.A\n'),
+    );
+    writeFile(path.join(testDir, '.pmem/modules/module.X.md'), card('module.X', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.Y.md'), card('module.Y', 'module'));
 
     // First rebuild: seed the DB with the original edges.
     const r1 = pmem('rebuild --full', testDir);
     assert.strictEqual(r1.code, 0, `first rebuild failed: ${r1.stdout}`);
 
-    const seeded = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges ORDER BY from_id, to_id, type");
-    const seededKeys = seeded.map(e => `${e.from_id}->${e.to_id}/${e.type}`);
-    assert.ok(seededKeys.includes('module.B->module.A/depends_on'),
-      `expected B->A in seeded edges, got: ${seededKeys.join(', ')}`);
-    assert.ok(seededKeys.includes('module.B->module.X/depends_on'),
-      `expected B->X in seeded edges, got: ${seededKeys.join(', ')}`);
-    assert.ok(seededKeys.includes('module.C->module.A/related_to'),
-      `expected C->A in seeded edges, got: ${seededKeys.join(', ')}`);
+    const seeded = queryEdges(
+      testDir,
+      'SELECT from_id, to_id, type, source FROM edges ORDER BY from_id, to_id, type',
+    );
+    const seededKeys = seeded.map((e) => `${e.from_id}->${e.to_id}/${e.type}`);
+    assert.ok(
+      seededKeys.includes('module.B->module.A/depends_on'),
+      `expected B->A in seeded edges, got: ${seededKeys.join(', ')}`,
+    );
+    assert.ok(
+      seededKeys.includes('module.B->module.X/depends_on'),
+      `expected B->X in seeded edges, got: ${seededKeys.join(', ')}`,
+    );
+    assert.ok(
+      seededKeys.includes('module.C->module.A/related_to'),
+      `expected C->A in seeded edges, got: ${seededKeys.join(', ')}`,
+    );
 
     // Now simulate a card split/delete: remove A's file, shrink
     // B's depends_on, clear C's related.
     fs.unlinkSync(path.join(testDir, '.pmem/modules/module.A.md'));
-    fs.writeFileSync(path.join(testDir, '.pmem/modules/module.B.md'),
-      card('module.B', 'module', 'depends_on:\n  - module.X\n'), 'utf8');
-    fs.writeFileSync(path.join(testDir, '.pmem/modules/module.C.md'),
-      card('module.C', 'module'), 'utf8');
+    fs.writeFileSync(
+      path.join(testDir, '.pmem/modules/module.B.md'),
+      card('module.B', 'module', 'depends_on:\n  - module.X\n'),
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(testDir, '.pmem/modules/module.C.md'),
+      card('module.C', 'module'),
+      'utf8',
+    );
 
     // Second rebuild --full: this is where the bug manifests.
     const r2 = pmem('rebuild --full', testDir);
     assert.strictEqual(r2.code, 0, `second rebuild failed: ${r2.stdout}`);
 
-    const after = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges ORDER BY from_id, to_id, type");
-    const afterKeys = after.map(e => `${e.from_id}->${e.to_id}/${e.type}`);
+    const after = queryEdges(
+      testDir,
+      'SELECT from_id, to_id, type, source FROM edges ORDER BY from_id, to_id, type',
+    );
+    const afterKeys = after.map((e) => `${e.from_id}->${e.to_id}/${e.type}`);
 
     // B->X must survive (it's in current frontmatter).
-    assert.ok(afterKeys.includes('module.B->module.X/depends_on'),
-      `expected B->X to remain, got: ${afterKeys.join(', ')}`);
+    assert.ok(
+      afterKeys.includes('module.B->module.X/depends_on'),
+      `expected B->X to remain, got: ${afterKeys.join(', ')}`,
+    );
 
     // The three stale edges must be gone.
-    assert.ok(!afterKeys.includes('module.B->module.A/depends_on'),
-      `B->A should have been dropped (A deleted), got: ${afterKeys.join(', ')}`);
-    assert.ok(!afterKeys.includes('module.B->module.Y/depends_on'),
-      `B->Y should have been dropped (B's frontmatter shrunk to [X]), got: ${afterKeys.join(', ')}`);
-    assert.ok(!afterKeys.includes('module.C->module.A/related_to'),
-      `C->A should have been dropped (C's related cleared, A deleted), got: ${afterKeys.join(', ')}`);
+    assert.ok(
+      !afterKeys.includes('module.B->module.A/depends_on'),
+      `B->A should have been dropped (A deleted), got: ${afterKeys.join(', ')}`,
+    );
+    assert.ok(
+      !afterKeys.includes('module.B->module.Y/depends_on'),
+      `B->Y should have been dropped (B's frontmatter shrunk to [X]), got: ${afterKeys.join(', ')}`,
+    );
+    assert.ok(
+      !afterKeys.includes('module.C->module.A/related_to'),
+      `C->A should have been dropped (C's related cleared, A deleted), got: ${afterKeys.join(', ')}`,
+    );
 
     // No orphan edges — every from_id and to_id must be a real card row.
-    const orphans = queryEdges(testDir, `
+    const orphans = queryEdges(
+      testDir,
+      `
       SELECT e.from_id, e.to_id FROM edges e
       LEFT JOIN cards c1 ON e.from_id = c1.id
       LEFT JOIN cards c2 ON e.to_id   = c2.id
       WHERE c1.id IS NULL OR c2.id IS NULL
-    `);
-    assert.deepStrictEqual(orphans, [],
-      `expected no orphan edges, got: ${JSON.stringify(orphans)}`);
+    `,
+    );
+    assert.deepStrictEqual(
+      orphans,
+      [],
+      `expected no orphan edges, got: ${JSON.stringify(orphans)}`,
+    );
   });
 
   it('Bug 3: inferred next_step_of edges from old completed tasks do not survive a frontmatter re-target', () => {
     // Setup: a task that points to module.M1.  Rebuild auto-derives
     // an inferred next_step_of T→M1.  Re-target the task to module.M2
     // and rebuild --full — the stale T→M1 inferred edge must be gone.
-    writeFile(path.join(testDir, '.pmem/modules/module.M1.md'),
-      card('module.M1', 'module'));
-    writeFile(path.join(testDir, '.pmem/modules/module.M2.md'),
-      card('module.M2', 'module'));
-    writeFile(path.join(testDir, '.pmem/tasks/task.old.md'),
-      card('task.old', 'task', 'status: completed\nrelated:\n  - module.M1\n'));
+    writeFile(path.join(testDir, '.pmem/modules/module.M1.md'), card('module.M1', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.M2.md'), card('module.M2', 'module'));
+    writeFile(
+      path.join(testDir, '.pmem/tasks/task.old.md'),
+      card('task.old', 'task', 'status: completed\nrelated:\n  - module.M1\n'),
+    );
 
     const r1 = pmem('rebuild --full', testDir);
     assert.strictEqual(r1.code, 0, `first rebuild failed: ${r1.stdout}`);
 
-    const seeded = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.old' ORDER BY to_id, type");
-    assert.ok(seeded.some(e => e.to_id === 'module.M1' && e.type === 'next_step_of' && e.source === 'inferred'),
-      `expected inferred T->M1 next_step_of in seeded, got: ${JSON.stringify(seeded)}`);
+    const seeded = queryEdges(
+      testDir,
+      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.old' ORDER BY to_id, type",
+    );
+    assert.ok(
+      seeded.some(
+        (e) => e.to_id === 'module.M1' && e.type === 'next_step_of' && e.source === 'inferred',
+      ),
+      `expected inferred T->M1 next_step_of in seeded, got: ${JSON.stringify(seeded)}`,
+    );
 
     // Re-target: change related to module.M2, then rebuild --full.
-    fs.writeFileSync(path.join(testDir, '.pmem/tasks/task.old.md'),
-      card('task.old', 'task', 'status: completed\nrelated:\n  - module.M2\n'), 'utf8');
+    fs.writeFileSync(
+      path.join(testDir, '.pmem/tasks/task.old.md'),
+      card('task.old', 'task', 'status: completed\nrelated:\n  - module.M2\n'),
+      'utf8',
+    );
 
     const r2 = pmem('rebuild --full', testDir);
     assert.strictEqual(r2.code, 0, `second rebuild failed: ${r2.stdout}`);
 
-    const after = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.old' ORDER BY to_id, type");
-    const toIds = after.map(e => e.to_id);
-    assert.ok(!toIds.includes('module.M1'),
-      `task.old should no longer point to module.M1, got: ${JSON.stringify(after)}`);
-    assert.ok(toIds.includes('module.M2'),
-      `task.old should now point to module.M2, got: ${JSON.stringify(after)}`);
+    const after = queryEdges(
+      testDir,
+      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.old' ORDER BY to_id, type",
+    );
+    const toIds = after.map((e) => e.to_id);
+    assert.ok(
+      !toIds.includes('module.M1'),
+      `task.old should no longer point to module.M1, got: ${JSON.stringify(after)}`,
+    );
+    assert.ok(
+      toIds.includes('module.M2'),
+      `task.old should now point to module.M2, got: ${JSON.stringify(after)}`,
+    );
   });
 
   it('preserves manual SQL edges that the rebuild loop never re-derives', () => {
@@ -485,28 +580,38 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     // outside the frontmatter flow (source != explicit/inferred/mention)
     // survive a --full rebuild.  Make sure the fix doesn't regress
     // that — a 'manual' edge with valid endpoints must round-trip.
-    writeFile(path.join(testDir, '.pmem/modules/module.U.md'),
-      card('module.U', 'module'));
-    writeFile(path.join(testDir, '.pmem/modules/module.V.md'),
-      card('module.V', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.U.md'), card('module.U', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.V.md'), card('module.V', 'module'));
 
     const r1 = pmem('rebuild --full', testDir);
     assert.strictEqual(r1.code, 0, `seed rebuild failed: ${r1.stdout}`);
 
     // Inject a manual edge by hand.
-    runSqlScript(testDir,
+    runSqlScript(
+      testDir,
       `db.prepare("INSERT INTO edges (from_id, to_id, type, source, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, 1.0, ?, ?)")
-    .run('module.U', 'module.V', 'custom_link', 'manual', new Date().toISOString(), new Date().toISOString());`);
+    .run('module.U', 'module.V', 'custom_link', 'manual', new Date().toISOString(), new Date().toISOString());`,
+    );
 
     const r2 = pmem('rebuild --full', testDir);
     assert.strictEqual(r2.code, 0, `rebuild --full failed: ${r2.stdout}`);
 
-    const after = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges WHERE source='manual'");
-    assert.deepStrictEqual(after, [{
-      from_id: 'module.U', to_id: 'module.V',
-      type: 'custom_link', source: 'manual',
-    }], `manual edge should survive --full rebuild`);
+    const after = queryEdges(
+      testDir,
+      "SELECT from_id, to_id, type, source FROM edges WHERE source='manual'",
+    );
+    assert.deepStrictEqual(
+      after,
+      [
+        {
+          from_id: 'module.U',
+          to_id: 'module.V',
+          type: 'custom_link',
+          source: 'manual',
+        },
+      ],
+      `manual edge should survive --full rebuild`,
+    );
   });
 
   it('incremental (--changed) rebuild re-derives inferred next_step_of from current frontmatter', () => {
@@ -517,12 +622,12 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     // edges (and only by accident via `clearAllTables`), so editing a
     // task's `related` and running `pmem rebuild` (default) would leave
     // the old inferred edge in place.  This test exercises that path.
-    writeFile(path.join(testDir, '.pmem/modules/module.IM1.md'),
-      card('module.IM1', 'module'));
-    writeFile(path.join(testDir, '.pmem/modules/module.IM2.md'),
-      card('module.IM2', 'module'));
-    writeFile(path.join(testDir, '.pmem/tasks/task.inc.md'),
-      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM1\n'));
+    writeFile(path.join(testDir, '.pmem/modules/module.IM1.md'), card('module.IM1', 'module'));
+    writeFile(path.join(testDir, '.pmem/modules/module.IM2.md'), card('module.IM2', 'module'));
+    writeFile(
+      path.join(testDir, '.pmem/tasks/task.inc.md'),
+      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM1\n'),
+    );
 
     const r1 = pmem('rebuild --full', testDir);
     assert.strictEqual(r1.code, 0, `seed rebuild failed: ${r1.stdout}`);
@@ -530,33 +635,46 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     // Re-target: change related to module.IM2, then run an
     // INCREMENTAL rebuild (no --full).  This is the path that
     // exercises the per-card inferred cleanup.
-    fs.writeFileSync(path.join(testDir, '.pmem/tasks/task.inc.md'),
-      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM2\n'), 'utf8');
+    fs.writeFileSync(
+      path.join(testDir, '.pmem/tasks/task.inc.md'),
+      card('task.inc', 'task', 'status: completed\nrelated:\n  - module.IM2\n'),
+      'utf8',
+    );
 
     const r2 = pmem('rebuild', testDir);
     assert.strictEqual(r2.code, 0, `incremental rebuild failed: ${r2.stdout}`);
 
-    const after = queryEdges(testDir,
-      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.inc' ORDER BY to_id, type");
-    const toIds = after.map(e => e.to_id);
-    assert.ok(!toIds.includes('module.IM1'),
-      `incremental rebuild should have dropped inferred T->IM1, got: ${JSON.stringify(after)}`);
-    assert.ok(toIds.includes('module.IM2'),
-      `incremental rebuild should have re-derived inferred T->IM2, got: ${JSON.stringify(after)}`);
+    const after = queryEdges(
+      testDir,
+      "SELECT from_id, to_id, type, source FROM edges WHERE from_id='task.inc' ORDER BY to_id, type",
+    );
+    const toIds = after.map((e) => e.to_id);
+    assert.ok(
+      !toIds.includes('module.IM1'),
+      `incremental rebuild should have dropped inferred T->IM1, got: ${JSON.stringify(after)}`,
+    );
+    assert.ok(
+      toIds.includes('module.IM2'),
+      `incremental rebuild should have re-derived inferred T->IM2, got: ${JSON.stringify(after)}`,
+    );
   });
 
   it('should clean up stale cards when source file is deleted', () => {
     // Write a module card and rebuild to seed the DB
-    writeFile(path.join(testDir, '.pmem/modules/module.test-module.md'),
-      card('module.test-module', 'module'));
+    writeFile(
+      path.join(testDir, '.pmem/modules/module.test-module.md'),
+      card('module.test-module', 'module'),
+    );
 
     const rebuild1 = pmem('rebuild --full', testDir);
     assert.strictEqual(rebuild1.code, 0, `rebuild failed: ${rebuild1.stdout}`);
 
     // Verify should pass cleanly -- no missing_card_file warnings
     const verify1 = pmem('verify', testDir);
-    assert.ok(!verify1.stdout.includes('missing_card_file'),
-      `unexpected missing_card_file before deletion: ${verify1.stdout}`);
+    assert.ok(
+      !verify1.stdout.includes('missing_card_file'),
+      `unexpected missing_card_file before deletion: ${verify1.stdout}`,
+    );
 
     // Delete the source .md file
     fs.unlinkSync(path.join(testDir, '.pmem/modules/module.test-module.md'));
@@ -566,19 +684,28 @@ describe('issue #6: pmem rebuild --full cleans stale/orphan edges after card spl
     assert.strictEqual(rebuild2.code, 0, `incremental rebuild failed: ${rebuild2.stdout}`);
 
     // DB should have is_deleted = 1 for the missing card
-    const rows = queryEdges(testDir,
-      "SELECT id, is_deleted FROM cards WHERE id = 'module.test-module'");
+    const rows = queryEdges(
+      testDir,
+      "SELECT id, is_deleted FROM cards WHERE id = 'module.test-module'",
+    );
     assert.strictEqual(rows.length, 1, `expected 1 card row, got ${rows.length}`);
-    assert.strictEqual(rows[0].is_deleted, 1,
-      `expected is_deleted=1, got ${JSON.stringify(rows[0])}`);
+    assert.strictEqual(
+      rows[0].is_deleted,
+      1,
+      `expected is_deleted=1, got ${JSON.stringify(rows[0])}`,
+    );
 
     // Verify should not report missing_card_file warnings
     const verify2 = pmem('verify', testDir);
-    assert.ok(!verify2.stdout.includes('missing_card_file'),
-      `still has missing_card_file after incremental rebuild: ${verify2.stdout}`);
+    assert.ok(
+      !verify2.stdout.includes('missing_card_file'),
+      `still has missing_card_file after incremental rebuild: ${verify2.stdout}`,
+    );
 
     // Incremental rebuild should report cleaned stale cards
-    assert.ok(rebuild2.stdout.includes('Cleaned'),
-      `expected "Cleaned" stale card message in rebuild output: ${rebuild2.stdout}`);
+    assert.ok(
+      rebuild2.stdout.includes('Cleaned'),
+      `expected "Cleaned" stale card message in rebuild output: ${rebuild2.stdout}`,
+    );
   });
 });

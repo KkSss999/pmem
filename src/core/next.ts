@@ -144,13 +144,12 @@ export function writeManagedNext(pmemPath: string, opts: WriteNextOptions | Next
     context: context && context.length > 0 ? context : undefined,
   };
 
-  const contextBlock = merged.context && merged.context.length > 0
-    ? `\n\n## Needed Context\n${merged.context.map(c => `- ${c}`).join('\n')}`
-    : '';
+  const contextBlock =
+    merged.context && merged.context.length > 0
+      ? `\n\n## Needed Context\n${merged.context.map((c) => `- ${c}`).join('\n')}`
+      : '';
 
-  const whyBlock = merged.why
-    ? `\n\n## Why\n${merged.why}`
-    : '';
+  const whyBlock = merged.why ? `\n\n## Why\n${merged.why}` : '';
 
   const managedContent = `${managedStart}
 ## Recommended Next Step
@@ -169,7 +168,8 @@ ${managedEnd}`;
 
   let updatedContent = '';
   if (startIdx >= 0 && endIdx > startIdx) {
-    updatedContent = currentContent.substring(0, startIdx) +
+    updatedContent =
+      currentContent.substring(0, startIdx) +
       managedContent +
       currentContent.substring(endIdx + managedEnd.length);
   } else {
@@ -231,7 +231,7 @@ export function parseStructuredNext(content: string): StructuredNextItem[] {
     if (!inNextStep) continue;
     if (!trimmed) continue;
 
-    const leadingSpaces = (line.match(/^(\s*)/)?.[1]?.length ?? 0);
+    const leadingSpaces = line.match(/^(\s*)/)?.[1]?.length ?? 0;
     const bulletMatch = trimmed.match(/^([-*]\s+|(\d+)[.)]\s+)/);
 
     if (bulletMatch) {

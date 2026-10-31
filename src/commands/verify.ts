@@ -1,17 +1,51 @@
 import * as path from 'path';
 import { mkdirSync, statSync } from 'fs';
-import { readFile, fileExists, getLockStatus, breakLock, acquireLock, releaseLock, lockOwnedBySelf, atomicWrite } from '../core/fs';
+import {
+  readFile,
+  fileExists,
+  getLockStatus,
+  breakLock,
+  acquireLock,
+  releaseLock,
+  lockOwnedBySelf,
+  atomicWrite,
+} from '../core/fs';
 import { loadManifest, resolveConfig, renderIdPattern } from '../core/manifest';
-import { openMaintenanceDatabase, recordMaintenanceEvent, type MaintenanceDatabase } from '../runtime/maintenance';
+import {
+  openMaintenanceDatabase,
+  recordMaintenanceEvent,
+  type MaintenanceDatabase,
+} from '../runtime/maintenance';
 import { computeHash, tokenCount } from '../core/hash';
-import { checkStaleMemory, checkDocSync, verifyMemory, checkModuleContracts } from '../core/consistency';
-import type { VerifyIssue, VerifyResult, CardRow, EdgeRow, SemanticReadinessSummary } from '../types';
+import {
+  checkStaleMemory,
+  checkDocSync,
+  verifyMemory,
+  checkModuleContracts,
+} from '../core/consistency';
+import type {
+  VerifyIssue,
+  VerifyResult,
+  CardRow,
+  EdgeRow,
+  SemanticReadinessSummary,
+} from '../types';
 import { rebuildCommand } from './rebuild';
 import { parseFrontmatter } from '../core/yaml';
 import { getDistillUrgency } from '../runtime/policy';
-import { buildVerifyResult, healthBaselinePath, inspectSemanticReadiness, readHealthBaseline } from '../core/health';
+import {
+  buildVerifyResult,
+  healthBaselinePath,
+  inspectSemanticReadiness,
+  readHealthBaseline,
+} from '../core/health';
 import { findProjectPaths } from '../core/projectRoot';
-import { buildRepairPlan, type RepairChange, type RepairPlan, type RepairRollbackResult } from '../runtime/repair';
+import {
+  buildRepairPlan,
+  type RepairChange,
+  type RepairPlan,
+  type RepairRollbackResult,
+} from '../runtime/repair';
 import { applyRepairPlan } from '../runtime/repair';
 import { createRollbackCheckpoint, restoreRollbackCheckpoint } from '../runtime/rollback';
 import { randomUUID } from 'node:crypto';
@@ -44,10 +78,15 @@ const VERIFY_FIX_SCOPES = new Set<VerifyFixScope>(['stale', 'metadata', 'structu
 function normalizeFixScopes(only: VerifyCommandOptions['only']): Set<VerifyFixScope> | null {
   if (only === undefined) return null;
   const scopes = Array.isArray(only) ? only : [only];
-  if (scopes.length === 0) throw new Error('`verify` fix scope cannot be empty. Choose stale, metadata, structural, or locks.');
+  if (scopes.length === 0)
+    throw new Error(
+      '`verify` fix scope cannot be empty. Choose stale, metadata, structural, or locks.',
+    );
   for (const scope of scopes) {
     if (!VERIFY_FIX_SCOPES.has(scope)) {
-      throw new Error(`Unknown verify fix scope "${String(scope)}". Choose stale, metadata, structural, or locks.`);
+      throw new Error(
+        `Unknown verify fix scope "${String(scope)}". Choose stale, metadata, structural, or locks.`,
+      );
     }
   }
   return new Set(scopes);
@@ -64,15 +103,26 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   validateMaxChanges(options.maxChanges);
   const fixScopes = normalizeFixScopes(options.only);
   const allows = (scope: VerifyFixScope): boolean => fixScopes === null || fixScopes.has(scope);
-  const staleRepairRequested = allows('stale') && (!!options.fixStale || (!!options.fix && fixScopes?.has('stale') === true));
-  const metadataRepairRequested = allows('metadata') && !!options.fix && fixScopes?.has('metadata') === true;
-  const structuralRepairRequested = allows('structural') && !!options.fix && (fixScopes === null || fixScopes.has('structural'));
-  const lockRepairRequested = allows('locks') && (!!options.fixLocks || (!!options.fix && fixScopes?.has('locks') === true));
-  if (options.format === 'json' && (options.fix || options.fixStale || options.fixLocks || options.dryRun)) {
-    throw new Error('`pmem verify --format json` cannot be combined with repair or dry-run options. Run the repair first, then run JSON verification separately.');
+  const staleRepairRequested =
+    allows('stale') && (!!options.fixStale || (!!options.fix && fixScopes?.has('stale') === true));
+  const metadataRepairRequested =
+    allows('metadata') && !!options.fix && fixScopes?.has('metadata') === true;
+  const structuralRepairRequested =
+    allows('structural') && !!options.fix && (fixScopes === null || fixScopes.has('structural'));
+  const lockRepairRequested =
+    allows('locks') && (!!options.fixLocks || (!!options.fix && fixScopes?.has('locks') === true));
+  if (
+    options.format === 'json' &&
+    (options.fix || options.fixStale || options.fixLocks || options.dryRun)
+  ) {
+    throw new Error(
+      '`pmem verify --format json` cannot be combined with repair or dry-run options. Run the repair first, then run JSON verification separately.',
+    );
   }
   if (metadataRepairRequested && !options.dryRun && !options.confirm) {
-    throw new Error('Metadata repair requires explicit confirmation. Re-run with --confirm, or use --dry-run to preview safe changes.');
+    throw new Error(
+      'Metadata repair requires explicit confirmation. Re-run with --confirm, or use --dry-run to preview safe changes.',
+    );
   }
   const cwd = options.cwd ?? process.cwd();
   const project = findProjectPaths(cwd);
@@ -184,679 +234,829 @@ export function verifyCommand(options: VerifyCommandOptions = {}): VerifyResult 
   // exit. The early-return `active_lock` branch above already bails before
   // reaching this block, so it does not need its own release.
   try {
+    // 2. Check SQLite DB exists (v0.7.6 FIX-1: moved here from before lock
+    //    acquisition so the active_lock fast path never sees a transient
+    //    missing_database warning when rebuild is busy creating the index).
+    const dbPath = path.join(pmemPath, 'pmem.db');
+    const dbExists = fileExists(dbPath);
+    let db: MaintenanceDatabase | null = null;
 
-  // 2. Check SQLite DB exists (v0.7.6 FIX-1: moved here from before lock
-  //    acquisition so the active_lock fast path never sees a transient
-  //    missing_database warning when rebuild is busy creating the index).
-  const dbPath = path.join(pmemPath, 'pmem.db');
-  const dbExists = fileExists(dbPath);
-  let db: MaintenanceDatabase | null = null;
-
-  if (!dbExists) {
-    issues.push({
-      severity: 'warning',
-      type: 'missing_database',
-      message: '.pmem/pmem.db not found.',
-      fix: 'Run: pmem rebuild',
-    });
-  } else {
-    try {
-      db = openMaintenanceDatabase(pmemPath);
-    } catch (err: any) {
-      issues.push({
-        severity: 'error',
-        type: 'corrupt_database',
-        message: err?.message || '.pmem/pmem.db is corrupted.',
-        fix: 'Back up the file if needed, then run: pmem rebuild --full',
-      });
-      db = null;
-    }
-  }
-
-  if (manifest) {
-    // 3. Check schema version
-    const currentSchema = manifest.pmem?.schema_version;
-    if (!currentSchema) {
+    if (!dbExists) {
       issues.push({
         severity: 'warning',
-        type: 'missing_schema_version',
-        message: 'Manifest is missing pmem.schema_version.',
-        fix: 'Run: pmem migrate --to 0.3',
+        type: 'missing_database',
+        message: '.pmem/pmem.db not found.',
+        fix: 'Run: pmem rebuild',
       });
-    } else if (currentSchema < '0.3') {
-      issues.push({
-        severity: 'warning',
-        type: 'old_schema_version',
-        message: `Project schema version is ${currentSchema}. Current CLI supports 0.3.`,
-        fix: 'Run: pmem migrate --to 0.3',
-      });
-    } else if (currentSchema > '0.3') {
-      issues.push({
-        severity: 'error',
-        type: 'newer_schema_version',
-        message: `Project schema version is ${currentSchema}. Current CLI only supports up to 0.3.`,
-        fix: 'Please upgrade pmem CLI to a newer version.',
-      });
+    } else {
+      try {
+        db = openMaintenanceDatabase(pmemPath);
+      } catch (err: any) {
+        issues.push({
+          severity: 'error',
+          type: 'corrupt_database',
+          message: err?.message || '.pmem/pmem.db is corrupted.',
+          fix: 'Back up the file if needed, then run: pmem rebuild --full',
+        });
+        db = null;
+      }
     }
 
-    if (db) {
-      const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
-
-      // 4. Hash consistency — compare DB file_hash against actual .md file content
-      for (const card of cards) {
-        const cardFilePath = path.join(cwd, card.file_path);
-        if (!fileExists(cardFilePath)) {
-          issues.push({
-            severity: 'warning',
-            type: 'missing_card_file',
-            message: `Card "${card.id}" references missing file: ${card.file_path}`,
-            fix: 'Run: pmem rebuild (incremental rebuild will clean up stale card references)',
-            card_id: card.id,
-          });
-          continue;
-        }
-
-        const content = readFile(cardFilePath);
-        if (!content) continue;
-
-        const currentFileHash = computeHash(content);
-        if (currentFileHash !== card.file_hash) {
-          issues.push({
-            severity: 'warning',
-            type: 'stale_index',
-            message: `Card "${card.id}" file hash mismatch (stored: ${card.file_hash}, current: ${currentFileHash}).`,
-            fix: 'Run: pmem rebuild',
-            card_id: card.id,
-          });
-        }
-      }
-
-      // 5. Orphan edges — edges referencing non-existent card IDs
-      const orphanFrom = db.prepare(
-        'SELECT e.* FROM edges e LEFT JOIN cards c ON e.from_id = c.id WHERE c.id IS NULL'
-      ).all() as EdgeRow[];
-
-      const orphanTo = db.prepare(
-        'SELECT e.* FROM edges e LEFT JOIN cards c ON e.to_id = c.id WHERE c.id IS NULL'
-      ).all() as EdgeRow[];
-
-      const orphanEdgeSet = new Map<number, EdgeRow>();
-      for (const e of orphanFrom) {
-        if (e.id !== undefined) orphanEdgeSet.set(e.id, e);
-      }
-      for (const e of orphanTo) {
-        if (e.id !== undefined && !orphanEdgeSet.has(e.id)) orphanEdgeSet.set(e.id, e);
-      }
-
-      if (orphanEdgeSet.size > 0) {
+    if (manifest) {
+      // 3. Check schema version
+      const currentSchema = manifest.pmem?.schema_version;
+      if (!currentSchema) {
         issues.push({
           severity: 'warning',
-          type: 'orphan_edges',
-          message: `${orphanEdgeSet.size} edge(s) reference non-existent card IDs.`,
-          fix: 'Run: pmem rebuild',
-          evidence_count: orphanEdgeSet.size,
+          type: 'missing_schema_version',
+          message: 'Manifest is missing pmem.schema_version.',
+          fix: 'Run: pmem migrate --to 0.3',
+        });
+      } else if (currentSchema < '0.3') {
+        issues.push({
+          severity: 'warning',
+          type: 'old_schema_version',
+          message: `Project schema version is ${currentSchema}. Current CLI supports 0.3.`,
+          fix: 'Run: pmem migrate --to 0.3',
+        });
+      } else if (currentSchema > '0.3') {
+        issues.push({
+          severity: 'error',
+          type: 'newer_schema_version',
+          message: `Project schema version is ${currentSchema}. Current CLI only supports up to 0.3.`,
+          fix: 'Please upgrade pmem CLI to a newer version.',
         });
       }
 
-      // 6. Card policy checks
-      if (manifest.card_policy) {
-        const policy = manifest.card_policy;
+      if (db) {
+        const cards = db.prepare('SELECT * FROM cards WHERE is_deleted = 0').all() as CardRow[];
 
-        // 6a. ID naming pattern — v0.7.0: render {types} placeholder if present
-        const config = resolveConfig(manifest);
-        const renderedPattern = renderIdPattern(policy.id_pattern, config.card_types);
-        const idRegex = new RegExp(renderedPattern);
+        // 4. Hash consistency — compare DB file_hash against actual .md file content
         for (const card of cards) {
-          if (!idRegex.test(card.id)) {
+          const cardFilePath = path.join(cwd, card.file_path);
+          if (!fileExists(cardFilePath)) {
             issues.push({
               severity: 'warning',
-              type: 'card_id_violation',
-              message: `Card "${card.id}" does not match naming pattern.`,
-              fix: `Rename card ID to match: ${renderedPattern}`,
+              type: 'missing_card_file',
+              message: `Card "${card.id}" references missing file: ${card.file_path}`,
+              fix: 'Run: pmem rebuild (incremental rebuild will clean up stale card references)',
+              card_id: card.id,
+            });
+            continue;
+          }
+
+          const content = readFile(cardFilePath);
+          if (!content) continue;
+
+          const currentFileHash = computeHash(content);
+          if (currentFileHash !== card.file_hash) {
+            issues.push({
+              severity: 'warning',
+              type: 'stale_index',
+              message: `Card "${card.id}" file hash mismatch (stored: ${card.file_hash}, current: ${currentFileHash}).`,
+              fix: 'Run: pmem rebuild',
               card_id: card.id,
             });
           }
         }
 
-        // 6b. Token count limits — read files and estimate tokens
-        for (const card of cards) {
-          const filePath = path.join(cwd, card.file_path);
-          const content = readFile(filePath);
-          if (content) {
-            const estimatedTokens = tokenCount(content);
-            const maxForType = policy.max_tokens[card.type];
-            if (maxForType && estimatedTokens > maxForType) {
-              // Check if relaxed locally (frontmatter or manifest list)
-              const isLocalRelaxed = (() => {
-                const parsed = parseFrontmatter(content);
-                if (parsed?.data) {
-                  if (parsed.data.relaxed === true || parsed.data.token_policy === 'relaxed') {
+        // 5. Orphan edges — edges referencing non-existent card IDs
+        const orphanFrom = db
+          .prepare(
+            'SELECT e.* FROM edges e LEFT JOIN cards c ON e.from_id = c.id WHERE c.id IS NULL',
+          )
+          .all() as EdgeRow[];
+
+        const orphanTo = db
+          .prepare('SELECT e.* FROM edges e LEFT JOIN cards c ON e.to_id = c.id WHERE c.id IS NULL')
+          .all() as EdgeRow[];
+
+        const orphanEdgeSet = new Map<number, EdgeRow>();
+        for (const e of orphanFrom) {
+          if (e.id !== undefined) orphanEdgeSet.set(e.id, e);
+        }
+        for (const e of orphanTo) {
+          if (e.id !== undefined && !orphanEdgeSet.has(e.id)) orphanEdgeSet.set(e.id, e);
+        }
+
+        if (orphanEdgeSet.size > 0) {
+          issues.push({
+            severity: 'warning',
+            type: 'orphan_edges',
+            message: `${orphanEdgeSet.size} edge(s) reference non-existent card IDs.`,
+            fix: 'Run: pmem rebuild',
+            evidence_count: orphanEdgeSet.size,
+          });
+        }
+
+        // 6. Card policy checks
+        if (manifest.card_policy) {
+          const policy = manifest.card_policy;
+
+          // 6a. ID naming pattern — v0.7.0: render {types} placeholder if present
+          const config = resolveConfig(manifest);
+          const renderedPattern = renderIdPattern(policy.id_pattern, config.card_types);
+          const idRegex = new RegExp(renderedPattern);
+          for (const card of cards) {
+            if (!idRegex.test(card.id)) {
+              issues.push({
+                severity: 'warning',
+                type: 'card_id_violation',
+                message: `Card "${card.id}" does not match naming pattern.`,
+                fix: `Rename card ID to match: ${renderedPattern}`,
+                card_id: card.id,
+              });
+            }
+          }
+
+          // 6b. Token count limits — read files and estimate tokens
+          for (const card of cards) {
+            const filePath = path.join(cwd, card.file_path);
+            const content = readFile(filePath);
+            if (content) {
+              const estimatedTokens = tokenCount(content);
+              const maxForType = policy.max_tokens[card.type];
+              if (maxForType && estimatedTokens > maxForType) {
+                // Check if relaxed locally (frontmatter or manifest list)
+                const isLocalRelaxed = (() => {
+                  const parsed = parseFrontmatter(content);
+                  if (parsed?.data) {
+                    if (parsed.data.relaxed === true || parsed.data.token_policy === 'relaxed') {
+                      return true;
+                    }
+                  }
+                  const relaxedCards = (policy as any).relaxed_cards;
+                  if (Array.isArray(relaxedCards) && relaxedCards.includes(card.id)) {
                     return true;
                   }
-                }
-                const relaxedCards = (policy as any).relaxed_cards;
-                if (Array.isArray(relaxedCards) && relaxedCards.includes(card.id)) {
-                  return true;
-                }
-                return false;
-              })();
+                  return false;
+                })();
 
-              const isRelaxed = !!(options.relaxed || isLocalRelaxed);
+                const isRelaxed = !!(options.relaxed || isLocalRelaxed);
 
-              if (isRelaxed) {
-                issues.push({
-                  severity: 'info',
-                  type: 'card_too_large_relaxed',
-                  message: `Card "${card.id}" (~${estimatedTokens} tokens) exceeds the normal limit of ${maxForType} tokens for type "${card.type}". (Relaxed/suppressed warning).`,
-                  fix: `To restore normal limits, remove '--relaxed' option, delete 'relaxed: true'/'token_policy: relaxed' from card frontmatter, or remove the card ID from 'relaxed_cards' in .pmem/manifest.yml.`,
-                  card_id: card.id,
-                });
-              } else {
-                issues.push({
-                  severity: 'warning',
-                  type: 'card_too_large',
-                  message: `Card "${card.id}" is ~${estimatedTokens} tokens, exceeding the max configured limit of ${maxForType} tokens for card type "${card.type}" by ${estimatedTokens - maxForType} tokens.`,
-                  fix: `Consider splitting this card, or raise the limit in .pmem/manifest.yml (card_policy -> max_tokens -> ${card.type}).\n` +
-                       `       To suppress this warning locally, add 'token_policy: relaxed' or 'relaxed: true' to the card's frontmatter, or add the card ID to 'relaxed_cards' in .pmem/manifest.yml.\n` +
-                       `       To temporarily relax all limits, run: pmem verify --relaxed`,
-                  card_id: card.id,
-                });
+                if (isRelaxed) {
+                  issues.push({
+                    severity: 'info',
+                    type: 'card_too_large_relaxed',
+                    message: `Card "${card.id}" (~${estimatedTokens} tokens) exceeds the normal limit of ${maxForType} tokens for type "${card.type}". (Relaxed/suppressed warning).`,
+                    fix: `To restore normal limits, remove '--relaxed' option, delete 'relaxed: true'/'token_policy: relaxed' from card frontmatter, or remove the card ID from 'relaxed_cards' in .pmem/manifest.yml.`,
+                    card_id: card.id,
+                  });
+                } else {
+                  issues.push({
+                    severity: 'warning',
+                    type: 'card_too_large',
+                    message: `Card "${card.id}" is ~${estimatedTokens} tokens, exceeding the max configured limit of ${maxForType} tokens for card type "${card.type}" by ${estimatedTokens - maxForType} tokens.`,
+                    fix:
+                      `Consider splitting this card, or raise the limit in .pmem/manifest.yml (card_policy -> max_tokens -> ${card.type}).\n` +
+                      `       To suppress this warning locally, add 'token_policy: relaxed' or 'relaxed: true' to the card's frontmatter, or add the card ID to 'relaxed_cards' in .pmem/manifest.yml.\n` +
+                      `       To temporarily relax all limits, run: pmem verify --relaxed`,
+                    card_id: card.id,
+                  });
+                }
               }
+            }
+          }
+
+          // 6c. Relation count threshold
+          for (const card of cards) {
+            const { count: relatedEdgeCount } = db
+              .prepare('SELECT COUNT(*) as count FROM edges WHERE from_id = ? OR to_id = ?')
+              .get(card.id, card.id) as { count: number };
+
+            // Use per-card-type threshold if defined, otherwise fall back to global
+            const threshold =
+              policy.warn_when_related_count_gt_by_type?.[card.type] ??
+              policy.warn_when_related_count_gt;
+
+            if (relatedEdgeCount > threshold) {
+              // v0.7.6 (issue #10): fetch up to 10 lowest-confidence edges so the
+              // agent can see which relations contribute to the count and which
+              // are safe to prune. Sort ASC so lowest-confidence (best pruning
+              // candidates) appear first.
+              const topEdgesRaw = db
+                .prepare(
+                  `SELECT from_id, to_id, type, source, confidence
+               FROM edges
+               WHERE from_id = ? OR to_id = ?
+               ORDER BY confidence ASC
+               LIMIT 10`,
+                )
+                .all(card.id, card.id) as Array<{
+                from_id: string;
+                to_id: string;
+                type: string;
+                source: string;
+                confidence: number;
+              }>;
+
+              const topEdges = topEdgesRaw.map((e) => ({
+                from_id: e.from_id,
+                to_id: e.to_id,
+                type: e.type,
+                source: e.source,
+                confidence: e.confidence,
+              }));
+
+              const pruningCandidates = topEdges.filter(
+                (e) => e.source === 'inferred' || e.confidence < 0.5,
+              );
+
+              issues.push({
+                severity: 'warning',
+                type: 'too_many_relations',
+                message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${threshold} for type "${card.type}").`,
+                fix: `Run: pmem relations ${card.id} --format json to inspect.`,
+                card_id: card.id,
+                relation_count: relatedEdgeCount,
+                evidence_count: relatedEdgeCount,
+                threshold,
+                top_edges: topEdges,
+                pruning_candidates: pruningCandidates,
+              });
             }
           }
         }
 
-        // 6c. Relation count threshold
-        for (const card of cards) {
-          const { count: relatedEdgeCount } = db.prepare(
-            'SELECT COUNT(*) as count FROM edges WHERE from_id = ? OR to_id = ?'
-          ).get(card.id, card.id) as { count: number };
+        // 9. Stale memory: source files newer than card update time
+        // Uses shared consistency check to stay aligned with update --suggest
+        const staleMemoryIssues = checkStaleMemory(pmemPath);
+        for (const ci of staleMemoryIssues) {
+          issues.push({
+            severity: 'warning',
+            type: ci.type,
+            message: ci.message,
+            fix: ci.card_id
+              ? `Run: pmem update --confirm to update ${ci.card_id}.`
+              : 'Run: pmem rebuild',
+            card_id: ci.card_id,
+            file_path: ci.file_path,
+            file_paths: ci.file_paths,
+            evidence_count: ci.evidence_count,
+          });
+        }
 
-          // Use per-card-type threshold if defined, otherwise fall back to global
-          const threshold = policy.warn_when_related_count_gt_by_type?.[card.type]
-            ?? policy.warn_when_related_count_gt;
+        // 10. Agent-trust checks: confidence, classification, superseded references, poisoning.
+        // verifyMemory is the aggregate — filter out types that are handled by their own
+        // dedicated blocks (staleMemory @ step 9, moduleContracts @ step 11, docSync @ step 12)
+        // to prevent double-reporting.
+        const trustIssues = verifyMemory(pmemPath).filter(
+          (ci) =>
+            ci.type !== 'stale_memory' &&
+            ci.type !== 'missing_contract_field' &&
+            ci.type !== 'missing_source_file' &&
+            ci.type !== 'untracked_card',
+        );
+        for (const ci of trustIssues) {
+          // map 'blocking' → 'warning' for VerifyIssue compatibility
+          const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
+          issues.push({
+            severity: sev as 'error' | 'warning' | 'info',
+            type: ci.type,
+            message: ci.message,
+            fix:
+              metadataFixFor(ci) ??
+              (ci.card_id
+                ? `Run: pmem update --confirm to update ${ci.card_id}.`
+                : 'Run: pmem verify --fix'),
+            card_id: ci.card_id,
+            evidence_count: ci.evidence_count,
+          });
+        }
 
-          if (relatedEdgeCount > threshold) {
-            // v0.7.6 (issue #10): fetch up to 10 lowest-confidence edges so the
-            // agent can see which relations contribute to the count and which
-            // are safe to prune. Sort ASC so lowest-confidence (best pruning
-            // candidates) appear first.
-            const topEdgesRaw = db.prepare(
-              `SELECT from_id, to_id, type, source, confidence
-               FROM edges
-               WHERE from_id = ? OR to_id = ?
-               ORDER BY confidence ASC
-               LIMIT 10`
-            ).all(card.id, card.id) as Array<{
-              from_id: string;
-              to_id: string;
-              type: string;
-              source: string;
-              confidence: number;
-            }>;
+        // 11. Module boundary contract checks (v1.0.2)
+        const contractIssues = checkModuleContracts(pmemPath);
+        for (const ci of contractIssues) {
+          issues.push({
+            severity: 'info',
+            type: ci.type,
+            message: ci.message,
+            fix: ci.card_id
+              ? `Run: pmem update --confirm to update ${ci.card_id}.`
+              : 'Run: pmem verify --fix',
+            card_id: ci.card_id,
+          });
+        }
 
-            const topEdges = topEdgesRaw.map(e => ({
-              from_id: e.from_id,
-              to_id: e.to_id,
-              type: e.type,
-              source: e.source,
-              confidence: e.confidence,
-            }));
-
-            const pruningCandidates = topEdges.filter(
-              e => e.source === 'inferred' || e.confidence < 0.5
-            );
-
-            issues.push({
-              severity: 'warning',
-              type: 'too_many_relations',
-              message: `Card "${card.id}" has ${relatedEdgeCount} relations (threshold: ${threshold} for type "${card.type}").`,
-              fix: `Run: pmem relations ${card.id} --format json to inspect.`,
-              card_id: card.id,
-              relation_count: relatedEdgeCount,
-              evidence_count: relatedEdgeCount,
-              threshold,
-              top_edges: topEdges,
-              pruning_candidates: pruningCandidates,
-            });
-          }
+        // 12. Doc-pmem sync: detect drift (v1.0.2)
+        const docSyncIssues = checkDocSync(pmemPath);
+        for (const ci of docSyncIssues) {
+          const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
+          issues.push({
+            severity: sev as 'error' | 'warning' | 'info',
+            type: ci.type,
+            message: ci.message,
+            fix: ci.card_id
+              ? `Run: pmem update --confirm to update ${ci.card_id}.`
+              : 'Run: pmem verify --fix-stale',
+            card_id: ci.card_id,
+          });
         }
       }
 
-      // 9. Stale memory: source files newer than card update time
-      // Uses shared consistency check to stay aligned with update --suggest
-      const staleMemoryIssues = checkStaleMemory(pmemPath);
-      for (const ci of staleMemoryIssues) {
+      // 7. Check AGENTS.md exists
+      if (!fileExists(path.join(cwd, 'AGENTS.md'))) {
         issues.push({
           severity: 'warning',
-          type: ci.type,
-          message: ci.message,
-          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem rebuild',
-          card_id: ci.card_id,
-          file_path: ci.file_path,
-          file_paths: ci.file_paths,
-          evidence_count: ci.evidence_count,
+          type: 'missing_agents',
+          message: 'AGENTS.md not found in project root.',
+          fix: 'Run: pmem init',
         });
       }
 
-      // 10. Agent-trust checks: confidence, classification, superseded references, poisoning.
-      // verifyMemory is the aggregate — filter out types that are handled by their own
-      // dedicated blocks (staleMemory @ step 9, moduleContracts @ step 11, docSync @ step 12)
-      // to prevent double-reporting.
-      const trustIssues = verifyMemory(pmemPath)
-        .filter(ci =>
-          ci.type !== 'stale_memory' &&
-          ci.type !== 'missing_contract_field' &&
-          ci.type !== 'missing_source_file' &&
-          ci.type !== 'untracked_card'
-        );
-      for (const ci of trustIssues) {
-        // map 'blocking' → 'warning' for VerifyIssue compatibility
-        const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
+      // 8. Check memory_status.dirty
+      if (manifest.memory_status?.dirty) {
         issues.push({
-          severity: sev as 'error' | 'warning' | 'info',
-          type: ci.type,
-          message: ci.message,
-          fix: metadataFixFor(ci) ?? (ci.card_id
-            ? `Run: pmem update --confirm to update ${ci.card_id}.`
-            : 'Run: pmem verify --fix'),
-          card_id: ci.card_id,
-          evidence_count: ci.evidence_count,
+          severity: 'warning',
+          type: 'memory_dirty',
+          message: `Memory is marked dirty since ${manifest.memory_status.dirty_since || 'unknown'}. Reason: ${manifest.memory_status.dirty_reason || 'unknown'}.`,
+          fix: 'Run: pmem update --auto (to detect changes) or pmem update --confirm (to record updates).',
         });
       }
-
-      // 11. Module boundary contract checks (v1.0.2)
-      const contractIssues = checkModuleContracts(pmemPath);
-      for (const ci of contractIssues) {
-        issues.push({
-          severity: 'info',
-          type: ci.type,
-          message: ci.message,
-          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix',
-          card_id: ci.card_id,
-        });
-      }
-
-      // 12. Doc-pmem sync: detect drift (v1.0.2)
-      const docSyncIssues = checkDocSync(pmemPath);
-      for (const ci of docSyncIssues) {
-        const sev = ci.severity === 'blocking' ? 'warning' : ci.severity;
-        issues.push({
-          severity: sev as 'error' | 'warning' | 'info',
-          type: ci.type,
-          message: ci.message,
-          fix: ci.card_id ? `Run: pmem update --confirm to update ${ci.card_id}.` : 'Run: pmem verify --fix-stale',
-          card_id: ci.card_id,
-        });
-      }
-    }
-
-    // 7. Check AGENTS.md exists
-    if (!fileExists(path.join(cwd, 'AGENTS.md'))) {
-      issues.push({
-        severity: 'warning',
-        type: 'missing_agents',
-        message: 'AGENTS.md not found in project root.',
-        fix: 'Run: pmem init',
-      });
-    }
-
-    // 8. Check memory_status.dirty
-    if (manifest.memory_status?.dirty) {
-      issues.push({
-        severity: 'warning',
-        type: 'memory_dirty',
-        message: `Memory is marked dirty since ${manifest.memory_status.dirty_since || 'unknown'}. Reason: ${manifest.memory_status.dirty_reason || 'unknown'}.`,
-        fix: 'Run: pmem update --auto (to detect changes) or pmem update --confirm (to record updates).',
-      });
-    }
-    const semanticHealth = inspectSemanticReadiness(pmemPath, manifest);
-    semanticReadiness = {
-      applicable: semanticHealth.applicable,
-      eligible_cards: semanticHealth.eligible_cards,
-      excluded_cards: semanticHealth.excluded_cards,
-      excluded_by_reason: semanticHealth.excluded_by_reason,
-      pipeline_version: semanticHealth.pipeline_version,
-      index_compatible: semanticHealth.index_compatible,
-      index_fresh: semanticHealth.index_fresh,
-    };
-    issues.push(...semanticHealth.issues);
-  }
-
-  // Helper to clean up stale DB card rows when source .md files are missing.
-  // Called before rebuildCommand() so --fix / --fix-stale can immediately
-  // remove stale card references without waiting for a full index rebuild.
-  // Wrapped in a transaction for atomicity — a crash mid-cleanup rolls back.
-  const cleanupMissingCards = (db: MaintenanceDatabase, cardIds: readonly string[]): void => {
-    if (cardIds.length === 0) return;
-
-    console.log(`Cleaning up ${cardIds.length} stale card(s) from database...`);
-    const cleanupTx = db.transaction(() => {
-      for (const cardId of cardIds) {
-        db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(cardId, cardId);
-        db.prepare('DELETE FROM aliases WHERE card_id = ?').run(cardId);
-        db.prepare('DELETE FROM tags WHERE card_id = ?').run(cardId);
-        db.prepare('DELETE FROM paths WHERE card_id = ?').run(cardId);
-        db.prepare('UPDATE cards SET is_deleted = 1 WHERE id = ?').run(cardId);
-        console.log(`  Removed stale card: ${cardId}`);
-      }
-    });
-    cleanupTx();
-  };
-
-  // Only fill metadata whose value is unambiguous from the card type. Trust
-  // and sensitivity remain operator decisions and are deliberately never
-  // guessed by verify --fix. Frontmatter-only writes preserve card bodies.
-  const safeClassificationByType: Record<string, string> = {
-    decision: 'decision',
-    task: 'plan',
-    feature: 'plan',
-    risk: 'risk',
-    assumption: 'assumption',
-  };
-  const repairCandidates: RepairChange[] = [];
-  const repairFiles = new Map<string, string>();
-  const repairTimestamp = new Date().toISOString();
-  const frontmatterValue = (content: string, field: string): string | null => {
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) return null;
-    const fieldMatch = match[1].match(new RegExp(`^${field}:\\s*(.*)$`, 'm'));
-    if (!fieldMatch) return null;
-    const raw = fieldMatch[1].trim();
-    try { return typeof JSON.parse(raw) === 'string' ? JSON.parse(raw) : raw; } catch { return raw; }
-  };
-
-  if (staleRepairRequested && db) {
-    for (const issue of issues.filter(item => item.type === 'stale_memory' && item.card_id).sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
-      const card = db.prepare('SELECT file_path FROM cards WHERE id = ?').get(issue.card_id) as { file_path: string } | undefined;
-      const filePath = card ? path.join(cwd, card.file_path) : null;
-      const content = filePath && fileExists(filePath) ? readFile(filePath) : '';
-      if (!filePath || !content) continue;
-      repairFiles.set(`${issue.card_id}:last_verified`, filePath);
-      repairCandidates.push({
-        id: `${issue.card_id}:last_verified`,
-        action: 'refresh_last_verified',
-        reason: 'Source files changed after the last memory verification.',
-        before: frontmatterValue(content, 'last_verified'),
-        after: repairTimestamp,
-      });
-    }
-  }
-
-  if (metadataRepairRequested && db) {
-    for (const issue of issues.filter(item => item.type === 'unclassified_card' && item.card_id).sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
-      const card = db.prepare('SELECT file_path, type FROM cards WHERE id = ?').get(issue.card_id) as { file_path: string; type: string } | undefined;
-      const classification = card ? safeClassificationByType[card.type] : undefined;
-      const filePath = card ? path.join(cwd, card.file_path) : null;
-      if (!classification || !filePath || !fileExists(filePath)) continue;
-      const content = readFile(filePath);
-      if (!content || !/^---\n[\s\S]*?\n---/.test(content) || hasFrontmatterField(content, 'classification')) continue;
-      const id = `${issue.card_id}:classification`;
-      repairFiles.set(id, filePath);
-      repairCandidates.push({
-        id,
-        action: 'update_frontmatter',
-        reason: 'Infer classification from an unambiguous canonical card type.',
-        before: null,
-        after: { classification },
-      });
-    }
-  }
-
-  const structuralIssues = issues.filter(issue => ['stale_index', 'missing_database', 'orphan_edges'].includes(issue.type));
-  if (structuralRepairRequested && structuralIssues.length > 0) {
-    repairCandidates.push({
-      id: 'structural:rebuild_indexes',
-      action: 'rebuild_indexes',
-      reason: 'Rebuild derived indexes from canonical Markdown and relations.',
-      before: structuralIssues.map(issue => issue.type).sort(),
-      after: 'rebuilt',
-    });
-  }
-  if (structuralRepairRequested) {
-    for (const issue of issues.filter(item => item.type === 'missing_card_file' && item.card_id).sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
-      repairCandidates.push({
-        id: `structural:cleanup:${issue.card_id}`,
-        action: 'cleanup_missing_card',
-        reason: 'Tombstone the derived card row whose canonical Markdown source is missing.',
-        before: { state: 'active' },
-        after: { state: 'forgotten' },
-      });
-    }
-  }
-  if (lockRepairRequested && lockStatus.exists && lockStatus.stale) {
-    repairCandidates.push({
-      id: 'locks:stale_lock',
-      action: 'remove_stale_lock',
-      reason: 'Remove a lock whose owner is no longer active.',
-      before: { path: lockPath, stale: true },
-      after: null,
-    });
-  }
-
-  const boundedCandidates = options.maxChanges === undefined
-    ? repairCandidates
-    : repairCandidates.slice(0, options.maxChanges);
-  if (staleRepairRequested || metadataRepairRequested || structuralRepairRequested || lockRepairRequested) {
-    repairPlan = buildRepairPlan(boundedCandidates, { apply: !options.dryRun });
-    if (!options.silent && repairPlan.changes.length > 0) {
-      console.log(`${options.dryRun ? 'Repair plan (dry-run)' : 'Repair plan'}: ${repairPlan.changes.length} change(s).`);
-      for (const change of repairPlan.changes) {
-        console.log(`  - ${change.id}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)} (${change.reason})`);
-      }
-    }
-  }
-
-  const removeFrontmatterField = (filePath: string, field: string): boolean => {
-    const content = readFile(filePath) ?? '';
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!match) return false;
-    const next = match[1].split('\n').filter(line => !new RegExp(`^${field}:\\s*`).test(line)).join('\n');
-    const updated = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${next}\n---`);
-    if (updated === content) return false;
-    atomicWrite(filePath, updated);
-    return true;
-  };
-
-  const frontmatterSnapshot = (filePath: string, field: string): string | null => frontmatterValue(readFile(filePath) ?? '', field);
-  const snapshotValue = (change: RepairChange, field: string, snapshot: RepairChange['before']): string | null => {
-    if (snapshot === null) return null;
-    if (field === 'classification' && snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
-      const value = (snapshot as Record<string, unknown>).classification;
-      return typeof value === 'string' ? value : null;
-    }
-    return typeof snapshot === 'string' ? snapshot : String(snapshot);
-  };
-  const writeSnapshot = (filePath: string, field: string, snapshot: RepairChange['after']): boolean => {
-    if (snapshot === null) return removeFrontmatterField(filePath, field);
-    const value = snapshotValue({} as RepairChange, field, snapshot);
-    if (value === null) return removeFrontmatterField(filePath, field);
-    return updateFrontmatterField(filePath, field, field === 'last_verified' ? JSON.stringify(value) : value);
-  };
-
-  const executeRepairChange = (change: RepairChange): void => {
-    if (change.action === 'refresh_last_verified' || change.action === 'rollback:refresh_last_verified') {
-      const filePath = repairFiles.get(change.id);
-      if (!filePath) throw new Error(`Unable to locate ${change.id}`);
-      const expected = snapshotValue(change, 'last_verified', change.before);
-      if (frontmatterSnapshot(filePath, 'last_verified') !== expected) {
-        throw new Error(`Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`);
-      }
-      const changed = writeSnapshot(filePath, 'last_verified', change.after);
-      if (!changed) throw new Error(`Unable to update ${change.id}`);
-      try {
-        if (db) recordRepairEvent(db, change.id.split(':last_verified')[0], change);
-      } catch (error) {
-        try { writeSnapshot(filePath, 'last_verified', change.before); }
-        catch (rollbackError) {
-          const failure = new Error(`Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`) as Error & { compensation?: 'rollback_failed' };
-          failure.compensation = 'rollback_failed';
-          throw failure;
-        }
-        const failure = new Error(`Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`) as Error & { compensation?: 'rolled_back' };
-        failure.compensation = 'rolled_back';
-        throw failure;
-      }
-      if (!change.action.startsWith('rollback:')) console.log(`  Updated last_verified timestamp for card: ${change.id.split(':last_verified')[0]}`);
-      return;
-    }
-    if (change.action === 'update_frontmatter' || change.action === 'rollback:update_frontmatter') {
-      const filePath = repairFiles.get(change.id);
-      if (!filePath) throw new Error(`Unable to locate ${change.id}`);
-      const expected = snapshotValue(change, 'classification', change.before);
-      if (frontmatterSnapshot(filePath, 'classification') !== expected) {
-        throw new Error(`Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`);
-      }
-      const changed = writeSnapshot(filePath, 'classification', change.after);
-      if (!changed) throw new Error(`Unable to update ${change.id}`);
-      try {
-        if (db) recordRepairEvent(db, change.id.split(':classification')[0], change);
-      } catch (error) {
-        try { writeSnapshot(filePath, 'classification', change.before); }
-        catch (rollbackError) {
-          const failure = new Error(`Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`) as Error & { compensation?: 'rollback_failed' };
-          failure.compensation = 'rollback_failed';
-          throw failure;
-        }
-        const failure = new Error(`Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`) as Error & { compensation?: 'rolled_back' };
-        failure.compensation = 'rolled_back';
-        throw failure;
-      }
-      return;
-    }
-    if (change.action === 'cleanup_missing_card') {
-      if (!db) throw new Error('SQLite database is required for structural cleanup');
-      cleanupMissingCards(db, [change.id.replace('structural:cleanup:', '')]);
-      return;
-    }
-    if (change.action === 'remove_stale_lock') {
-      // acquireLock may already have removed the stale directory and replaced
-      // it with this process-owned reentrant lock. Never delete that active
-      // guard while verify is still running.
-      if (lockOwnedBySelf(lockPath)) return;
-      breakLock(lockPath);
-      if (getLockStatus(lockPath).exists) throw new Error('Unable to remove stale lock');
-      return;
-    }
-    if (change.action === 'rebuild_indexes') {
-      rebuildCommand({ cwd });
-      return;
-    }
-    throw new Error(`Unsupported repair action ${change.action}`);
-  };
-
-  if (repairPlan && repairPlan.changes.length > 0) {
-    let checkpointReceipt: RepairPlan['checkpoint'];
-    let checkpoint: ReturnType<typeof createRollbackCheckpoint> | undefined;
-    let checkpointPath: string | undefined;
-    let rollbackResult: RepairRollbackResult | undefined;
-    const persistCheckpoint = (changes: readonly RepairChange[], state: NonNullable<RepairPlan['checkpoint']>['state'], appliedIds: readonly string[]): void => {
-      if (!checkpoint || !checkpointPath) return;
-      checkpoint = createRollbackCheckpoint({ ...checkpoint, changes, state, appliedIds });
-      atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
-      checkpointReceipt = { id: checkpoint.id, path: checkpointPath, reversible: checkpoint.reversible, state, appliedIds };
-    };
-    if (!options.dryRun) {
-      const reversible = repairPlan.changes.every(change => ['refresh_last_verified', 'update_frontmatter'].includes(change.action));
-      const checkpointId = randomUUID();
-      checkpoint = createRollbackCheckpoint({
-        id: checkpointId,
-        planVersion: repairPlan.version,
-        createdAt: new Date().toISOString(),
-        changes: repairPlan.changes,
-        reversible,
-        source: 'pmem verify',
-        state: 'pending',
-        appliedIds: [],
-      });
-      const checkpointDir = path.join(pmemPath, 'rollback');
-      mkdirSync(checkpointDir, { recursive: true });
-      checkpointPath = path.join(checkpointDir, `${checkpointId}.json`);
-      atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
-      checkpointReceipt = { id: checkpointId, path: checkpointPath, reversible, state: 'pending', appliedIds: [] };
-    }
-    const appliedChanges: RepairChange[] = [];
-    const applied = applyRepairPlan(repairPlan, change => {
-      if (options.dryRun) throw new Error('dry-run writer must not execute');
-      executeRepairChange(change);
-      appliedChanges.push(change);
-      persistCheckpoint(appliedChanges, 'pending', appliedChanges.map(item => item.id));
-    });
-    let finalAppliedIds = applied.appliedIds;
-    if (!options.dryRun && applied.failures.length > 0 && checkpoint && applied.appliedIds.length > 0 && checkpoint.reversible) {
-      const appliedCheckpoint = createRollbackCheckpoint({ ...checkpoint, changes: checkpoint.changes.filter(change => applied.appliedIds.includes(change.id)) });
-      const restored = restoreRollbackCheckpoint(appliedCheckpoint, executeRepairChange);
-      rollbackResult = {
-        status: restored.status,
-        restoredIds: restored.restoredIds,
-        failures: restored.failures,
+      const semanticHealth = inspectSemanticReadiness(pmemPath, manifest);
+      semanticReadiness = {
+        applicable: semanticHealth.applicable,
+        eligible_cards: semanticHealth.eligible_cards,
+        excluded_cards: semanticHealth.excluded_cards,
+        excluded_by_reason: semanticHealth.excluded_by_reason,
+        pipeline_version: semanticHealth.pipeline_version,
+        index_compatible: semanticHealth.index_compatible,
+        index_fresh: semanticHealth.index_fresh,
       };
-      finalAppliedIds = applied.appliedIds.filter(id => !restored.restoredIds.includes(id));
-      persistCheckpoint(appliedCheckpoint.changes.filter(change => finalAppliedIds.includes(change.id)), restored.status === 'restored' ? 'rolled_back' : 'rollback_failed', finalAppliedIds);
-    } else if (!options.dryRun) {
-      persistCheckpoint(appliedChanges, applied.failures.length === 0 ? 'applied' : 'partial', applied.appliedIds);
+      issues.push(...semanticHealth.issues);
     }
-    const applyResult = rollbackResult ? { ...applied, appliedIds: finalAppliedIds, rollback: rollbackResult } : applied;
-    repairPlan = { ...repairPlan, ...(checkpointReceipt ? { checkpoint: checkpointReceipt } : {}), apply_result: applyResult };
-    if (!options.dryRun && finalAppliedIds.length > 0 && repairPlan.changes.some(change => ['refresh_last_verified', 'update_frontmatter', 'cleanup_missing_card'].includes(change.action))) {
-      console.log('Rebuilding indexes for repaired canonical state...');
-      rebuildCommand({ cwd });
-    }
-  }
 
-  // Build and render only after repairs so the machine-readable plan and
-  // checkpoint receipt describe the same operation that actually ran.
-  const result = finish();
-  const warnings = result.issues.filter(i => i.severity === 'warning');
-  const infos = result.issues.filter(i => i.severity === 'info');
-  const missingSourceCount = issues.filter(i => i.type === 'missing_source_file').length;
-  const untrackedCount = issues.filter(i => i.type === 'untracked_card').length;
-  if (!options.silent && options.format === 'json') {
-    console.log(JSON.stringify(result, null, 2));
-  } else if (!options.silent && result.passed && warnings.length === 0) {
-    console.log(`✓ Memory verification passed.`);
-    console.log(`  Score: ${result.score}/100`);
-    printHealthSummary(result);
-    if (infos.length > 0) for (const issue of infos) console.log(`ℹ [${issue.type}] ${issue.message}`);
-    printDistillSuggestion(db, pmemPath);
-  } else if (!options.silent) {
-    console.log(`Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`);
-    console.log(`Score: ${result.score}/100`);
-    printHealthSummary(result);
-    if (missingSourceCount > 0 || untrackedCount > 0) console.log(`Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`);
-    for (const issue of result.issues) {
-      const icon = issue.severity === 'error' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ';
-      console.log(`${icon} [${issue.type}] ${issue.message}`);
-      console.log(`  Fix: ${issue.fix}`);
-      console.log('');
-    }
-    printDistillSuggestion(db, pmemPath);
-  }
+    // Helper to clean up stale DB card rows when source .md files are missing.
+    // Called before rebuildCommand() so --fix / --fix-stale can immediately
+    // remove stale card references without waiting for a full index rebuild.
+    // Wrapped in a transaction for atomicity — a crash mid-cleanup rolls back.
+    const cleanupMissingCards = (db: MaintenanceDatabase, cardIds: readonly string[]): void => {
+      if (cardIds.length === 0) return;
 
-  if (!result.passed) {
+      console.log(`Cleaning up ${cardIds.length} stale card(s) from database...`);
+      const cleanupTx = db.transaction(() => {
+        for (const cardId of cardIds) {
+          db.prepare('DELETE FROM edges WHERE from_id = ? OR to_id = ?').run(cardId, cardId);
+          db.prepare('DELETE FROM aliases WHERE card_id = ?').run(cardId);
+          db.prepare('DELETE FROM tags WHERE card_id = ?').run(cardId);
+          db.prepare('DELETE FROM paths WHERE card_id = ?').run(cardId);
+          db.prepare('UPDATE cards SET is_deleted = 1 WHERE id = ?').run(cardId);
+          console.log(`  Removed stale card: ${cardId}`);
+        }
+      });
+      cleanupTx();
+    };
+
+    // Only fill metadata whose value is unambiguous from the card type. Trust
+    // and sensitivity remain operator decisions and are deliberately never
+    // guessed by verify --fix. Frontmatter-only writes preserve card bodies.
+    const safeClassificationByType: Record<string, string> = {
+      decision: 'decision',
+      task: 'plan',
+      feature: 'plan',
+      risk: 'risk',
+      assumption: 'assumption',
+    };
+    const repairCandidates: RepairChange[] = [];
+    const repairFiles = new Map<string, string>();
+    const repairTimestamp = new Date().toISOString();
+    const frontmatterValue = (content: string, field: string): string | null => {
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!match) return null;
+      const fieldMatch = match[1].match(new RegExp(`^${field}:\\s*(.*)$`, 'm'));
+      if (!fieldMatch) return null;
+      const raw = fieldMatch[1].trim();
+      try {
+        return typeof JSON.parse(raw) === 'string' ? JSON.parse(raw) : raw;
+      } catch {
+        return raw;
+      }
+    };
+
+    if (staleRepairRequested && db) {
+      for (const issue of issues
+        .filter((item) => item.type === 'stale_memory' && item.card_id)
+        .sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
+        const card = db.prepare('SELECT file_path FROM cards WHERE id = ?').get(issue.card_id) as
+          | { file_path: string }
+          | undefined;
+        const filePath = card ? path.join(cwd, card.file_path) : null;
+        const content = filePath && fileExists(filePath) ? readFile(filePath) : '';
+        if (!filePath || !content) continue;
+        repairFiles.set(`${issue.card_id}:last_verified`, filePath);
+        repairCandidates.push({
+          id: `${issue.card_id}:last_verified`,
+          action: 'refresh_last_verified',
+          reason: 'Source files changed after the last memory verification.',
+          before: frontmatterValue(content, 'last_verified'),
+          after: repairTimestamp,
+        });
+      }
+    }
+
+    if (metadataRepairRequested && db) {
+      for (const issue of issues
+        .filter((item) => item.type === 'unclassified_card' && item.card_id)
+        .sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
+        const card = db
+          .prepare('SELECT file_path, type FROM cards WHERE id = ?')
+          .get(issue.card_id) as { file_path: string; type: string } | undefined;
+        const classification = card ? safeClassificationByType[card.type] : undefined;
+        const filePath = card ? path.join(cwd, card.file_path) : null;
+        if (!classification || !filePath || !fileExists(filePath)) continue;
+        const content = readFile(filePath);
+        if (
+          !content ||
+          !/^---\n[\s\S]*?\n---/.test(content) ||
+          hasFrontmatterField(content, 'classification')
+        )
+          continue;
+        const id = `${issue.card_id}:classification`;
+        repairFiles.set(id, filePath);
+        repairCandidates.push({
+          id,
+          action: 'update_frontmatter',
+          reason: 'Infer classification from an unambiguous canonical card type.',
+          before: null,
+          after: { classification },
+        });
+      }
+    }
+
+    const structuralIssues = issues.filter((issue) =>
+      ['stale_index', 'missing_database', 'orphan_edges'].includes(issue.type),
+    );
+    if (structuralRepairRequested && structuralIssues.length > 0) {
+      repairCandidates.push({
+        id: 'structural:rebuild_indexes',
+        action: 'rebuild_indexes',
+        reason: 'Rebuild derived indexes from canonical Markdown and relations.',
+        before: structuralIssues.map((issue) => issue.type).sort(),
+        after: 'rebuilt',
+      });
+    }
+    if (structuralRepairRequested) {
+      for (const issue of issues
+        .filter((item) => item.type === 'missing_card_file' && item.card_id)
+        .sort((a, b) => a.card_id!.localeCompare(b.card_id!))) {
+        repairCandidates.push({
+          id: `structural:cleanup:${issue.card_id}`,
+          action: 'cleanup_missing_card',
+          reason: 'Tombstone the derived card row whose canonical Markdown source is missing.',
+          before: { state: 'active' },
+          after: { state: 'forgotten' },
+        });
+      }
+    }
+    if (lockRepairRequested && lockStatus.exists && lockStatus.stale) {
+      repairCandidates.push({
+        id: 'locks:stale_lock',
+        action: 'remove_stale_lock',
+        reason: 'Remove a lock whose owner is no longer active.',
+        before: { path: lockPath, stale: true },
+        after: null,
+      });
+    }
+
+    const boundedCandidates =
+      options.maxChanges === undefined
+        ? repairCandidates
+        : repairCandidates.slice(0, options.maxChanges);
+    if (
+      staleRepairRequested ||
+      metadataRepairRequested ||
+      structuralRepairRequested ||
+      lockRepairRequested
+    ) {
+      repairPlan = buildRepairPlan(boundedCandidates, { apply: !options.dryRun });
+      if (!options.silent && repairPlan.changes.length > 0) {
+        console.log(
+          `${options.dryRun ? 'Repair plan (dry-run)' : 'Repair plan'}: ${repairPlan.changes.length} change(s).`,
+        );
+        for (const change of repairPlan.changes) {
+          console.log(
+            `  - ${change.id}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)} (${change.reason})`,
+          );
+        }
+      }
+    }
+
+    const removeFrontmatterField = (filePath: string, field: string): boolean => {
+      const content = readFile(filePath) ?? '';
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!match) return false;
+      const next = match[1]
+        .split('\n')
+        .filter((line) => !new RegExp(`^${field}:\\s*`).test(line))
+        .join('\n');
+      const updated = content.replace(/^---\n([\s\S]*?)\n---/, `---\n${next}\n---`);
+      if (updated === content) return false;
+      atomicWrite(filePath, updated);
+      return true;
+    };
+
+    const frontmatterSnapshot = (filePath: string, field: string): string | null =>
+      frontmatterValue(readFile(filePath) ?? '', field);
+    const snapshotValue = (
+      change: RepairChange,
+      field: string,
+      snapshot: RepairChange['before'],
+    ): string | null => {
+      if (snapshot === null) return null;
+      if (
+        field === 'classification' &&
+        snapshot &&
+        typeof snapshot === 'object' &&
+        !Array.isArray(snapshot)
+      ) {
+        const value = (snapshot as Record<string, unknown>).classification;
+        return typeof value === 'string' ? value : null;
+      }
+      return typeof snapshot === 'string' ? snapshot : String(snapshot);
+    };
+    const writeSnapshot = (
+      filePath: string,
+      field: string,
+      snapshot: RepairChange['after'],
+    ): boolean => {
+      if (snapshot === null) return removeFrontmatterField(filePath, field);
+      const value = snapshotValue({} as RepairChange, field, snapshot);
+      if (value === null) return removeFrontmatterField(filePath, field);
+      return updateFrontmatterField(
+        filePath,
+        field,
+        field === 'last_verified' ? JSON.stringify(value) : value,
+      );
+    };
+
+    const executeRepairChange = (change: RepairChange): void => {
+      if (
+        change.action === 'refresh_last_verified' ||
+        change.action === 'rollback:refresh_last_verified'
+      ) {
+        const filePath = repairFiles.get(change.id);
+        if (!filePath) throw new Error(`Unable to locate ${change.id}`);
+        const expected = snapshotValue(change, 'last_verified', change.before);
+        if (frontmatterSnapshot(filePath, 'last_verified') !== expected) {
+          throw new Error(
+            `Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`,
+          );
+        }
+        const changed = writeSnapshot(filePath, 'last_verified', change.after);
+        if (!changed) throw new Error(`Unable to update ${change.id}`);
+        try {
+          if (db) recordRepairEvent(db, change.id.split(':last_verified')[0], change);
+        } catch (error) {
+          try {
+            writeSnapshot(filePath, 'last_verified', change.before);
+          } catch (rollbackError) {
+            const failure = new Error(
+              `Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+            ) as Error & { compensation?: 'rollback_failed' };
+            failure.compensation = 'rollback_failed';
+            throw failure;
+          }
+          const failure = new Error(
+            `Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`,
+          ) as Error & { compensation?: 'rolled_back' };
+          failure.compensation = 'rolled_back';
+          throw failure;
+        }
+        if (!change.action.startsWith('rollback:'))
+          console.log(
+            `  Updated last_verified timestamp for card: ${change.id.split(':last_verified')[0]}`,
+          );
+        return;
+      }
+      if (
+        change.action === 'update_frontmatter' ||
+        change.action === 'rollback:update_frontmatter'
+      ) {
+        const filePath = repairFiles.get(change.id);
+        if (!filePath) throw new Error(`Unable to locate ${change.id}`);
+        const expected = snapshotValue(change, 'classification', change.before);
+        if (frontmatterSnapshot(filePath, 'classification') !== expected) {
+          throw new Error(
+            `Repair conflict for ${change.id}: current value differs from checkpoint before snapshot`,
+          );
+        }
+        const changed = writeSnapshot(filePath, 'classification', change.after);
+        if (!changed) throw new Error(`Unable to update ${change.id}`);
+        try {
+          if (db) recordRepairEvent(db, change.id.split(':classification')[0], change);
+        } catch (error) {
+          try {
+            writeSnapshot(filePath, 'classification', change.before);
+          } catch (rollbackError) {
+            const failure = new Error(
+              `Audit event failed for ${change.id}; rollback_failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+            ) as Error & { compensation?: 'rollback_failed' };
+            failure.compensation = 'rollback_failed';
+            throw failure;
+          }
+          const failure = new Error(
+            `Audit event failed for ${change.id}; rolled_back: ${error instanceof Error ? error.message : String(error)}`,
+          ) as Error & { compensation?: 'rolled_back' };
+          failure.compensation = 'rolled_back';
+          throw failure;
+        }
+        return;
+      }
+      if (change.action === 'cleanup_missing_card') {
+        if (!db) throw new Error('SQLite database is required for structural cleanup');
+        cleanupMissingCards(db, [change.id.replace('structural:cleanup:', '')]);
+        return;
+      }
+      if (change.action === 'remove_stale_lock') {
+        // acquireLock may already have removed the stale directory and replaced
+        // it with this process-owned reentrant lock. Never delete that active
+        // guard while verify is still running.
+        if (lockOwnedBySelf(lockPath)) return;
+        breakLock(lockPath);
+        if (getLockStatus(lockPath).exists) throw new Error('Unable to remove stale lock');
+        return;
+      }
+      if (change.action === 'rebuild_indexes') {
+        rebuildCommand({ cwd });
+        return;
+      }
+      throw new Error(`Unsupported repair action ${change.action}`);
+    };
+
+    if (repairPlan && repairPlan.changes.length > 0) {
+      let checkpointReceipt: RepairPlan['checkpoint'];
+      let checkpoint: ReturnType<typeof createRollbackCheckpoint> | undefined;
+      let checkpointPath: string | undefined;
+      let rollbackResult: RepairRollbackResult | undefined;
+      const persistCheckpoint = (
+        changes: readonly RepairChange[],
+        state: NonNullable<RepairPlan['checkpoint']>['state'],
+        appliedIds: readonly string[],
+      ): void => {
+        if (!checkpoint || !checkpointPath) return;
+        checkpoint = createRollbackCheckpoint({ ...checkpoint, changes, state, appliedIds });
+        atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
+        checkpointReceipt = {
+          id: checkpoint.id,
+          path: checkpointPath,
+          reversible: checkpoint.reversible,
+          state,
+          appliedIds,
+        };
+      };
+      if (!options.dryRun) {
+        const reversible = repairPlan.changes.every((change) =>
+          ['refresh_last_verified', 'update_frontmatter'].includes(change.action),
+        );
+        const checkpointId = randomUUID();
+        checkpoint = createRollbackCheckpoint({
+          id: checkpointId,
+          planVersion: repairPlan.version,
+          createdAt: new Date().toISOString(),
+          changes: repairPlan.changes,
+          reversible,
+          source: 'pmem verify',
+          state: 'pending',
+          appliedIds: [],
+        });
+        const checkpointDir = path.join(pmemPath, 'rollback');
+        mkdirSync(checkpointDir, { recursive: true });
+        checkpointPath = path.join(checkpointDir, `${checkpointId}.json`);
+        atomicWrite(checkpointPath, JSON.stringify(checkpoint, null, 2) + '\n');
+        checkpointReceipt = {
+          id: checkpointId,
+          path: checkpointPath,
+          reversible,
+          state: 'pending',
+          appliedIds: [],
+        };
+      }
+      const appliedChanges: RepairChange[] = [];
+      const applied = applyRepairPlan(repairPlan, (change) => {
+        if (options.dryRun) throw new Error('dry-run writer must not execute');
+        executeRepairChange(change);
+        appliedChanges.push(change);
+        persistCheckpoint(
+          appliedChanges,
+          'pending',
+          appliedChanges.map((item) => item.id),
+        );
+      });
+      let finalAppliedIds = applied.appliedIds;
+      if (
+        !options.dryRun &&
+        applied.failures.length > 0 &&
+        checkpoint &&
+        applied.appliedIds.length > 0 &&
+        checkpoint.reversible
+      ) {
+        const appliedCheckpoint = createRollbackCheckpoint({
+          ...checkpoint,
+          changes: checkpoint.changes.filter((change) => applied.appliedIds.includes(change.id)),
+        });
+        const restored = restoreRollbackCheckpoint(appliedCheckpoint, executeRepairChange);
+        rollbackResult = {
+          status: restored.status,
+          restoredIds: restored.restoredIds,
+          failures: restored.failures,
+        };
+        finalAppliedIds = applied.appliedIds.filter((id) => !restored.restoredIds.includes(id));
+        persistCheckpoint(
+          appliedCheckpoint.changes.filter((change) => finalAppliedIds.includes(change.id)),
+          restored.status === 'restored' ? 'rolled_back' : 'rollback_failed',
+          finalAppliedIds,
+        );
+      } else if (!options.dryRun) {
+        persistCheckpoint(
+          appliedChanges,
+          applied.failures.length === 0 ? 'applied' : 'partial',
+          applied.appliedIds,
+        );
+      }
+      const applyResult = rollbackResult
+        ? { ...applied, appliedIds: finalAppliedIds, rollback: rollbackResult }
+        : applied;
+      repairPlan = {
+        ...repairPlan,
+        ...(checkpointReceipt ? { checkpoint: checkpointReceipt } : {}),
+        apply_result: applyResult,
+      };
+      if (
+        !options.dryRun &&
+        finalAppliedIds.length > 0 &&
+        repairPlan.changes.some((change) =>
+          ['refresh_last_verified', 'update_frontmatter', 'cleanup_missing_card'].includes(
+            change.action,
+          ),
+        )
+      ) {
+        console.log('Rebuilding indexes for repaired canonical state...');
+        rebuildCommand({ cwd });
+      }
+    }
+
+    // Build and render only after repairs so the machine-readable plan and
+    // checkpoint receipt describe the same operation that actually ran.
+    const result = finish();
+    const warnings = result.issues.filter((i) => i.severity === 'warning');
+    const infos = result.issues.filter((i) => i.severity === 'info');
+    const missingSourceCount = issues.filter((i) => i.type === 'missing_source_file').length;
+    const untrackedCount = issues.filter((i) => i.type === 'untracked_card').length;
+    if (!options.silent && options.format === 'json') {
+      console.log(JSON.stringify(result, null, 2));
+    } else if (!options.silent && result.passed && warnings.length === 0) {
+      console.log(`✓ Memory verification passed.`);
+      console.log(`  Score: ${result.score}/100`);
+      printHealthSummary(result);
+      if (infos.length > 0)
+        for (const issue of infos) console.log(`ℹ [${issue.type}] ${issue.message}`);
+      printDistillSuggestion(db, pmemPath);
+    } else if (!options.silent) {
+      console.log(`Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`);
+      console.log(`Score: ${result.score}/100`);
+      printHealthSummary(result);
+      if (missingSourceCount > 0 || untrackedCount > 0)
+        console.log(
+          `Sync: ${missingSourceCount} cards reference missing files, ${untrackedCount} cards untracked`,
+        );
+      for (const issue of result.issues) {
+        const icon = issue.severity === 'error' ? '✗' : issue.severity === 'warning' ? '⚠' : 'ℹ';
+        console.log(`${icon} [${issue.type}] ${issue.message}`);
+        console.log(`  Fix: ${issue.fix}`);
+        console.log('');
+      }
+      printDistillSuggestion(db, pmemPath);
+    }
+
+    if (!result.passed) {
+      if (options.noExit) return result;
+      process.exitCode = 2;
+      return result;
+    }
     if (options.noExit) return result;
-    process.exitCode = 2;
     return result;
-  }
-  if (options.noExit) return result;
-  return result;
-
   } finally {
     // A nested caller may already own the process-reentrant lock (for
     // example health baseline write). In that case the outer critical
     // section remains responsible for releasing it.
     if (!lockAlreadyOwned) {
-      try { releaseLock(lockPath); } catch { /* ignore */ }
+      try {
+        releaseLock(lockPath);
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
 
 function printHealthSummary(result: VerifyResult): void {
   const dims = result.dimensions;
-  console.log(`Change Score: ${result.change_score === null ? 'n/a (no baseline)' : `${result.change_score}/100`}`);
+  console.log(
+    `Change Score: ${result.change_score === null ? 'n/a (no baseline)' : `${result.change_score}/100`}`,
+  );
   console.log(
     `Dimensions: correctness ${dims.correctness.score}/100 · freshness ${dims.freshness.score}/100 · ` +
-    `metadata ${dims.metadata.score}/100 · semantic ${dims.semantic_readiness.score ?? 'n/a'}`,
+      `metadata ${dims.metadata.score}/100 · semantic ${dims.semantic_readiness.score ?? 'n/a'}`,
   );
 }
 
@@ -887,9 +1087,12 @@ export function compactVerifyIssues(issues: readonly VerifyIssue[]): VerifyIssue
     }
     if (emitted.has(issue.type)) continue;
     emitted.add(issue.type);
-    const ids = group.flatMap(item => item.card_id ? [item.card_id] : []).slice(0, 5);
+    const ids = group.flatMap((item) => (item.card_id ? [item.card_id] : [])).slice(0, 5);
     const remaining = Math.max(0, group.length - ids.length);
-    const sample = ids.length > 0 ? ` Cards: ${ids.join(', ')}${remaining > 0 ? ` (+${remaining} more)` : ''}.` : '';
+    const sample =
+      ids.length > 0
+        ? ` Cards: ${ids.join(', ')}${remaining > 0 ? ` (+${remaining} more)` : ''}.`
+        : '';
     output.push({
       ...issue,
       card_id: undefined,
@@ -900,15 +1103,21 @@ export function compactVerifyIssues(issues: readonly VerifyIssue[]): VerifyIssue
   return output;
 }
 
-function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', deferred = false): void {
+function renderVerifyResult(
+  result: VerifyResult,
+  format: 'compact' | 'json',
+  deferred = false,
+): void {
   if (format === 'json') {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  const warnings = result.issues.filter(issue => issue.severity === 'warning');
-  console.log(result.passed && warnings.length === 0
-    ? `Memory Verify Result: clean${deferred ? ' (index checks deferred)' : ''}.`
-    : `Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`);
+  const warnings = result.issues.filter((issue) => issue.severity === 'warning');
+  console.log(
+    result.passed && warnings.length === 0
+      ? `Memory Verify Result: clean${deferred ? ' (index checks deferred)' : ''}.`
+      : `Memory Verify Result: ${result.passed ? 'Warnings found' : 'Failed'}`,
+  );
   console.log(`Score: ${result.score}/100`);
   printHealthSummary(result);
   if (result.issues.length > 0) console.log('');
@@ -920,15 +1129,18 @@ function renderVerifyResult(result: VerifyResult, format: 'compact' | 'json', de
   }
 }
 
-
 function printDistillSuggestion(db: MaintenanceDatabase | null, pmemPath: string): void {
   if (!db) return;
   try {
-    const traceRow = db.prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0").get() as { count: number };
+    const traceRow = db
+      .prepare("SELECT COUNT(*) as count FROM cards WHERE type = 'trace' AND is_deleted = 0")
+      .get() as { count: number };
     const traceCount = traceRow?.count ?? 0;
     const urgency = getDistillUrgency(traceCount);
     if (urgency !== 'none') {
-      console.log(`ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`);
+      console.log(
+        `ℹ [auto_distill] ${traceCount} traces accumulated. Consider running: pmem distill --suggest`,
+      );
     }
   } catch {
     // Silently ignore DB errors — distill is a suggestion only
@@ -994,7 +1206,13 @@ function recordRepairEvent(db: MaintenanceDatabase, memoryId: string, change: Re
       record_id: memoryId,
       action: change.action,
       reason: change.reason,
-      changes: [{ path: change.id.split(':').slice(1).join(':'), before: change.before, after: change.after }],
+      changes: [
+        {
+          path: change.id.split(':').slice(1).join(':'),
+          before: change.before,
+          after: change.after,
+        },
+      ],
       actor: 'pmem verify',
     },
   });

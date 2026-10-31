@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('MCP ContextPack surface', () => {
   it('advertises pmem_context_pack in read-only mode', () => {
-    assert.ok(listMcpTools('readonly').some(tool => tool.name === 'pmem_context_pack'));
+    assert.ok(listMcpTools('readonly').some((tool) => tool.name === 'pmem_context_pack'));
   });
 
   it('returns the canonical ContextPack wire shape', async () => {
@@ -25,7 +25,10 @@ describe('MCP ContextPack surface', () => {
     roots.push(root);
     const backend = new SqliteMemoryBackend(path.join(root, '.pmem'));
     const registry = new SchemaRegistry();
-    const schema = { resolve: (ref: { id: string; version: string }) => registry.resolve(ref), list: () => registry.list() };
+    const schema = {
+      resolve: (ref: { id: string; version: string }) => registry.resolve(ref),
+      list: () => registry.list(),
+    };
     const runtime = await Pmem.open({ root, backend, schema });
     try {
       const response = await handleMcpTool(runtime, 'readonly', 'pmem_context_pack', {
@@ -60,12 +63,21 @@ describe('MCP ContextPack surface', () => {
   it('rejects invalid numeric options and unknown keys', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-mcp-context-pack-invalid-'));
     roots.push(root);
-    const runtime = await Pmem.open({ root, backend: new SqliteMemoryBackend(path.join(root, '.pmem')) });
+    const runtime = await Pmem.open({
+      root,
+      backend: new SqliteMemoryBackend(path.join(root, '.pmem')),
+    });
     try {
-      const negative = await handleMcpTool(runtime, 'readonly', 'pmem_context_pack', { query: 'q', budget: -1 });
+      const negative = await handleMcpTool(runtime, 'readonly', 'pmem_context_pack', {
+        query: 'q',
+        budget: -1,
+      });
       assert.equal(negative.isError, true);
       assert.match(negative.content[0]?.text ?? '', /budget.*finite non-negative/i);
-      const unknown = await handleMcpTool(runtime, 'readonly', 'pmem_context_pack', { query: 'q', extra: true });
+      const unknown = await handleMcpTool(runtime, 'readonly', 'pmem_context_pack', {
+        query: 'q',
+        extra: true,
+      });
       assert.equal(unknown.isError, true);
       assert.match(unknown.content[0]?.text ?? '', /unknown parameter/i);
     } finally {

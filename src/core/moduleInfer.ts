@@ -13,8 +13,8 @@ export interface InferredModule {
 
 interface KnowledgePattern {
   text: string;
-  appliesTo: string[];  // whitelist (empty = all)
-  excludes?: string[];  // blacklist
+  appliesTo: string[]; // whitelist (empty = all)
+  excludes?: string[]; // blacklist
   match: (content: string, moduleKey: string, filePath: string) => boolean;
 }
 
@@ -23,58 +23,61 @@ const KNOWLEDGE_PATTERNS: KnowledgePattern[] = [
     text: 'Game loop uses requestAnimationFrame for smooth execution.',
     appliesTo: ['engine'],
     excludes: ['audio', 'renderer', 'ui', 'api', 'storage', 'config'],
-    match: (c) => c.includes('requestAnimationFrame')
+    match: (c) => c.includes('requestAnimationFrame'),
   },
   {
     text: 'Targets a predictable mobile-style 320x560 portrait viewport.',
     appliesTo: ['engine', 'renderer', 'ui'],
     excludes: ['audio', 'api', 'storage', 'config'],
-    match: (c) => c.includes('320') && c.includes('560')
+    match: (c) => c.includes('320') && c.includes('560'),
   },
   {
     text: 'Score state tracking and score updates are implemented.',
     appliesTo: ['engine', 'ui'],
     excludes: ['audio', 'renderer', 'api', 'storage', 'config'],
-    match: (c) => c.includes('score') || c.includes('scoreState')
-  }
+    match: (c) => c.includes('score') || c.includes('scoreState'),
+  },
 ];
 
 const MODULE_HINTS: Record<string, { title: string; purpose: string; keywords: string[] }> = {
   engine: {
     title: 'Engine',
     purpose: 'Owns game loop, state update, timing, and collision-related logic.',
-    keywords: ['engine', 'loop', 'gameloop', 'state', 'physics', 'collision']
+    keywords: ['engine', 'loop', 'gameloop', 'state', 'physics', 'collision'],
   },
   renderer: {
     title: 'Renderer',
     purpose: 'Handles canvas drawing, drawing context, sprite rendering, and visual scenes.',
-    keywords: ['renderer', 'canvas', 'draw', 'sprite', 'scene', 'render']
+    keywords: ['renderer', 'canvas', 'draw', 'sprite', 'scene', 'render'],
   },
   audio: {
     title: 'Audio',
     purpose: 'Manages game audio, sound effects, music, and sound players.',
-    keywords: ['audio', 'sound', 'music', 'sfx', 'volume']
+    keywords: ['audio', 'sound', 'music', 'sfx', 'volume'],
   },
   ui: {
     title: 'UI',
-    purpose: 'Manages user interfaces, React shell components, CSS layout, and user input elements.',
-    keywords: ['app.jsx', 'app.tsx', 'components', 'styles', 'css', 'layout', 'ui', 'view', 'page']
+    purpose:
+      'Manages user interfaces, React shell components, CSS layout, and user input elements.',
+    keywords: ['app.jsx', 'app.tsx', 'components', 'styles', 'css', 'layout', 'ui', 'view', 'page'],
   },
   api: {
     title: 'API',
-    purpose: 'Handles network requests, HTTP clients, routes, server endpoints, and API communication.',
-    keywords: ['api', 'client', 'server', 'routes', 'fetch', 'axios', 'request']
+    purpose:
+      'Handles network requests, HTTP clients, routes, server endpoints, and API communication.',
+    keywords: ['api', 'client', 'server', 'routes', 'fetch', 'axios', 'request'],
   },
   storage: {
     title: 'Storage',
-    purpose: 'Manages data persistence, database records, SQLite index queries, and local storage repositories.',
-    keywords: ['db', 'sqlite', 'storage', 'repo', 'database', 'persistence']
+    purpose:
+      'Manages data persistence, database records, SQLite index queries, and local storage repositories.',
+    keywords: ['db', 'sqlite', 'storage', 'repo', 'database', 'persistence'],
   },
   config: {
     title: 'Config',
     purpose: 'Manages build settings, compiler configuration, env variables, and tooling configs.',
-    keywords: ['config', 'vite', 'webpack', 'tsconfig', 'package.json', 'settings']
-  }
+    keywords: ['config', 'vite', 'webpack', 'tsconfig', 'package.json', 'settings'],
+  },
 };
 
 function buildSourceFiles(file: string, coarse: boolean): string[] {
@@ -86,7 +89,10 @@ function buildSourceFiles(file: string, coarse: boolean): string[] {
   return [file];
 }
 
-export function inferModules(cwd: string, options?: { coarseAttribution?: boolean }): InferredModule[] {
+export function inferModules(
+  cwd: string,
+  options?: { coarseAttribution?: boolean },
+): InferredModule[] {
   const fileList: string[] = [];
   try {
     scanDir(cwd, cwd, fileList);
@@ -112,7 +118,14 @@ export function inferModules(cwd: string, options?: { coarseAttribution?: boolea
     const ext = path.extname(file).toLowerCase();
 
     let content = '';
-    if (ext === '.jsx' || ext === '.tsx' || ext === '.js' || ext === '.ts' || ext === '.css' || basename === 'package.json') {
+    if (
+      ext === '.jsx' ||
+      ext === '.tsx' ||
+      ext === '.js' ||
+      ext === '.ts' ||
+      ext === '.css' ||
+      basename === 'package.json'
+    ) {
       try {
         content = fs.readFileSync(path.join(cwd, file), 'utf8');
       } catch {}
@@ -120,7 +133,7 @@ export function inferModules(cwd: string, options?: { coarseAttribution?: boolea
 
     // Check classification keywords
     for (const [key, hint] of Object.entries(MODULE_HINTS)) {
-      let isMatch = hint.keywords.some(kw => {
+      let isMatch = hint.keywords.some((kw) => {
         if (kw.includes('.')) {
           return basename === kw;
         }
@@ -128,10 +141,20 @@ export function inferModules(cwd: string, options?: { coarseAttribution?: boolea
       });
 
       if (!isMatch && content) {
-        if (key === 'engine' && (content.includes('requestAnimationFrame') || content.includes('loop(') || content.includes('collision'))) {
+        if (
+          key === 'engine' &&
+          (content.includes('requestAnimationFrame') ||
+            content.includes('loop(') ||
+            content.includes('collision'))
+        ) {
           isMatch = true;
         }
-        if (key === 'renderer' && (content.includes('getContext') || content.includes('clearRect') || content.includes('canvas'))) {
+        if (
+          key === 'renderer' &&
+          (content.includes('getContext') ||
+            content.includes('clearRect') ||
+            content.includes('canvas'))
+        ) {
           isMatch = true;
         }
       }
@@ -172,9 +195,7 @@ export function inferModules(cwd: string, options?: { coarseAttribution?: boolea
         purpose: hint.purpose,
         source_files: files,
         current_knowledge: knowledge,
-        open_questions: [
-          `Should we split or restructure the responsibilities in ${hint.title}?`
-        ]
+        open_questions: [`Should we split or restructure the responsibilities in ${hint.title}?`],
       });
     }
   }
@@ -188,7 +209,12 @@ function scanDir(dir: string, cwd: string, fileList: string[]) {
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     const relPath = toPosixPath(path.relative(cwd, fullPath));
-    if (['node_modules', '.git', '.pmem', 'dist', 'build', 'temp', 'walkthrough.md'].includes(entry.name)) continue;
+    if (
+      ['node_modules', '.git', '.pmem', 'dist', 'build', 'temp', 'walkthrough.md'].includes(
+        entry.name,
+      )
+    )
+      continue;
     if (entry.isDirectory()) {
       scanDir(fullPath, cwd, fileList);
     } else {
@@ -215,7 +241,7 @@ tags:
   - software
 updated: "${new Date().toISOString()}"
 source_files:
-${m.source_files.map(sf => `  - ${sf}`).join('\n')}
+${m.source_files.map((sf) => `  - ${sf}`).join('\n')}
 ---
 
 # ${m.title}
@@ -224,16 +250,16 @@ ${m.source_files.map(sf => `  - ${sf}`).join('\n')}
 ${m.purpose}
 
 ## Current knowledge
-${m.current_knowledge.map(k => `- ${k}`).join('\n')}
+${m.current_knowledge.map((k) => `- ${k}`).join('\n')}
 
 ## Source files
-${m.source_files.map(sf => `- ${sf}`).join('\n')}
+${m.source_files.map((sf) => `- ${sf}`).join('\n')}
 
 ## Related traces
 - (none)
 
 ## Open questions
-${m.open_questions.map(q => `- ${q}`).join('\n')}
+${m.open_questions.map((q) => `- ${q}`).join('\n')}
 `;
 
     atomicWrite(filePath, content);

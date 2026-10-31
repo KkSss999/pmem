@@ -9,8 +9,20 @@ import {
 import type { RepairChange } from './repair';
 
 const changes: RepairChange[] = [
-  { id: 'card.b', action: 'update_frontmatter', reason: 'refresh b', before: { value: 'old' }, after: { value: 'new' } },
-  { id: 'card.a', action: 'update_frontmatter', reason: 'refresh a', before: null, after: { classification: 'decision' } },
+  {
+    id: 'card.b',
+    action: 'update_frontmatter',
+    reason: 'refresh b',
+    before: { value: 'old' },
+    after: { value: 'new' },
+  },
+  {
+    id: 'card.a',
+    action: 'update_frontmatter',
+    reason: 'refresh a',
+    before: null,
+    after: { classification: 'decision' },
+  },
 ];
 
 const input: RollbackCheckpointInput = {
@@ -27,14 +39,17 @@ describe('runtime rollback checkpoint protocol', () => {
     const checkpoint = createRollbackCheckpoint(input);
     assert.equal(checkpoint.version, 1);
     assert.equal(checkpoint.createdAt, '2026-08-03T16:00:00.000Z');
-    assert.deepEqual(checkpoint.changes.map(change => change.id), ['card.a', 'card.b']);
+    assert.deepEqual(
+      checkpoint.changes.map((change) => change.id),
+      ['card.a', 'card.b'],
+    );
     assert.deepEqual(validateRollbackCheckpoint(checkpoint), checkpoint);
   });
 
   it('restores by swapping before/after through an injected writer', () => {
     const checkpoint = createRollbackCheckpoint(input);
     const writes: RepairChange[] = [];
-    const result = restoreRollbackCheckpoint(checkpoint, change => writes.push(change));
+    const result = restoreRollbackCheckpoint(checkpoint, (change) => writes.push(change));
     assert.equal(result.status, 'restored');
     assert.deepEqual(result.restoredIds, ['card.a', 'card.b']);
     assert.equal(writes[0]?.action, 'rollback:update_frontmatter');
@@ -45,12 +60,14 @@ describe('runtime rollback checkpoint protocol', () => {
   it('does not write non-reversible checkpoints and fails closed on writer errors', () => {
     const irreversible = createRollbackCheckpoint({ ...input, reversible: false });
     let called = false;
-    const skipped = restoreRollbackCheckpoint(irreversible, () => { called = true; });
+    const skipped = restoreRollbackCheckpoint(irreversible, () => {
+      called = true;
+    });
     assert.equal(called, false);
     assert.equal(skipped.status, 'not-reversible');
     assert.deepEqual(skipped.skippedIds, ['card.a', 'card.b']);
 
-    const failed = restoreRollbackCheckpoint(createRollbackCheckpoint(input), change => {
+    const failed = restoreRollbackCheckpoint(createRollbackCheckpoint(input), (change) => {
       if (change.id === 'card.a') throw new Error('writer unavailable');
     });
     assert.equal(failed.status, 'failed');
@@ -60,8 +77,14 @@ describe('runtime rollback checkpoint protocol', () => {
 
   it('rejects malformed checkpoint metadata and repair snapshots', () => {
     assert.throws(() => createRollbackCheckpoint({ ...input, planVersion: 0 }), /positive integer/);
-    assert.throws(() => createRollbackCheckpoint({ ...input, createdAt: 'not-a-date' }), /valid ISO date/);
-    assert.throws(() => createRollbackCheckpoint({ ...input, changes: [{ ...changes[0]!, id: '' }] }), /invalid id/);
+    assert.throws(
+      () => createRollbackCheckpoint({ ...input, createdAt: 'not-a-date' }),
+      /valid ISO date/,
+    );
+    assert.throws(
+      () => createRollbackCheckpoint({ ...input, changes: [{ ...changes[0]!, id: '' }] }),
+      /invalid id/,
+    );
     assert.throws(() => createRollbackCheckpoint({ ...input, source: '' }), /non-empty string/);
   });
 });

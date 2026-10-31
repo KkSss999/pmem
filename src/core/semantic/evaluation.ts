@@ -98,7 +98,7 @@ function assertNonEmptyString(value: unknown, field: string): asserts value is s
 }
 
 function assertIds(value: unknown, field: string): asserts value is readonly string[] {
-  if (!Array.isArray(value) || value.some(id => typeof id !== 'string' || id.length === 0)) {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || id.length === 0)) {
     throw new TypeError(`${field} must be an array of non-empty strings`);
   }
 }
@@ -109,10 +109,16 @@ function assertK(k: number): void {
   }
 }
 
-function assertThreshold(value: number | undefined, field: string, range: 'ratio' | 'latency'): void {
+function assertThreshold(
+  value: number | undefined,
+  field: string,
+  range: 'ratio' | 'latency',
+): void {
   if (value === undefined) return;
   if (!Number.isFinite(value) || (range === 'ratio' ? value < 0 || value > 1 : value < 0)) {
-    throw new RangeError(`${field} must be a finite ${range === 'ratio' ? 'ratio between 0 and 1' : 'non-negative number'}`);
+    throw new RangeError(
+      `${field} must be a finite ${range === 'ratio' ? 'ratio between 0 and 1' : 'non-negative number'}`,
+    );
   }
 }
 
@@ -150,7 +156,10 @@ export function normalizeGoldenFixture(input: SemanticGoldenFixture): SemanticGo
       ...(raw.tags === undefined ? {} : { tags: [...raw.tags] }),
     };
   });
-  assertUnique(queries.map(query => query.queryId), 'Golden fixture queries');
+  assertUnique(
+    queries.map((query) => query.queryId),
+    'Golden fixture queries',
+  );
   return {
     version: SEMANTIC_GOLDEN_FIXTURE_VERSION,
     name: input.name,
@@ -167,7 +176,9 @@ export function parseGoldenFixture(input: string | unknown): SemanticGoldenFixtu
     try {
       value = JSON.parse(input) as unknown;
     } catch (error) {
-      throw new TypeError(`Invalid golden fixture JSON: ${error instanceof Error ? error.message : String(error)}`);
+      throw new TypeError(
+        `Invalid golden fixture JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   return normalizeGoldenFixture(value as SemanticGoldenFixture);
@@ -184,20 +195,34 @@ function validateRetrieval(value: SemanticGoldenRetrieval, index: number): Seman
   assertNonEmptyString(value.queryId, `Golden retrieval ${index} queryId`);
   assertIds(value.retrievedIds, `Golden retrieval ${value.queryId} retrievedIds`);
   if (value.latencyMs !== undefined && (!Number.isFinite(value.latencyMs) || value.latencyMs < 0)) {
-    throw new RangeError(`Golden retrieval ${value.queryId} latencyMs must be finite and non-negative`);
+    throw new RangeError(
+      `Golden retrieval ${value.queryId} latencyMs must be finite and non-negative`,
+    );
   }
-  if (value.retrievedTokenWeights !== undefined && (!Array.isArray(value.retrievedTokenWeights)
-    || value.retrievedTokenWeights.some(weight => !Number.isFinite(weight) || weight < 0))) {
-    throw new RangeError(`Golden retrieval ${value.queryId} retrievedTokenWeights must be finite non-negative numbers`);
+  if (
+    value.retrievedTokenWeights !== undefined &&
+    (!Array.isArray(value.retrievedTokenWeights) ||
+      value.retrievedTokenWeights.some((weight) => !Number.isFinite(weight) || weight < 0))
+  ) {
+    throw new RangeError(
+      `Golden retrieval ${value.queryId} retrievedTokenWeights must be finite non-negative numbers`,
+    );
   }
-  if (value.retrievedTokenWeights !== undefined && value.retrievedTokenWeights.length !== value.retrievedIds.length) {
-    throw new RangeError(`Golden retrieval ${value.queryId} retrievedTokenWeights must align one-to-one with retrievedIds`);
+  if (
+    value.retrievedTokenWeights !== undefined &&
+    value.retrievedTokenWeights.length !== value.retrievedIds.length
+  ) {
+    throw new RangeError(
+      `Golden retrieval ${value.queryId} retrievedTokenWeights must align one-to-one with retrievedIds`,
+    );
   }
   return {
     queryId: value.queryId,
     retrievedIds: [...value.retrievedIds],
     ...(value.latencyMs === undefined ? {} : { latencyMs: value.latencyMs }),
-    ...(value.retrievedTokenWeights === undefined ? {} : { retrievedTokenWeights: [...value.retrievedTokenWeights] }),
+    ...(value.retrievedTokenWeights === undefined
+      ? {}
+      : { retrievedTokenWeights: [...value.retrievedTokenWeights] }),
   };
 }
 
@@ -225,21 +250,67 @@ function evaluateGate(
   assertThreshold(thresholds.minMeanRecallAtK, 'minMeanRecallAtK', 'ratio');
   assertThreshold(thresholds.minMeanReciprocalRank, 'minMeanReciprocalRank', 'ratio');
   assertThreshold(thresholds.minMeanNdcgAtK, 'minMeanNdcgAtK', 'ratio');
-  assertThreshold(thresholds.minMeanContextTokenEfficiency, 'minMeanContextTokenEfficiency', 'ratio');
+  assertThreshold(
+    thresholds.minMeanContextTokenEfficiency,
+    'minMeanContextTokenEfficiency',
+    'ratio',
+  );
   assertThreshold(thresholds.maxMeanNoiseRatioAtK, 'maxMeanNoiseRatioAtK', 'ratio');
   assertThreshold(thresholds.maxP95LatencyMs, 'maxP95LatencyMs', 'latency');
 
   const aggregate = report.aggregate;
   const checks: SemanticQualityGateCheck[] = [];
-  if (thresholds.minCoverage !== undefined) checks.push(checkThreshold('coverage', aggregate.coverage, '>=', thresholds.minCoverage));
-  if (thresholds.minMeanPrecisionAtK !== undefined) checks.push(checkThreshold('meanPrecisionAtK', aggregate.meanPrecisionAtK, '>=', thresholds.minMeanPrecisionAtK));
-  if (thresholds.minMeanRecallAtK !== undefined) checks.push(checkThreshold('meanRecallAtK', aggregate.meanRecallAtK, '>=', thresholds.minMeanRecallAtK));
-  if (thresholds.minMeanReciprocalRank !== undefined) checks.push(checkThreshold('meanReciprocalRank', aggregate.meanReciprocalRank, '>=', thresholds.minMeanReciprocalRank));
-  if (thresholds.minMeanNdcgAtK !== undefined) checks.push(checkThreshold('meanNdcgAtK', aggregate.meanNdcgAtK, '>=', thresholds.minMeanNdcgAtK));
-  if (thresholds.minMeanContextTokenEfficiency !== undefined) checks.push(checkThreshold('meanContextTokenEfficiency', aggregate.meanContextTokenEfficiency, '>=', thresholds.minMeanContextTokenEfficiency));
-  if (thresholds.maxMeanNoiseRatioAtK !== undefined) checks.push(checkThreshold('meanNoiseRatioAtK', aggregate.meanNoiseRatioAtK, '<=', thresholds.maxMeanNoiseRatioAtK));
-  if (thresholds.maxP95LatencyMs !== undefined) checks.push(checkThreshold('p95LatencyMs', aggregate.latency.p95Ms, '<=', thresholds.maxP95LatencyMs));
-  return { passed: checks.every(check => check.passed), checks };
+  if (thresholds.minCoverage !== undefined)
+    checks.push(checkThreshold('coverage', aggregate.coverage, '>=', thresholds.minCoverage));
+  if (thresholds.minMeanPrecisionAtK !== undefined)
+    checks.push(
+      checkThreshold(
+        'meanPrecisionAtK',
+        aggregate.meanPrecisionAtK,
+        '>=',
+        thresholds.minMeanPrecisionAtK,
+      ),
+    );
+  if (thresholds.minMeanRecallAtK !== undefined)
+    checks.push(
+      checkThreshold('meanRecallAtK', aggregate.meanRecallAtK, '>=', thresholds.minMeanRecallAtK),
+    );
+  if (thresholds.minMeanReciprocalRank !== undefined)
+    checks.push(
+      checkThreshold(
+        'meanReciprocalRank',
+        aggregate.meanReciprocalRank,
+        '>=',
+        thresholds.minMeanReciprocalRank,
+      ),
+    );
+  if (thresholds.minMeanNdcgAtK !== undefined)
+    checks.push(
+      checkThreshold('meanNdcgAtK', aggregate.meanNdcgAtK, '>=', thresholds.minMeanNdcgAtK),
+    );
+  if (thresholds.minMeanContextTokenEfficiency !== undefined)
+    checks.push(
+      checkThreshold(
+        'meanContextTokenEfficiency',
+        aggregate.meanContextTokenEfficiency,
+        '>=',
+        thresholds.minMeanContextTokenEfficiency,
+      ),
+    );
+  if (thresholds.maxMeanNoiseRatioAtK !== undefined)
+    checks.push(
+      checkThreshold(
+        'meanNoiseRatioAtK',
+        aggregate.meanNoiseRatioAtK,
+        '<=',
+        thresholds.maxMeanNoiseRatioAtK,
+      ),
+    );
+  if (thresholds.maxP95LatencyMs !== undefined)
+    checks.push(
+      checkThreshold('p95LatencyMs', aggregate.latency.p95Ms, '<=', thresholds.maxP95LatencyMs),
+    );
+  return { passed: checks.every((check) => check.passed), checks };
 }
 
 /**
@@ -254,12 +325,19 @@ export function evaluateGoldenFixture(
 ): SemanticGoldenEvaluation {
   const fixture = normalizeGoldenFixture(fixtureInput);
   const retrievals = retrievalsInput.map(validateRetrieval);
-  assertUnique(retrievals.map(result => result.queryId), 'Golden retrievals');
-  const fixtureIds = new Set(fixture.queries.map(query => query.queryId));
-  const retrievalById = new Map(retrievals.map(result => [result.queryId, result]));
-  const missingQueryIds = fixture.queries.filter(query => !retrievalById.has(query.queryId)).map(query => query.queryId);
-  const unexpectedQueryIds = retrievals.filter(result => !fixtureIds.has(result.queryId)).map(result => result.queryId);
-  const qualityCases: QualityQueryCase[] = fixture.queries.map(query => {
+  assertUnique(
+    retrievals.map((result) => result.queryId),
+    'Golden retrievals',
+  );
+  const fixtureIds = new Set(fixture.queries.map((query) => query.queryId));
+  const retrievalById = new Map(retrievals.map((result) => [result.queryId, result]));
+  const missingQueryIds = fixture.queries
+    .filter((query) => !retrievalById.has(query.queryId))
+    .map((query) => query.queryId);
+  const unexpectedQueryIds = retrievals
+    .filter((result) => !fixtureIds.has(result.queryId))
+    .map((result) => result.queryId);
+  const qualityCases: QualityQueryCase[] = fixture.queries.map((query) => {
     const result = retrievalById.get(query.queryId);
     return {
       queryId: query.queryId,

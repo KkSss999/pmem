@@ -28,17 +28,28 @@ export async function historyCommand(
         console.log('No durable history found.');
       } else {
         for (const entry of result.entries) {
-          const detail = [entry.reason, entry.source, entry.diffStatus === 'available' ? `${entry.changes?.length ?? 0} field change(s)` : 'field diff unavailable']
+          const detail = [
+            entry.reason,
+            entry.source,
+            entry.diffStatus === 'available'
+              ? `${entry.changes?.length ?? 0} field change(s)`
+              : 'field diff unavailable',
+          ]
             .filter(Boolean)
             .join(' · ');
-          console.log(`${entry.recordedAt}  ${entry.type}  ${entry.eventId}${detail ? `  ${detail}` : ''}`);
+          console.log(
+            `${entry.recordedAt}  ${entry.type}  ${entry.eventId}${detail ? `  ${detail}` : ''}`,
+          );
         }
       }
-      if (result.warnings?.length) for (const warning of result.warnings) console.log(`Warning: ${warning}`);
+      if (result.warnings?.length)
+        for (const warning of result.warnings) console.log(`Warning: ${warning}`);
     }
   } catch (error: any) {
     if (format === 'json') {
-      console.log(JSON.stringify({ memoryId, entries: [], error: error?.message ?? String(error) }, null, 2));
+      console.log(
+        JSON.stringify({ memoryId, entries: [], error: error?.message ?? String(error) }, null, 2),
+      );
       return;
     }
     console.log(`Memory history failed: ${error?.message ?? String(error)}`);

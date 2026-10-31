@@ -1,16 +1,22 @@
 import type { HealthDimension } from '../../types';
 import type { HealthIssueRule } from './types';
 
-const FRESHNESS = new Set([
-  'stale_memory', 'stale_index', 'memory_dirty', 'stale_next_step',
-]);
+const FRESHNESS = new Set(['stale_memory', 'stale_index', 'memory_dirty', 'stale_next_step']);
 const METADATA = new Set([
-  'card_id_violation', 'card_too_large', 'card_too_large_relaxed',
-  'too_many_relations', 'low_confidence', 'unclassified_card',
-  'untrusted_memory', 'unclassified_sensitivity', 'secret_memory',
+  'card_id_violation',
+  'card_too_large',
+  'card_too_large_relaxed',
+  'too_many_relations',
+  'low_confidence',
+  'unclassified_card',
+  'untrusted_memory',
+  'unclassified_sensitivity',
+  'secret_memory',
   'invalid_trust_label',
   'untrusted_content',
-  'missing_contract_field', 'untracked_card', 'conflicting_classifications',
+  'missing_contract_field',
+  'untracked_card',
+  'conflicting_classifications',
   'agent_only_decision',
 ]);
 

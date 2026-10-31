@@ -164,9 +164,19 @@ ${extraFm}---
 `;
 }
 
-function injectEdge(testDir: string, fromId: string, toId: string, type: string, source: string, confidence: number): void {
+function injectEdge(
+  testDir: string,
+  fromId: string,
+  toId: string,
+  type: string,
+  source: string,
+  confidence: number,
+): void {
   const dbPath = path.join(testDir, '.pmem', 'pmem.db');
-  const scriptPath = path.join(os.tmpdir(), `pmem-relations-inject-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`);
+  const scriptPath = path.join(
+    os.tmpdir(),
+    `pmem-relations-inject-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.js`,
+  );
   const betterSqlitePath = path.resolve(__dirname, '../../node_modules/better-sqlite3');
   const script = `const Database = require(${JSON.stringify(betterSqlitePath)});
 const db = new Database(${JSON.stringify(dbPath)});
@@ -177,7 +187,9 @@ db.close();`;
   try {
     execSync(`node ${JSON.stringify(scriptPath)}`, { encoding: 'utf8' });
   } finally {
-    try { fs.unlinkSync(scriptPath); } catch {}
+    try {
+      fs.unlinkSync(scriptPath);
+    } catch {}
   }
 }
 
@@ -197,7 +209,9 @@ describe('pmem relations (issue #10 U7)', () => {
   });
 
   after(() => {
-    try { fs.rmSync(TEMP_ROOT, { recursive: true, force: true }); } catch {}
+    try {
+      fs.rmSync(TEMP_ROOT, { recursive: true, force: true });
+    } catch {}
   });
 
   it('card with no relations returns empty arrays and total: 0', () => {
@@ -208,8 +222,10 @@ describe('pmem relations (issue #10 U7)', () => {
     writeFile(path.join(pmemDir, 'index.md'), '# Index\n');
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
-    writeFile(path.join(pmemDir, 'modules', 'module.Isolated.md'),
-      card('module.Isolated', 'module'));
+    writeFile(
+      path.join(pmemDir, 'modules', 'module.Isolated.md'),
+      card('module.Isolated', 'module'),
+    );
 
     const rInit = pmem('rebuild --full', subDir);
     assert.strictEqual(rInit.code, 0, `rebuild failed: ${rInit.stdout}\n${rInit.stderr}`);
@@ -235,24 +251,15 @@ describe('pmem relations (issue #10 U7)', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
 
-    writeFile(path.join(pmemDir, 'modules', 'module.Hub.md'),
-      card('module.Hub', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.A.md'),
-      card('module.A', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.B.md'),
-      card('module.B', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.C.md'),
-      card('module.C', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.D.md'),
-      card('module.D', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.E.md'),
-      card('module.E', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.X.md'),
-      card('module.X', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Y.md'),
-      card('module.Y', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Z.md'),
-      card('module.Z', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Hub.md'), card('module.Hub', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.A.md'), card('module.A', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.B.md'), card('module.B', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.C.md'), card('module.C', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.D.md'), card('module.D', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.E.md'), card('module.E', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.X.md'), card('module.X', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Y.md'), card('module.Y', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Z.md'), card('module.Z', 'module'));
 
     const rInit = pmem('rebuild --full', subDir);
     assert.strictEqual(rInit.code, 0, `rebuild failed: ${rInit.stdout}\n${rInit.stderr}`);
@@ -274,7 +281,13 @@ describe('pmem relations (issue #10 U7)', () => {
     assert.strictEqual(out.total, 8);
 
     const outTargets = out.outgoing.map((e: any) => e.to_id).sort();
-    assert.deepStrictEqual(outTargets, ['module.A', 'module.B', 'module.C', 'module.D', 'module.E']);
+    assert.deepStrictEqual(outTargets, [
+      'module.A',
+      'module.B',
+      'module.C',
+      'module.D',
+      'module.E',
+    ]);
     const inSources = out.incoming.map((e: any) => e.from_id).sort();
     assert.deepStrictEqual(inSources, ['module.X', 'module.Y', 'module.Z']);
 
@@ -292,14 +305,10 @@ describe('pmem relations (issue #10 U7)', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
 
-    writeFile(path.join(pmemDir, 'modules', 'module.Center.md'),
-      card('module.Center', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Dep.md'),
-      card('module.Dep', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Rel.md'),
-      card('module.Rel', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Ref.md'),
-      card('module.Ref', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Center.md'), card('module.Center', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Dep.md'), card('module.Dep', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Rel.md'), card('module.Rel', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Ref.md'), card('module.Ref', 'module'));
 
     const rInit = pmem('rebuild --full', subDir);
     assert.strictEqual(rInit.code, 0, `rebuild failed: ${rInit.stdout}\n${rInit.stderr}`);
@@ -330,14 +339,10 @@ describe('pmem relations (issue #10 U7)', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
 
-    writeFile(path.join(pmemDir, 'modules', 'module.Foo.md'),
-      card('module.Foo', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Inf1.md'),
-      card('module.Inf1', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Inf2.md'),
-      card('module.Inf2', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.Exp1.md'),
-      card('module.Exp1', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Foo.md'), card('module.Foo', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Inf1.md'), card('module.Inf1', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Inf2.md'), card('module.Inf2', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Exp1.md'), card('module.Exp1', 'module'));
 
     const rInit = pmem('rebuild --full', subDir);
     assert.strictEqual(rInit.code, 0, `rebuild failed: ${rInit.stdout}\n${rInit.stderr}`);
@@ -369,20 +374,22 @@ describe('pmem relations (issue #10 U7)', () => {
     writeFile(path.join(pmemDir, 'state.md'), '# State\n');
     writeFile(path.join(pmemDir, 'next.md'), '# Next\n');
 
-    writeFile(path.join(pmemDir, 'modules', 'module.Subject.md'),
-      card('module.Subject', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.InfOut.md'),
-      card('module.InfOut', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.LowConfOut.md'),
-      card('module.LowConfOut', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.CleanOut.md'),
-      card('module.CleanOut', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.InfIn.md'),
-      card('module.InfIn', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.LowConfIn.md'),
-      card('module.LowConfIn', 'module'));
-    writeFile(path.join(pmemDir, 'modules', 'module.CleanIn.md'),
-      card('module.CleanIn', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.Subject.md'), card('module.Subject', 'module'));
+    writeFile(path.join(pmemDir, 'modules', 'module.InfOut.md'), card('module.InfOut', 'module'));
+    writeFile(
+      path.join(pmemDir, 'modules', 'module.LowConfOut.md'),
+      card('module.LowConfOut', 'module'),
+    );
+    writeFile(
+      path.join(pmemDir, 'modules', 'module.CleanOut.md'),
+      card('module.CleanOut', 'module'),
+    );
+    writeFile(path.join(pmemDir, 'modules', 'module.InfIn.md'), card('module.InfIn', 'module'));
+    writeFile(
+      path.join(pmemDir, 'modules', 'module.LowConfIn.md'),
+      card('module.LowConfIn', 'module'),
+    );
+    writeFile(path.join(pmemDir, 'modules', 'module.CleanIn.md'), card('module.CleanIn', 'module'));
 
     const rInit = pmem('rebuild --full', subDir);
     assert.strictEqual(rInit.code, 0, `rebuild failed: ${rInit.stdout}\n${rInit.stderr}`);
@@ -403,10 +410,15 @@ describe('pmem relations (issue #10 U7)', () => {
     assert.strictEqual(out.total, 6, `expected total 6, got ${out.total}`);
     assert.strictEqual(out.outgoing.length, 3);
     assert.strictEqual(out.incoming.length, 3);
-    assert.strictEqual(out.pruning_candidates.length, 4,
-      `expected 4 pruning candidates (2 inferred + 2 low-conf), got ${out.pruning_candidates.length}`);
+    assert.strictEqual(
+      out.pruning_candidates.length,
+      4,
+      `expected 4 pruning candidates (2 inferred + 2 low-conf), got ${out.pruning_candidates.length}`,
+    );
 
-    const reasons = out.pruning_candidates.map((p: any) => `${p.direction}:${p.reason}:${p.other_id}`).sort();
+    const reasons = out.pruning_candidates
+      .map((p: any) => `${p.direction}:${p.reason}:${p.other_id}`)
+      .sort();
     assert.deepStrictEqual(reasons, [
       'in:inferred:module.InfIn',
       'in:low_confidence:module.LowConfIn',
@@ -416,9 +428,13 @@ describe('pmem relations (issue #10 U7)', () => {
 
     // Clean edges must NOT be in pruning candidates
     const prunedOthers = out.pruning_candidates.map((p: any) => p.other_id).sort();
-    assert.ok(!prunedOthers.includes('module.CleanOut'),
-      `clean outgoing must not be pruning candidate: ${JSON.stringify(prunedOthers)}`);
-    assert.ok(!prunedOthers.includes('module.CleanIn'),
-      `clean incoming must not be pruning candidate: ${JSON.stringify(prunedOthers)}`);
+    assert.ok(
+      !prunedOthers.includes('module.CleanOut'),
+      `clean outgoing must not be pruning candidate: ${JSON.stringify(prunedOthers)}`,
+    );
+    assert.ok(
+      !prunedOthers.includes('module.CleanIn'),
+      `clean incoming must not be pruning candidate: ${JSON.stringify(prunedOthers)}`,
+    );
   });
 });

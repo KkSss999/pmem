@@ -69,12 +69,17 @@ export function parseYamlValue(val: string): string | boolean | number | string[
   if (val.startsWith('[') && val.endsWith(']')) {
     const inner = val.slice(1, -1).trim();
     if (!inner) return [];
-    return inner.split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1')).filter(s => s.length > 0);
+    return inner
+      .split(',')
+      .map((s) => s.trim().replace(/^"(.*)"$/, '$1'))
+      .filter((s) => s.length > 0);
   }
   return val.replace(/^"(.*)"$/, '$1');
 }
 
-export function parseFrontmatter(content: string): { data: Record<string, unknown>; body: string } | null {
+export function parseFrontmatter(
+  content: string,
+): { data: Record<string, unknown>; body: string } | null {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return null;
   return {

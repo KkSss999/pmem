@@ -1,7 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import type { CardRow } from '../../../types';
-import { fuseAndScore, ftsBase, graphBase, recencyFactor, confidenceFactor, supersededFactor } from './scoring';
+import {
+  fuseAndScore,
+  ftsBase,
+  graphBase,
+  recencyFactor,
+  confidenceFactor,
+  supersededFactor,
+} from './scoring';
 
 function card(overrides: Partial<CardRow> = {}): CardRow {
   return {
@@ -42,47 +49,93 @@ describe('v0.8 scoring', () => {
   it('fuses duplicate candidates, merges reasons, and sorts deterministically', () => {
     const a = card();
     const b = card({ id: 'module.beta', type: 'module', title: 'Beta Module' });
-    const results = fuseAndScore([
-      { card: a, base: 0.7, graph_distance: 0, reasons: [{ channel: 'tag', detail: 'tag: x', base: 0.7 }] },
-      { card: a, base: 0.9, graph_distance: 0, reasons: [{ channel: 'alias', detail: 'alias: x', base: 0.9 }] },
-      { card: b, base: 0.9, graph_distance: 0, reasons: [{ channel: 'source_file', detail: 'source file', base: 0.9 }] },
-    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+    const results = fuseAndScore(
+      [
+        {
+          card: a,
+          base: 0.7,
+          graph_distance: 0,
+          reasons: [{ channel: 'tag', detail: 'tag: x', base: 0.7 }],
+        },
+        {
+          card: a,
+          base: 0.9,
+          graph_distance: 0,
+          reasons: [{ channel: 'alias', detail: 'alias: x', base: 0.9 }],
+        },
+        {
+          card: b,
+          base: 0.9,
+          graph_distance: 0,
+          reasons: [{ channel: 'source_file', detail: 'source file', base: 0.9 }],
+        },
+      ],
+      { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() },
+    );
 
     assert.strictEqual(results.length, 2);
     assert.strictEqual(results[0].card.id, 'decision.alpha');
     assert.strictEqual(results[0].reasons.length, 2);
-    assert.ok(results[0].score > 0.9, 'decision/module type weight and recency should boost exact-ish hits');
+    assert.ok(
+      results[0].score > 0.9,
+      'decision/module type weight and recency should boost exact-ish hits',
+    );
   });
 
   it('preserves semantic rerank text when a deterministic channel found the card first', () => {
     const shared = card({ id: 'module.shared', type: 'module' });
-    const results = fuseAndScore([
-      { card: shared, base: 0.8, graph_distance: 0, reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }] },
-      {
-        card: shared,
-        base: 0.7,
-        graph_distance: 0,
-        reasons: [{ channel: 'semantic', detail: 'semantic passage', base: 0.7 }],
-        rerank_text: 'credential rotation boundary\nContext: authentication session',
-      },
-    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
+    const results = fuseAndScore(
+      [
+        {
+          card: shared,
+          base: 0.8,
+          graph_distance: 0,
+          reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }],
+        },
+        {
+          card: shared,
+          base: 0.7,
+          graph_distance: 0,
+          reasons: [{ channel: 'semantic', detail: 'semantic passage', base: 0.7 }],
+          rerank_text: 'credential rotation boundary\nContext: authentication session',
+        },
+      ],
+      { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() },
+    );
 
     assert.equal(results.length, 1);
-    assert.equal(results[0].rerank_text, 'credential rotation boundary\nContext: authentication session');
-    assert.deepEqual(results[0].reasons.map(reason => reason.channel), ['fts', 'semantic']);
+    assert.equal(
+      results[0].rerank_text,
+      'credential rotation boundary\nContext: authentication session',
+    );
+    assert.deepEqual(
+      results[0].reasons.map((reason) => reason.channel),
+      ['fts', 'semantic'],
+    );
   });
 
   it('penalizes dirty cards without hiding them', () => {
-    const results = fuseAndScore([
-      { card: card(), base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },
-    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.alpha']) });
+    const results = fuseAndScore(
+      [
+        {
+          card: card(),
+          base: 1,
+          graph_distance: 0,
+          reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }],
+        },
+      ],
+      { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.alpha']) },
+    );
     assert.strictEqual(results.length, 1);
     assert.strictEqual(results[0].stale, true);
     assert.strictEqual(results[0].factors.staleness, 0.8);
   });
 
   it('keeps recency factor within expected bounds', () => {
-    const factor = recencyFactor('2026-01-01T00:00:00.000Z', Date.parse('2026-04-01T00:00:00.000Z'));
+    const factor = recencyFactor(
+      '2026-01-01T00:00:00.000Z',
+      Date.parse('2026-04-01T00:00:00.000Z'),
+    );
     assert.ok(factor >= 0.75 && factor <= 1);
   });
 
@@ -99,23 +152,68 @@ describe('v0.8 scoring', () => {
       updated_at: '2026-01-03T00:00:00.000Z',
       last_verified_at: '2026-01-03T00:00:00.000Z',
     });
-    const results = fuseAndScore([
-      { card: freshFts, base: 0.8, graph_distance: 0, reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }] },
-      { card: oldDirtyExact, base: 1, graph_distance: 0, reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }] },
-    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.exact']) });
+    const results = fuseAndScore(
+      [
+        {
+          card: freshFts,
+          base: 0.8,
+          graph_distance: 0,
+          reasons: [{ channel: 'fts', detail: 'bm25', base: 0.8 }],
+        },
+        {
+          card: oldDirtyExact,
+          base: 1,
+          graph_distance: 0,
+          reasons: [{ channel: 'exact_id', detail: 'id', base: 1 }],
+        },
+      ],
+      { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set(['decision.exact']) },
+    );
     assert.strictEqual(results[0].card.id, 'decision.exact');
   });
 
   it('keeps exact title and path hits ahead of semantic candidates', () => {
-    const exactTitle = card({ id: 'decision.title', title: 'Target title', updated_at: '2024-01-01T00:00:00.000Z' });
-    const exactPath = card({ id: 'module.path', type: 'module', updated_at: '2024-01-01T00:00:00.000Z' });
+    const exactTitle = card({
+      id: 'decision.title',
+      title: 'Target title',
+      updated_at: '2024-01-01T00:00:00.000Z',
+    });
+    const exactPath = card({
+      id: 'module.path',
+      type: 'module',
+      updated_at: '2024-01-01T00:00:00.000Z',
+    });
     const semantic = card({ id: 'decision.semantic', updated_at: '2026-01-03T00:00:00.000Z' });
-    const results = fuseAndScore([
-      { card: semantic, base: 0.99, graph_distance: 0, reasons: [{ channel: 'semantic', detail: 'similar', base: 0.99 }] },
-      { card: exactTitle, base: 0.4, graph_distance: 0, reasons: [{ channel: 'exact_title', detail: 'title', base: 0.4 }] },
-      { card: exactPath, base: 0.4, graph_distance: 0, reasons: [{ channel: 'source_file', detail: 'path', base: 0.4 }] },
-    ], { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() });
-    assert.deepStrictEqual(results.slice(0, 2).map(result => result.card.id).sort(), ['decision.title', 'module.path']);
+    const results = fuseAndScore(
+      [
+        {
+          card: semantic,
+          base: 0.99,
+          graph_distance: 0,
+          reasons: [{ channel: 'semantic', detail: 'similar', base: 0.99 }],
+        },
+        {
+          card: exactTitle,
+          base: 0.4,
+          graph_distance: 0,
+          reasons: [{ channel: 'exact_title', detail: 'title', base: 0.4 }],
+        },
+        {
+          card: exactPath,
+          base: 0.4,
+          graph_distance: 0,
+          reasons: [{ channel: 'source_file', detail: 'path', base: 0.4 }],
+        },
+      ],
+      { now: Date.parse('2026-01-03T00:00:00.000Z'), dirtyCardIds: new Set() },
+    );
+    assert.deepStrictEqual(
+      results
+        .slice(0, 2)
+        .map((result) => result.card.id)
+        .sort(),
+      ['decision.title', 'module.path'],
+    );
     assert.strictEqual(results[2].card.id, 'decision.semantic');
   });
 });
@@ -141,12 +239,30 @@ describe('v1.1 agent-trust scoring factors', () => {
     const superseded = card({ id: 'decision.sup', superseded_by: '["decision.low"]' } as any);
     const baseline = card({ id: 'decision.base' });
     const now = Date.parse('2026-01-02T00:00:00.000Z');
-    const results = fuseAndScore([
-      { card: lowConf, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
-      { card: superseded, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
-      { card: baseline, base: 1, graph_distance: 0, reasons: [{ channel: 'like', detail: 'x', base: 1 }] },
-    ], { now, dirtyCardIds: new Set() });
-    const byId = Object.fromEntries(results.map(r => [r.card.id, r]));
+    const results = fuseAndScore(
+      [
+        {
+          card: lowConf,
+          base: 1,
+          graph_distance: 0,
+          reasons: [{ channel: 'like', detail: 'x', base: 1 }],
+        },
+        {
+          card: superseded,
+          base: 1,
+          graph_distance: 0,
+          reasons: [{ channel: 'like', detail: 'x', base: 1 }],
+        },
+        {
+          card: baseline,
+          base: 1,
+          graph_distance: 0,
+          reasons: [{ channel: 'like', detail: 'x', base: 1 }],
+        },
+      ],
+      { now, dirtyCardIds: new Set() },
+    );
+    const byId = Object.fromEntries(results.map((r) => [r.card.id, r]));
     assert.ok(byId['decision.low'].factors.confidence < 1.0, 'low confidence factor applied');
     assert.ok(byId['decision.sup'].factors.superseded < 1.0, 'superseded factor applied');
     assert.strictEqual(byId['decision.base'].factors.confidence, 1.0);

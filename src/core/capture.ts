@@ -14,7 +14,7 @@ import {
   getActiveSession,
   closeDatabase,
   insertDirtyFlag,
-  insertRuntimeEvent
+  insertRuntimeEvent,
 } from './db';
 import { getCurrentBranch } from './git';
 import { acknowledgeStatusChanges, statusQuery } from './query/status';
@@ -42,11 +42,11 @@ export interface CaptureResult {
 
 export function captureCore(pmemPath: string, options: CaptureOptions = {}): CaptureResult {
   const cwd = options.cwd ?? process.cwd();
-  
+
   if (!fileExists(pmemPath)) {
     return {
       success: false,
-      message: 'No .pmem directory found. Run pmem init first.'
+      message: 'No .pmem directory found. Run pmem init first.',
     };
   }
 
@@ -57,18 +57,18 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
   } catch (err: any) {
     return {
       success: false,
-      message: `Failed to detect changes: ${err.message}`
+      message: `Failed to detect changes: ${err.message}`,
     };
   }
 
   const changedFiles = (status.changes || []).filter(
-    f => !f.path.startsWith('.pmem/') && !f.path.startsWith('.pmem\\') && f.path !== '.pmem'
+    (f) => !f.path.startsWith('.pmem/') && !f.path.startsWith('.pmem\\') && f.path !== '.pmem',
   );
   if (changedFiles.length === 0 && !options.force) {
     return {
       success: true,
       message: 'No changed files detected. Memory is up-to-date.',
-      skipped: true
+      skipped: true,
     };
   }
 
@@ -93,21 +93,19 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
         hasHead = false;
       }
 
-      const statusOutput = execSync(
-        "git status --porcelain --untracked-files=all -- . ':!.pmem'",
-        { cwd, encoding: 'utf8', timeout: 5000 }
-      );
+      const statusOutput = execSync("git status --porcelain --untracked-files=all -- . ':!.pmem'", {
+        cwd,
+        encoding: 'utf8',
+        timeout: 5000,
+      });
 
       const diffOutput = hasHead
-        ? execSync(
-            "git diff HEAD -- . ':!.pmem'",
-            { cwd, encoding: 'utf8', timeout: 5000 }
-          )
+        ? execSync("git diff HEAD -- . ':!.pmem'", { cwd, encoding: 'utf8', timeout: 5000 })
         : '';
 
       const untrackedHashes = changedFiles
-        .filter(f => f.status.includes('?') || f.status === '??')
-        .map(f => {
+        .filter((f) => f.status.includes('?') || f.status === '??')
+        .map((f) => {
           const fullPath = path.join(cwd, f.path);
           if (!fileExists(fullPath)) return `${f.path}:missing`;
           try {
@@ -119,25 +117,25 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
         })
         .join('\n');
 
-      const combined = [
-        statusOutput,
-        diffOutput,
-        untrackedHashes
-      ].join('\n---pmem-diff-boundary---');
+      const combined = [statusOutput, diffOutput, untrackedHashes].join(
+        '\n---pmem-diff-boundary---',
+      );
 
       diffHash = crypto.createHash('sha256').update(combined).digest('hex');
     } else {
       // Fallback mtime-based hash of changed files and mtimes
-      const mtimeList = changedFiles.map(c => {
-        const fullPath = path.join(cwd, c.path);
-        const mtime = fileExists(fullPath) ? getFileMtime(fullPath) || 0 : 0;
-        return `${c.path}:${mtime}:${c.status}`;
-      }).join('\n');
+      const mtimeList = changedFiles
+        .map((c) => {
+          const fullPath = path.join(cwd, c.path);
+          const mtime = fileExists(fullPath) ? getFileMtime(fullPath) || 0 : 0;
+          return `${c.path}:${mtime}:${c.status}`;
+        })
+        .join('\n');
       diffHash = crypto.createHash('sha256').update(mtimeList).digest('hex');
     }
   } catch (err: any) {
     // If diff computation fails, we use a fallback hash based on file names only
-    const fallbackList = changedFiles.map(c => `${c.path}:${c.status}`).join('\n');
+    const fallbackList = changedFiles.map((c) => `${c.path}:${c.status}`).join('\n');
     diffHash = crypto.createHash('sha256').update(fallbackList).digest('hex');
   }
 
@@ -147,21 +145,22 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
 
   if (!options.force && diffHash) {
     try {
-      const existingTraceFiles = fs.readdirSync(traceDir)
+      const existingTraceFiles = fs
+        .readdirSync(traceDir)
         .filter((f: string) => f.endsWith('.md'))
         .sort((a, b) => b.localeCompare(a)); // Sort descending to get latest first
 
       if (existingTraceFiles.length > 0) {
         const latestTracePath = path.join(traceDir, existingTraceFiles[0]);
         const latestTraceContent = readFile(latestTracePath) || '';
-        
+
         // Match diff_hash: "..." or diff_hash: ...
         const diffHashMatch = latestTraceContent.match(/diff_hash:\s*["']?([a-fA-F0-9]+)["']?/);
         if (diffHashMatch && diffHashMatch[1] === diffHash) {
           return {
             success: true,
             message: 'No new capture created. Existing trace already records this diff.',
-            skipped: true
+            skipped: true,
           };
         }
       }
@@ -194,7 +193,7 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     changedFiles,
     userSummary: options.summary,
     next: options.next,
-    latestTask
+    latestTask,
   });
 
   const next = traceSummary.next[0] || 'Continue development.';
@@ -203,9 +202,9 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
   const today = new Date().toISOString().split('T')[0];
   let traceFile = '';
   try {
-    const existingTraces = fs.readdirSync(traceDir)
-      .filter((f: string) => f.startsWith(today) && f.endsWith('.md'))
-      .length;
+    const existingTraces = fs
+      .readdirSync(traceDir)
+      .filter((f: string) => f.startsWith(today) && f.endsWith('.md')).length;
 
     const traceNum = String(existingTraces + 1).padStart(3, '0');
     traceFile = path.resolve(traceDir, `${today}-${traceNum}.md`);
@@ -216,7 +215,8 @@ export function captureCore(pmemPath: string, options: CaptureOptions = {}): Cap
     }
 
     const cardId = `trace.${today}-${traceNum}`;
-    const listItems = (arr: string[]) => arr.length > 0 ? arr.map(x => `- ${x}`).join('\n') : '- (none)';
+    const listItems = (arr: string[]) =>
+      arr.length > 0 ? arr.map((x) => `- ${x}`).join('\n') : '- (none)';
 
     const traceContent = `---
 id: ${cardId}
@@ -230,9 +230,9 @@ confidence: "${traceSummary.confidence}"
 source: "${options.summary ? 'capture_manual' : 'capture_auto'}"
 diff_hash: "${diffHash}"
 source_files:
-${changedFiles.map(f => `  - ${f.path}`).join('\n')}
+${changedFiles.map((f) => `  - ${f.path}`).join('\n')}
 related:
-${traceSummary.affectedModules.map(m => `  - ${m}`).join('\n')}
+${traceSummary.affectedModules.map((m) => `  - ${m}`).join('\n')}
 ---
 
 # Capture: ${traceSummary.title}
@@ -241,7 +241,7 @@ ${traceSummary.affectedModules.map(m => `  - ${m}`).join('\n')}
 ${traceSummary.summary}
 
 ## Changed files
-${traceSummary.changedFiles.map(f => `- ${f.path} [${f.status}]${f.additions !== undefined ? ` (+${f.additions} -${f.deletions})` : ''}`).join('\n')}
+${traceSummary.changedFiles.map((f) => `- ${f.path} [${f.status}]${f.additions !== undefined ? ` (+${f.additions} -${f.deletions})` : ''}`).join('\n')}
 
 ## What changed
 ${listItems(traceSummary.whatChanged)}
@@ -266,7 +266,7 @@ ${listItems(traceSummary.next)}
   } catch (err: any) {
     return {
       success: false,
-      message: `Failed to write trace card: ${err.message}`
+      message: `Failed to write trace card: ${err.message}`,
     };
   }
 
@@ -277,12 +277,12 @@ ${listItems(traceSummary.next)}
     writeManagedNext(pmemPath, {
       nextStep: next,
       why: traceSummary.why[0] || 'Capture of latest changes.',
-      context: contextList
+      context: contextList,
     });
   } catch (err: any) {
     return {
       success: false,
-      message: `Failed to update next.md: ${err.message}`
+      message: `Failed to update next.md: ${err.message}`,
     };
   }
 
@@ -309,11 +309,12 @@ ${listItems(traceSummary.next)}
       transactionActive = true;
 
       const activeSession = getActiveSession(db);
-      
+
       // Auto mark changed files dirty first to make sure they are tracked before resolving
-      const allPaths = db.prepare(
-        "SELECT card_id, path FROM paths"
-      ).all() as Array<{ card_id: string; path: string }>;
+      const allPaths = db.prepare('SELECT card_id, path FROM paths').all() as Array<{
+        card_id: string;
+        path: string;
+      }>;
 
       const dirtyCards: string[] = [];
       for (const change of changedFiles) {
@@ -328,7 +329,13 @@ ${listItems(traceSummary.next)}
 
             if (isMatch) {
               if (!dirtyCards.includes(p.card_id)) {
-                insertDirtyFlag(db, 'card', p.card_id, 'file_changed: ' + change.path, activeSession?.id);
+                insertDirtyFlag(
+                  db,
+                  'card',
+                  p.card_id,
+                  'file_changed: ' + change.path,
+                  activeSession?.id,
+                );
                 dirtyCards.push(p.card_id);
               }
             }
@@ -338,10 +345,9 @@ ${listItems(traceSummary.next)}
 
       // Resolve affected cards dirty flags
       const affectedCards = status.affected_cards || [];
-      const cardsToResolve = Array.from(new Set([
-        ...dirtyCards,
-        ...affectedCards.map((ac: any) => ac.card_id)
-      ]));
+      const cardsToResolve = Array.from(
+        new Set([...dirtyCards, ...affectedCards.map((ac: any) => ac.card_id)]),
+      );
 
       for (const cardId of cardsToResolve) {
         resolveDirtyFlags(db, 'card', cardId);
@@ -394,7 +400,7 @@ ${listItems(traceSummary.next)}
 
     return {
       success: false,
-      message: `Failed SQLite transaction: ${err.message}`
+      message: `Failed SQLite transaction: ${err.message}`,
     };
   }
 
@@ -403,14 +409,18 @@ ${listItems(traceSummary.next)}
     rebuildCommand({ full: options.full === true, cwd });
   } catch (err: any) {
     if (db && transactionActive) {
-      try { db.prepare('ROLLBACK').run(); } catch {}
+      try {
+        db.prepare('ROLLBACK').run();
+      } catch {}
       transactionActive = false;
-      try { closeDatabase(); } catch {}
+      try {
+        closeDatabase();
+      } catch {}
     }
     return {
       success: false,
       message: `Failed rebuild: ${err.message}`,
-      tracePath: traceFile
+      tracePath: traceFile,
     };
   }
 
@@ -423,7 +433,14 @@ ${listItems(traceSummary.next)}
         const todayNum = path.basename(traceFile, '.md').split('-').pop() || '001';
         const traceCardId = `trace.${today}-${todayNum}`;
         const branch = getCurrentBranch(cwd);
-        insertUpdateLog(eventDb, 'confirm_update', traceSummary.summary, activeSession?.id, [traceCardId], true);
+        insertUpdateLog(
+          eventDb,
+          'confirm_update',
+          traceSummary.summary,
+          activeSession?.id,
+          [traceCardId],
+          true,
+        );
         insertRuntimeEvent(eventDb, {
           eventType: 'memory.capture.committed',
           memoryId: traceCardId,
@@ -432,7 +449,7 @@ ${listItems(traceSummary.next)}
           payload: {
             trace_path: path.relative(cwd, traceFile),
             summary: traceSummary.summary,
-            changed_files: changedFiles.map(f => f.path),
+            changed_files: changedFiles.map((f) => f.path),
             diff_hash: diffHash,
           },
           success: true,
@@ -442,21 +459,28 @@ ${listItems(traceSummary.next)}
       closeDatabase();
     }
   } catch (err: any) {
-    try { closeDatabase(); } catch {}
+    try {
+      closeDatabase();
+    } catch {}
     if (fileExists(traceFile)) {
-      try { fs.unlinkSync(traceFile); } catch {}
+      try {
+        fs.unlinkSync(traceFile);
+      } catch {}
     }
     return {
       success: false,
       message: `Failed SQLite commit: ${err.message}`,
-      tracePath: traceFile
+      tracePath: traceFile,
     };
   }
 
   // Update state.md
   try {
     const { updateStateRecentChanges, updateStateModules } = require('./state');
-    updateStateRecentChanges(pmemPath, { title: traceSummary.title, summary: traceSummary.summary });
+    updateStateRecentChanges(pmemPath, {
+      title: traceSummary.title,
+      summary: traceSummary.summary,
+    });
     updateStateModules(pmemPath);
   } catch (err: any) {
     // Ignore state update errors
@@ -464,16 +488,26 @@ ${listItems(traceSummary.next)}
 
   // 10. Run lightweight verify
   try {
-    verifyCommand({ fix: false, fixLocks: false, fixStale: false, relaxed: true, noExit: true, cwd });
+    verifyCommand({
+      fix: false,
+      fixLocks: false,
+      fixStale: false,
+      relaxed: true,
+      noExit: true,
+      cwd,
+    });
   } catch (err: any) {
     // Verification warning only, do not fail capture
   }
 
-  acknowledgeStatusChanges(pmemPath, changedFiles.map(change => change.path));
+  acknowledgeStatusChanges(
+    pmemPath,
+    changedFiles.map((change) => change.path),
+  );
 
   return {
     success: true,
     message: 'Memory sync and update completed successfully.',
-    tracePath: traceFile
+    tracePath: traceFile,
   };
 }

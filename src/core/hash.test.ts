@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { computeHash, computeCardHashes, stripManagedFrontmatter, tokenCount, sectionCount } from './hash';
+import {
+  computeHash,
+  computeCardHashes,
+  stripManagedFrontmatter,
+  tokenCount,
+  sectionCount,
+} from './hash';
 
 describe('computeHash', () => {
   it('returns a deterministic output for the same input', () => {
@@ -62,16 +68,8 @@ describe('computeCardHashes', () => {
   });
 
   it('body changes produce different bodyHash but same frontmatterHash', () => {
-    const h1 = computeCardHashes(
-      '---\nid: test\n---\nBody A',
-      'id: test',
-      'Body A'
-    );
-    const h2 = computeCardHashes(
-      '---\nid: test\n---\nBody B',
-      'id: test',
-      'Body B'
-    );
+    const h1 = computeCardHashes('---\nid: test\n---\nBody A', 'id: test', 'Body A');
+    const h2 = computeCardHashes('---\nid: test\n---\nBody B', 'id: test', 'Body B');
     assert.strictEqual(h1.frontmatterHash, h2.frontmatterHash);
     assert.notStrictEqual(h1.bodyHash, h2.bodyHash);
     assert.notStrictEqual(h1.fileHash, h2.fileHash);

@@ -51,7 +51,7 @@ export interface RelationsQueryOptions {
 export async function relationsQuery(
   pmemPath: string,
   cardId: string,
-  options?: RelationsQueryOptions
+  options?: RelationsQueryOptions,
 ): Promise<RelationsQueryResult> {
   const dbPath = path.join(pmemPath, 'pmem.db');
   if (!options?.runtime?.backend && !fileExists(dbPath)) {
@@ -96,8 +96,10 @@ export async function relationsQuery(
       }
     }
 
-    const compareEdges = (a: { edge_id: number; confidence: number }, b: { edge_id: number; confidence: number }) =>
-      a.confidence - b.confidence || a.edge_id - b.edge_id;
+    const compareEdges = (
+      a: { edge_id: number; confidence: number },
+      b: { edge_id: number; confidence: number },
+    ) => a.confidence - b.confidence || a.edge_id - b.edge_id;
     outgoingRows.sort(compareEdges);
     incomingRows.sort(compareEdges);
 
@@ -173,7 +175,10 @@ export interface RelationsCommandOptions {
   runtime?: CommandRuntimeOptions;
 }
 
-export async function relationsCommand(cardId: string, options: RelationsCommandOptions): Promise<void> {
+export async function relationsCommand(
+  cardId: string,
+  options: RelationsCommandOptions,
+): Promise<void> {
   const pmemPath = path.join(process.cwd(), PMEM_DIR);
   const source = (options.source ?? 'all') as RelationsQueryOptions['source'];
   const result = await relationsQuery(pmemPath, cardId, {
@@ -203,11 +208,16 @@ export async function relationsCommand(cardId: string, options: RelationsCommand
     const limit = 10;
     const slice = result.pruning_candidates.slice(0, limit);
     for (const p of slice) {
-      const arrow = p.direction === 'out' ? `${result.card_id} -> ${p.other_id}` : `${p.other_id} -> ${result.card_id}`;
+      const arrow =
+        p.direction === 'out'
+          ? `${result.card_id} -> ${p.other_id}`
+          : `${p.other_id} -> ${result.card_id}`;
       console.log(`  - [${p.source}, conf=${p.confidence}, ${p.reason}] ${arrow} (${p.type})`);
     }
     if (result.pruning_candidates.length > limit) {
-      console.log(`  ... and ${result.pruning_candidates.length - limit} more (use --format json to see all)`);
+      console.log(
+        `  ... and ${result.pruning_candidates.length - limit} more (use --format json to see all)`,
+      );
     }
   }
 }

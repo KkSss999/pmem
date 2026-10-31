@@ -191,7 +191,12 @@ describe('getCardHash', () => {
     const db = createInMemoryDb();
     createSchema(db);
     try {
-      const card = makeCard({ file_path: '/test/known.md', file_hash: 'aaa', frontmatter_hash: 'bbb', body_hash: 'ccc' });
+      const card = makeCard({
+        file_path: '/test/known.md',
+        file_hash: 'aaa',
+        frontmatter_hash: 'bbb',
+        body_hash: 'ccc',
+      });
       upsertCard(db, card);
 
       const result = getCardHash(db, '/test/known.md');
@@ -244,7 +249,10 @@ describe('insertAlias', () => {
     createSchema(db);
     try {
       insertAlias(db, 'card.1', 'Main Entry');
-      const row = db.prepare('SELECT * FROM aliases WHERE card_id = ?').get('card.1') as { alias: string; normalized_alias: string };
+      const row = db.prepare('SELECT * FROM aliases WHERE card_id = ?').get('card.1') as {
+        alias: string;
+        normalized_alias: string;
+      };
       assert.ok(row);
       assert.strictEqual(row.alias, 'Main Entry');
       assert.strictEqual(row.normalized_alias, 'main entry');
@@ -271,7 +279,9 @@ describe('insertAlias', () => {
     createSchema(db);
     try {
       insertAlias(db, 'card.1', 'UPPERCASE Alias');
-      const row = db.prepare('SELECT normalized_alias FROM aliases WHERE card_id = ?').get('card.1') as { normalized_alias: string };
+      const row = db
+        .prepare('SELECT normalized_alias FROM aliases WHERE card_id = ?')
+        .get('card.1') as { normalized_alias: string };
       assert.strictEqual(row.normalized_alias, 'uppercase alias');
     } finally {
       db.close();
@@ -285,7 +295,10 @@ describe('insertTag', () => {
     createSchema(db);
     try {
       insertTag(db, 'card.1', 'frontend');
-      const row = db.prepare('SELECT * FROM tags WHERE card_id = ?').get('card.1') as { tag: string; normalized_tag: string };
+      const row = db.prepare('SELECT * FROM tags WHERE card_id = ?').get('card.1') as {
+        tag: string;
+        normalized_tag: string;
+      };
       assert.ok(row);
       assert.strictEqual(row.tag, 'frontend');
       assert.strictEqual(row.normalized_tag, 'frontend');
@@ -314,7 +327,10 @@ describe('insertPath', () => {
     createSchema(db);
     try {
       insertPath(db, 'card.1', '/src/index.ts', 'source_file');
-      const row = db.prepare('SELECT * FROM paths WHERE card_id = ?').get('card.1') as { path: string; relation: string };
+      const row = db.prepare('SELECT * FROM paths WHERE card_id = ?').get('card.1') as {
+        path: string;
+        relation: string;
+      };
       assert.ok(row);
       assert.strictEqual(row.path, '/src/index.ts');
       assert.strictEqual(row.relation, 'source_file');
@@ -350,7 +366,9 @@ describe('clearAllTables', () => {
 
       const cardCount = db.prepare('SELECT COUNT(*) as cnt FROM cards').get() as { cnt: number };
       const edgeCount = db.prepare('SELECT COUNT(*) as cnt FROM edges').get() as { cnt: number };
-      const dirtyCount = db.prepare('SELECT COUNT(*) as cnt FROM dirty_flags').get() as { cnt: number };
+      const dirtyCount = db.prepare('SELECT COUNT(*) as cnt FROM dirty_flags').get() as {
+        cnt: number;
+      };
 
       assert.strictEqual(cardCount.cnt, 0);
       assert.strictEqual(edgeCount.cnt, 0);
@@ -452,7 +470,7 @@ describe('sessions', () => {
     try {
       startSession(db, 'session-001');
       // Small delay to ensure different started_at timestamps
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await new Promise((resolve) => setTimeout(resolve, 5));
       startSession(db, 'session-002');
 
       const active = getActiveSession(db);
@@ -535,7 +553,9 @@ describe('runtime events and forget', () => {
     try {
       createSchema(db);
       assert.strictEqual(getSchemaVersion(db), CORE_SCHEMA_VERSION);
-      const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'events'").get() as { name: string } | undefined;
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'events'")
+        .get() as { name: string } | undefined;
       assert.ok(row);
     } finally {
       db.close();
@@ -579,10 +599,26 @@ describe('runtime events and forget', () => {
       assert.strictEqual(result.success, true);
       assert.ok(result.eventId);
 
-      const card = db.prepare('SELECT is_deleted FROM cards WHERE id = ?').get('module.keep') as { is_deleted: number };
+      const card = db.prepare('SELECT is_deleted FROM cards WHERE id = ?').get('module.keep') as {
+        is_deleted: number;
+      };
       assert.strictEqual(card.is_deleted, 1);
-      assert.strictEqual((db.prepare('SELECT COUNT(*) AS cnt FROM edges WHERE from_id = ? OR to_id = ?').get('module.keep', 'module.keep') as { cnt: number }).cnt, 0);
-      assert.strictEqual((db.prepare('SELECT COUNT(*) AS cnt FROM aliases WHERE card_id = ?').get('module.keep') as { cnt: number }).cnt, 0);
+      assert.strictEqual(
+        (
+          db
+            .prepare('SELECT COUNT(*) AS cnt FROM edges WHERE from_id = ? OR to_id = ?')
+            .get('module.keep', 'module.keep') as { cnt: number }
+        ).cnt,
+        0,
+      );
+      assert.strictEqual(
+        (
+          db
+            .prepare('SELECT COUNT(*) AS cnt FROM aliases WHERE card_id = ?')
+            .get('module.keep') as { cnt: number }
+        ).cnt,
+        0,
+      );
       assert.strictEqual(getUnresolvedDirtyFlags(db).length, 0);
 
       const events = getRecentRuntimeEvents(db, 1);

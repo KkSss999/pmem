@@ -3,7 +3,9 @@ import { resolve } from 'path';
 
 function readPackageVersion(): string {
   try {
-    const pkg = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8')) as { version?: unknown };
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf-8')) as {
+      version?: unknown;
+    };
     if (typeof pkg.version === 'string' && pkg.version.trim()) {
       return pkg.version;
     }

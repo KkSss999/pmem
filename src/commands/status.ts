@@ -39,16 +39,20 @@ export function getChangedFiles(cwd: string, since?: string) {
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
   const projectRoot = project?.projectRoot ?? cwd;
-  return statusQuery(pmemPath, { since, cwd: projectRoot }).changes.map(c => ({
+  return statusQuery(pmemPath, { since, cwd: projectRoot }).changes.map((c) => ({
     path: c.path,
     status: c.status,
-    relatedCards: c.related_cards.map(rc => ({ card_id: rc.card_id, match_type: rc.match_type })),
+    relatedCards: c.related_cards.map((rc) => ({ card_id: rc.card_id, match_type: rc.match_type })),
   }));
 }
 
 // === Main command ===
 
-export async function statusCommand(options: { since?: string; format?: string; runtime?: CommandRuntimeOptions }): Promise<void> {
+export async function statusCommand(options: {
+  since?: string;
+  format?: string;
+  runtime?: CommandRuntimeOptions;
+}): Promise<void> {
   const cwd = process.cwd();
   const project = findProjectPaths(cwd);
   const pmemPath = project?.pmemPath ?? path.join(cwd, '.pmem');
@@ -86,9 +90,10 @@ export async function statusCommand(options: { since?: string; format?: string; 
     // compact output
     console.log(`Changed files (${result.changes.length}) [${result.source}]:`);
     for (const c of result.changes) {
-      const related = c.related_cards.length > 0
-        ? c.related_cards.map((rc: any) => `${rc.card_id} (${rc.match_type})`).join(', ')
-        : '(no related cards)';
+      const related =
+        c.related_cards.length > 0
+          ? c.related_cards.map((rc: any) => `${rc.card_id} (${rc.match_type})`).join(', ')
+          : '(no related cards)';
       console.log(`  ${c.status} ${c.path} → related: ${related}`);
     }
     if (result.affected_cards.length > 0) {
@@ -97,7 +102,9 @@ export async function statusCommand(options: { since?: string; format?: string; 
         console.log(`  ${ac.card_id} (${formatAffectedCardDetail(ac as AffectedCard)})`);
       }
       if (result.needs_rebuild) {
-        console.log(`\nNote: detected new/modified .pmem/**/*.md files. Run \`pmem rebuild\` to update SQLite indexes.`);
+        console.log(
+          `\nNote: detected new/modified .pmem/**/*.md files. Run \`pmem rebuild\` to update SQLite indexes.`,
+        );
         console.log(`\nRun: pmem rebuild`);
       } else {
         console.log(`\nRun: pmem mark-dirty --auto`);

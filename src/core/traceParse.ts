@@ -43,7 +43,7 @@ export function parseTraceCard(content: string): ParsedTrace | null {
     decisions,
     next,
     changedFiles,
-    createdAt
+    createdAt,
   };
 }
 

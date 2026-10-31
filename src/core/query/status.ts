@@ -76,11 +76,14 @@ export interface StatusResult {
   suggested_action: string | null;
 }
 
-export function statusQuery(pmemPath: string, options?: {
-  since?: string;
-  db?: Database.Database;
-  cwd?: string;
-}): StatusResult {
+export function statusQuery(
+  pmemPath: string,
+  options?: {
+    since?: string;
+    db?: Database.Database;
+    cwd?: string;
+  },
+): StatusResult {
   const cwd = options?.cwd ?? process.cwd();
   const dbPath = path.join(pmemPath, 'pmem.db');
 
@@ -99,9 +102,10 @@ export function statusQuery(pmemPath: string, options?: {
 
     // Pass 1: Exact path matching
     try {
-      const allPaths = db.prepare(
-        "SELECT card_id, path FROM paths"
-      ).all() as Array<{ card_id: string; path: string }>;
+      const allPaths = db.prepare('SELECT card_id, path FROM paths').all() as Array<{
+        card_id: string;
+        path: string;
+      }>;
 
       for (const change of changes) {
         for (const p of allPaths) {
@@ -115,7 +119,9 @@ export function statusQuery(pmemPath: string, options?: {
           }
         }
       }
-    } catch { /* ignore query errors */ }
+    } catch {
+      /* ignore query errors */
+    }
 
     // Pass 2: Directory-level fuzzy matching
     try {
@@ -128,9 +134,9 @@ export function statusQuery(pmemPath: string, options?: {
       }
       for (const dir of dirSet) {
         const dirPattern = dir + '/%';
-        const dirRows = db.prepare(
-          "SELECT card_id, path FROM paths WHERE path LIKE ?"
-        ).all(dirPattern) as Array<{ card_id: string; path: string }>;
+        const dirRows = db
+          .prepare('SELECT card_id, path FROM paths WHERE path LIKE ?')
+          .all(dirPattern) as Array<{ card_id: string; path: string }>;
         for (const row of dirRows) {
           upsertAffectedCard(affectedCards, {
             card_id: row.card_id,
@@ -139,16 +145,20 @@ export function statusQuery(pmemPath: string, options?: {
           });
         }
       }
-    } catch { /* ignore query errors */ }
+    } catch {
+      /* ignore query errors */
+    }
 
     // Pass 3: Graph neighbor expansion (one-hop)
     if (affectedCards.size > 0) {
       const affectedCardIds = [...affectedCards.keys()];
       const placeholders = affectedCardIds.map(() => '?').join(',');
       try {
-        const edgeRows = db.prepare(
-          `SELECT from_id, to_id FROM edges WHERE from_id IN (${placeholders}) OR to_id IN (${placeholders})`
-        ).all(...affectedCardIds, ...affectedCardIds) as Array<{ from_id: string; to_id: string }>;
+        const edgeRows = db
+          .prepare(
+            `SELECT from_id, to_id FROM edges WHERE from_id IN (${placeholders}) OR to_id IN (${placeholders})`,
+          )
+          .all(...affectedCardIds, ...affectedCardIds) as Array<{ from_id: string; to_id: string }>;
 
         for (const edge of edgeRows) {
           if (affectedCards.has(edge.from_id) && !affectedCards.has(edge.to_id)) {
@@ -166,7 +176,9 @@ export function statusQuery(pmemPath: string, options?: {
             });
           }
         }
-      } catch { /* ignore query errors */ }
+      } catch {
+        /* ignore query errors */
+      }
     }
   }
 
@@ -174,7 +186,13 @@ export function statusQuery(pmemPath: string, options?: {
   // This catches cards whose frontmatter id is not yet in the SQLite paths table
   // (i.e., before a pmem rebuild).
   const existingCardIds = collectExistingCardIds(dbPath, options?.db);
-  const needsRebuild = detectMemoryCardChanges(cwd, changes, affectedCards, existingCardIds, source);
+  const needsRebuild = detectMemoryCardChanges(
+    cwd,
+    changes,
+    affectedCards,
+    existingCardIds,
+    source,
+  );
 
   const affectedCardsList = [...affectedCards.values()];
   const state = deriveState(changes.length, affectedCardsList, needsRebuild);
@@ -182,12 +200,12 @@ export function statusQuery(pmemPath: string, options?: {
   return {
     checked_at: new Date().toISOString(),
     source,
-    changes: changes.map(c => ({
+    changes: changes.map((c) => ({
       path: c.path,
       status: c.status,
       related_cards: c.related_cards,
     })),
-    affected_cards: affectedCardsList.map(ac => {
+    affected_cards: affectedCardsList.map((ac) => {
       const obj: Record<string, unknown> = {
         id: ac.card_id,
         card_id: ac.card_id,
@@ -205,7 +223,9 @@ export function statusQuery(pmemPath: string, options?: {
   };
 }
 
-function deriveReason(matchType: AffectedCard['match_type']): 'source_file_changed' | 'new_card' | 'modified_card' {
+function deriveReason(
+  matchType: AffectedCard['match_type'],
+): 'source_file_changed' | 'new_card' | 'modified_card' {
   if (matchType === 'new_card') return 'new_card';
   if (matchType === 'modified_card') return 'modified_card';
   return 'source_file_changed';
@@ -218,10 +238,13 @@ function deriveState(
 ): StatusResult['state'] {
   if (changeCount === 0) return 'no_changes';
   const hasMemoryChange = affectedCards.some(
-    (ac) => ac.match_type === 'new_card' || ac.match_type === 'modified_card'
+    (ac) => ac.match_type === 'new_card' || ac.match_type === 'modified_card',
   );
   const hasSourceChange = affectedCards.some(
-    (ac) => ac.match_type === 'exact' || ac.match_type === 'directory' || ac.match_type === 'graph_neighbor'
+    (ac) =>
+      ac.match_type === 'exact' ||
+      ac.match_type === 'directory' ||
+      ac.match_type === 'graph_neighbor',
   );
   if (needsRebuild || hasMemoryChange) {
     return hasSourceChange ? 'mixed' : 'memory_changes_detected';
@@ -230,7 +253,11 @@ function deriveState(
   return 'no_changes';
 }
 
-function buildSuggestedAction(affectedCount: number, needsRebuild: boolean, changeCount = 0): string | null {
+function buildSuggestedAction(
+  affectedCount: number,
+  needsRebuild: boolean,
+  changeCount = 0,
+): string | null {
   if (needsRebuild) return 'pmem rebuild';
   if (affectedCount > 0) return 'pmem mark-dirty --auto';
   if (changeCount > 0) return 'review source changes; no related memory cards found';
@@ -249,14 +276,18 @@ function collectExistingCardIds(dbPath: string, existingDb?: Database.Database):
   try {
     const db = existingDb ?? openDatabase(path.dirname(dbPath));
     try {
-      const rows = db.prepare('SELECT DISTINCT card_id FROM paths').all() as Array<{ card_id: string }>;
+      const rows = db.prepare('SELECT DISTINCT card_id FROM paths').all() as Array<{
+        card_id: string;
+      }>;
       for (const row of rows) {
         if (row.card_id) ids.add(row.card_id);
       }
     } finally {
       if (!existingDb) closeDatabase();
     }
-  } catch { /* ignore — fall back to empty set */ }
+  } catch {
+    /* ignore — fall back to empty set */
+  }
   return ids;
 }
 
@@ -291,8 +322,12 @@ function detectMemoryCardChanges(
     // Treat anything that is not deletion as relevant for rebuild:
     //   'A' / '??' (added), 'M' (modified), 'R' (renamed), 'C' (copied), etc.
     const isAddedOrModified =
-      status === 'A' || status === '??' || status === 'M' ||
-      status === 'R' || status === 'C' || status === 'AM';
+      status === 'A' ||
+      status === '??' ||
+      status === 'M' ||
+      status === 'R' ||
+      status === 'C' ||
+      status === 'AM';
     if (!isAddedOrModified) continue;
     // The source-of-truth file changed even if its frontmatter is invalid.
     // Rebuild is responsible for reporting the specific parse diagnostic.
@@ -366,12 +401,24 @@ function getChangedFiles(
 
   const userSkipDirs = (manifest as any)?.change_detection?.skip_dirs || [];
   const systemSkips = [
-    'node_modules', '.git', 'dist', 'build', '.claude',
-    '.pmem/pmem.db', '.pmem/indexes', '.pmem/.lock',
-    '.pmem/skills', '.pmem/candidates', '.pmem/summaries',
-    '.pmem/integrations', '.pmem/backups',
-    '.pmem/index.md', '.pmem/state.md', '.pmem/next.md',
-    '.pmem/.last-status', '.pmem/.last-status.tmp'
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    '.claude',
+    '.pmem/pmem.db',
+    '.pmem/indexes',
+    '.pmem/.lock',
+    '.pmem/skills',
+    '.pmem/candidates',
+    '.pmem/summaries',
+    '.pmem/integrations',
+    '.pmem/backups',
+    '.pmem/index.md',
+    '.pmem/state.md',
+    '.pmem/next.md',
+    '.pmem/.last-status',
+    '.pmem/.last-status.tmp',
   ];
   // Legacy manifests still resolve the v0.6.x card directories through
   // resolveConfig(). Excluding the whole .pmem tree here would make those
@@ -381,14 +428,20 @@ function getChangedFiles(
 
   try {
     if (detectedSource === 'git') {
-      const output = execSync('git status --porcelain -u', { cwd, encoding: 'utf-8', timeout: 5000 });
+      const output = execSync('git status --porcelain -u', {
+        cwd,
+        encoding: 'utf-8',
+        timeout: 5000,
+      });
       for (const change of parseGitStatusPorcelain(output)) {
-        if (skipDirs.some(d => change.path.startsWith(d + '/') || change.path === d)) continue;
+        if (skipDirs.some((d) => change.path.startsWith(d + '/') || change.path === d)) continue;
         upsertFileChange(changes, change.path, change.status || 'M');
       }
       return sortedFileChanges(changes);
     }
-  } catch { /* fall through to mtime */ }
+  } catch {
+    /* fall through to mtime */
+  }
 
   // Mtime-based fallback
   const lastStatusFile = path.join(cwd, '.pmem', '.last-status');
@@ -420,7 +473,7 @@ function getChangedFiles(
   // An explicit --since query is an independent historical view and must not
   // inherit acknowledgements from the rolling operational snapshot.
   const acknowledged = new Map(
-    since ? [] : snapshot.acknowledged.map(entry => [entry.path, entry]),
+    since ? [] : snapshot.acknowledged.map((entry) => [entry.path, entry]),
   );
   for (const dirPath of [...scanRoots].sort()) {
     if (!fileExists(dirPath)) continue;
@@ -432,13 +485,14 @@ function getChangedFiles(
     writeMtimeSnapshot(lastStatusFile, {
       version: 1,
       watermark_ms: scanStartedAt,
-      pending: result.map(change => persistedChange(change)),
+      pending: result.map((change) => persistedChange(change)),
       // Once an acknowledged version falls behind the new scan-start
       // watermark it has been safely traversed and no longer needs a tombstone.
       // Versions at/after the boundary remain to suppress only that exact
       // content while preserving later edits through fingerprint mismatch.
-      acknowledged: snapshot.acknowledged.filter(entry =>
-        !Number.isFinite(entry.mtime_ms) || entry.mtime_ms! >= scanStartedAt),
+      acknowledged: snapshot.acknowledged.filter(
+        (entry) => !Number.isFinite(entry.mtime_ms) || entry.mtime_ms! >= scanStartedAt,
+      ),
     });
   }
 
@@ -458,7 +512,7 @@ function scanDirMtime(
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       const relPath = path.relative(cwd, fullPath);
-      if (skipDirs.some(d => relPath.startsWith(d + '/') || relPath === d)) continue;
+      if (skipDirs.some((d) => relPath.startsWith(d + '/') || relPath === d)) continue;
 
       if (entry.isDirectory()) {
         scanDirMtime(fullPath, cwd, since, skipDirs, changes, acknowledged);
@@ -467,15 +521,23 @@ function scanDirMtime(
           const stat = fs.statSync(fullPath);
           if (stat.mtimeMs >= since) {
             let observed: ObservedFile | undefined;
-            try { observed = observeFile(fullPath, stat); } catch { /* still report unreadable files */ }
+            try {
+              observed = observeFile(fullPath, stat);
+            } catch {
+              /* still report unreadable files */
+            }
             const normalizedPath = relPath.split(path.sep).join('/');
             if (observed && sameObservedFile(observed, acknowledged.get(normalizedPath))) continue;
             upsertFileChange(changes, relPath, 'M', observed);
           }
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
     }
-  } catch { /* skip */ }
+  } catch {
+    /* skip */
+  }
 }
 
 function upsertFileChange(
@@ -503,15 +565,23 @@ function readMtimeSnapshot(snapshotPath: string): PersistedMtimeSnapshot {
   if (content) {
     try {
       const parsed = JSON.parse(content) as Partial<PersistedMtimeSnapshot>;
-      if (parsed.version === 1 && Number.isFinite(parsed.watermark_ms) && Array.isArray(parsed.pending)) {
+      if (
+        parsed.version === 1 &&
+        Number.isFinite(parsed.watermark_ms) &&
+        Array.isArray(parsed.pending)
+      ) {
         return {
           version: 1,
           watermark_ms: parsed.watermark_ms!,
-          pending: parsed.pending.filter((item): item is PersistedFileChange =>
-            Boolean(item) && typeof item.path === 'string' && typeof item.status === 'string'),
+          pending: parsed.pending.filter(
+            (item): item is PersistedFileChange =>
+              Boolean(item) && typeof item.path === 'string' && typeof item.status === 'string',
+          ),
           acknowledged: Array.isArray(parsed.acknowledged)
-            ? parsed.acknowledged.filter((item): item is PersistedFileChange =>
-              Boolean(item) && typeof item.path === 'string')
+            ? parsed.acknowledged.filter(
+                (item): item is PersistedFileChange =>
+                  Boolean(item) && typeof item.path === 'string',
+              )
             : [],
         };
       }
@@ -523,7 +593,12 @@ function readMtimeSnapshot(snapshotPath: string): PersistedMtimeSnapshot {
       }
     }
   }
-  return { version: 1, watermark_ms: getFileMtime(snapshotPath) || 0, pending: [], acknowledged: [] };
+  return {
+    version: 1,
+    watermark_ms: getFileMtime(snapshotPath) || 0,
+    pending: [],
+    acknowledged: [],
+  };
 }
 
 function observeFile(filePath: string, stat = fs.statSync(filePath)): ObservedFile {
@@ -535,7 +610,9 @@ function observeFile(filePath: string, stat = fs.statSync(filePath)): ObservedFi
 }
 
 function observedFromPersisted(value: Partial<ObservedFile>): ObservedFile | undefined {
-  return Number.isFinite(value.mtime_ms) && Number.isFinite(value.size) && typeof value.sha256 === 'string'
+  return Number.isFinite(value.mtime_ms) &&
+    Number.isFinite(value.size) &&
+    typeof value.sha256 === 'string'
     ? { mtime_ms: value.mtime_ms!, size: value.size!, sha256: value.sha256 }
     : undefined;
 }
@@ -572,13 +649,21 @@ export function acknowledgeStatusChanges(pmemPath: string, paths: string[]): voi
   let parsed: PersistedMtimeSnapshot;
   try {
     const value = JSON.parse(content) as PersistedMtimeSnapshot;
-    if (value.version !== 1 || !Array.isArray(value.pending) || !Number.isFinite(value.watermark_ms)) return;
-    parsed = { ...value, acknowledged: Array.isArray(value.acknowledged) ? value.acknowledged : [] };
+    if (
+      value.version !== 1 ||
+      !Array.isArray(value.pending) ||
+      !Number.isFinite(value.watermark_ms)
+    )
+      return;
+    parsed = {
+      ...value,
+      acknowledged: Array.isArray(value.acknowledged) ? value.acknowledged : [],
+    };
   } catch {
     return;
   }
 
-  const acknowledged = new Set(paths.map(filePath => filePath.split(path.sep).join('/')));
+  const acknowledged = new Set(paths.map((filePath) => filePath.split(path.sep).join('/')));
   const handledVersions: Array<ObservedFile & { path: string }> = [];
   for (const change of parsed.pending) {
     if (!acknowledged.has(change.path)) continue;
@@ -592,11 +677,13 @@ export function acknowledgeStatusChanges(pmemPath: string, paths: string[]): voi
         path: change.path,
         ...observeFile(path.join(path.dirname(pmemPath), change.path)),
       });
-    } catch { /* deleted paths need no fingerprint tombstone */ }
+    } catch {
+      /* deleted paths need no fingerprint tombstone */
+    }
   }
-  const pending = parsed.pending.filter(change => !acknowledged.has(change.path));
+  const pending = parsed.pending.filter((change) => !acknowledged.has(change.path));
   if (pending.length === parsed.pending.length) return;
-  const acknowledgedByPath = new Map(parsed.acknowledged.map(entry => [entry.path, entry]));
+  const acknowledgedByPath = new Map(parsed.acknowledged.map((entry) => [entry.path, entry]));
   for (const entry of handledVersions) acknowledgedByPath.set(entry.path, entry);
   writeMtimeSnapshot(snapshotPath, {
     ...parsed,

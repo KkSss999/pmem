@@ -43,7 +43,8 @@ pmem verify
 Installed under .claude/commands/pmem-*.md. Use /pmem-recall, /pmem-ask <query>, /pmem-update, /pmem-distill during your session.
 `;
 
-const SETTINGS_JSON = '{\n' +
+const SETTINGS_JSON =
+  '{\n' +
   '  "hooks": {\n' +
   '    "PostToolUse": [{\n' +
   '      "matcher": "Edit|Write",\n' +
@@ -177,9 +178,13 @@ function listIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMani
   if (fileExists(integrationsDir)) {
     const fs = require('fs');
     const entries = fs.readdirSync(integrationsDir, { withFileTypes: true });
-    const allIntegrations = entries.filter((e: { isDirectory: () => boolean }) => e.isDirectory()).map((e: { name: string }) => e.name);
+    const allIntegrations = entries
+      .filter((e: { isDirectory: () => boolean }) => e.isDirectory())
+      .map((e: { name: string }) => e.name);
 
-    const inactive = allIntegrations.filter((i: string) => !manifest!.integrations.active.includes(i));
+    const inactive = allIntegrations.filter(
+      (i: string) => !manifest!.integrations.active.includes(i),
+    );
     if (inactive.length > 0) {
       console.log('\nAvailable (not active):');
       for (const i of inactive) {
@@ -249,11 +254,17 @@ function reportFileVersion(filePath: string, label: string): void {
   } else if (version === CURRENT_TEMPLATE_VERSION) {
     console.log(`    ${label}: ✓ exists (version ${version})`);
   } else {
-    console.log(`    ${label}: ⚠ installed file v${version}, current template v${CURRENT_TEMPLATE_VERSION} — mismatch`);
+    console.log(
+      `    ${label}: ⚠ installed file v${version}, current template v${CURRENT_TEMPLATE_VERSION} — mismatch`,
+    );
   }
 }
 
-function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadManifest>, framework: string): void {
+function installIntegration(
+  pmemPath: string,
+  manifest: ReturnType<typeof loadManifest>,
+  framework: string,
+): void {
   if (!manifest) return;
 
   const integDir = path.join(pmemPath, 'integrations', framework);
@@ -261,27 +272,48 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
 
   switch (framework) {
     case 'claude-code': {
-      writeFile(path.join(integDir, 'CLAUDE.md'), withVersionFrontmatter(CLAUDE_CODE_TEMPLATE, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(integDir, 'CLAUDE.md'),
+        withVersionFrontmatter(CLAUDE_CODE_TEMPLATE, CURRENT_TEMPLATE_VERSION),
+      );
 
       // Generate .claude/settings.json in project root (single source for Claude Code hook config)
       const claudeSettingsDir = path.join(process.cwd(), '.claude');
       ensureDir(claudeSettingsDir);
-      writeFile(path.join(claudeSettingsDir, 'settings.json'), withVersionJson(SETTINGS_JSON, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(claudeSettingsDir, 'settings.json'),
+        withVersionJson(SETTINGS_JSON, CURRENT_TEMPLATE_VERSION),
+      );
       console.log('  Created .claude/settings.json');
 
       // Generate slash command files
       const commandsDir = path.join(claudeSettingsDir, 'commands');
       ensureDir(commandsDir);
-      writeFile(path.join(commandsDir, 'pmem-recall.md'), withVersionFrontmatter(SLASH_RECALL, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(commandsDir, 'pmem-ask.md'), withVersionFrontmatter(SLASH_ASK, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(commandsDir, 'pmem-update.md'), withVersionFrontmatter(SLASH_UPDATE, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(commandsDir, 'pmem-distill.md'), withVersionFrontmatter(SLASH_DISTILL, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(commandsDir, 'pmem-recall.md'),
+        withVersionFrontmatter(SLASH_RECALL, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(commandsDir, 'pmem-ask.md'),
+        withVersionFrontmatter(SLASH_ASK, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(commandsDir, 'pmem-update.md'),
+        withVersionFrontmatter(SLASH_UPDATE, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(commandsDir, 'pmem-distill.md'),
+        withVersionFrontmatter(SLASH_DISTILL, CURRENT_TEMPLATE_VERSION),
+      );
       console.log('  Created .claude/commands/pmem-*.md (4 slash commands)');
 
       // Also create/update root CLAUDE.md
       const rootClaudePath = path.join(process.cwd(), 'CLAUDE.md');
       if (!fileExists(rootClaudePath)) {
-        writeFile(rootClaudePath, withVersionFrontmatter(CLAUDE_CODE_TEMPLATE, CURRENT_TEMPLATE_VERSION));
+        writeFile(
+          rootClaudePath,
+          withVersionFrontmatter(CLAUDE_CODE_TEMPLATE, CURRENT_TEMPLATE_VERSION),
+        );
         console.log('  Created CLAUDE.md in project root.');
       }
       break;
@@ -289,22 +321,40 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
     case 'cursor': {
       const cursorRulesDir = path.join(process.cwd(), '.cursor', 'rules');
       ensureDir(cursorRulesDir);
-      writeFile(path.join(cursorRulesDir, 'pmem.mdc'), withVersionFrontmatter(CURSOR_RULES_TEMPLATE, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(cursorRulesDir, 'pmem.mdc'),
+        withVersionFrontmatter(CURSOR_RULES_TEMPLATE, CURRENT_TEMPLATE_VERSION),
+      );
 
       // Polish 3: Cursor 0.46+ supports .cursor/commands/ for slash commands
       const cursorCommandsDir = path.join(process.cwd(), '.cursor', 'commands');
       ensureDir(cursorCommandsDir);
-      writeFile(path.join(cursorCommandsDir, 'pmem-recall.md'), withVersionFrontmatter(SLASH_RECALL, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(cursorCommandsDir, 'pmem-ask.md'), withVersionFrontmatter(SLASH_ASK, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(cursorCommandsDir, 'pmem-update.md'), withVersionFrontmatter(SLASH_UPDATE, CURRENT_TEMPLATE_VERSION));
-      writeFile(path.join(cursorCommandsDir, 'pmem-distill.md'), withVersionFrontmatter(SLASH_DISTILL, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(cursorCommandsDir, 'pmem-recall.md'),
+        withVersionFrontmatter(SLASH_RECALL, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(cursorCommandsDir, 'pmem-ask.md'),
+        withVersionFrontmatter(SLASH_ASK, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(cursorCommandsDir, 'pmem-update.md'),
+        withVersionFrontmatter(SLASH_UPDATE, CURRENT_TEMPLATE_VERSION),
+      );
+      writeFile(
+        path.join(cursorCommandsDir, 'pmem-distill.md'),
+        withVersionFrontmatter(SLASH_DISTILL, CURRENT_TEMPLATE_VERSION),
+      );
       console.log('  Created .cursor/commands/pmem-*.md (4 slash commands)');
       break;
     }
     case 'codex': {
       // Polish 3: Codex does not support .codex/commands/ as a stable feature.
       // Instead, the AGENTS.md has a ## Commands section that lists exact pmem invocations.
-      writeFile(path.join(integDir, 'AGENTS.md'), withVersionFrontmatter(CODEX_AGENTS_TEMPLATE, CURRENT_TEMPLATE_VERSION));
+      writeFile(
+        path.join(integDir, 'AGENTS.md'),
+        withVersionFrontmatter(CODEX_AGENTS_TEMPLATE, CURRENT_TEMPLATE_VERSION),
+      );
       break;
     }
     case 'git-hooks': {
@@ -347,9 +397,22 @@ function installIntegration(pmemPath: string, manifest: ReturnType<typeof loadMa
     manifest.integrations.active.push(framework);
   }
   const v06files: Record<string, string[]> = {
-    'claude-code': ['CLAUDE.md', '.claude/settings.json', '.claude/commands/pmem-recall.md', '.claude/commands/pmem-ask.md', '.claude/commands/pmem-update.md', '.claude/commands/pmem-distill.md'],
-    'cursor': ['.cursor/rules/pmem.mdc', '.cursor/commands/pmem-recall.md', '.cursor/commands/pmem-ask.md', '.cursor/commands/pmem-update.md', '.cursor/commands/pmem-distill.md'],
-    'codex': ['AGENTS.md'],
+    'claude-code': [
+      'CLAUDE.md',
+      '.claude/settings.json',
+      '.claude/commands/pmem-recall.md',
+      '.claude/commands/pmem-ask.md',
+      '.claude/commands/pmem-update.md',
+      '.claude/commands/pmem-distill.md',
+    ],
+    cursor: [
+      '.cursor/rules/pmem.mdc',
+      '.cursor/commands/pmem-recall.md',
+      '.cursor/commands/pmem-ask.md',
+      '.cursor/commands/pmem-update.md',
+      '.cursor/commands/pmem-distill.md',
+    ],
+    codex: ['AGENTS.md'],
     'git-hooks': ['.git/hooks/pre-commit'],
   };
   manifest.integrations[framework] = {
@@ -377,7 +440,9 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
     console.log(`\n  ${active}: ${exists ? 'installed' : 'missing'}`);
 
     // Template version check
-    const installedInfo = manifest.integrations[active] as { template_version?: string } | undefined;
+    const installedInfo = manifest.integrations[active] as
+      | { template_version?: string }
+      | undefined;
     if (installedInfo?.template_version) {
       const installedVer = installedInfo.template_version;
       if (installedVer !== CURRENT_TEMPLATE_VERSION) {
@@ -394,8 +459,15 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
       const slashRecallExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-recall.md'));
       const slashAskExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-ask.md'));
       const slashUpdateExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-update.md'));
-      const slashDistillExists = fileExists(path.join(cwd, '.claude', 'commands', 'pmem-distill.md'));
-      const slashCount = [slashRecallExists, slashAskExists, slashUpdateExists, slashDistillExists].filter(Boolean).length;
+      const slashDistillExists = fileExists(
+        path.join(cwd, '.claude', 'commands', 'pmem-distill.md'),
+      );
+      const slashCount = [
+        slashRecallExists,
+        slashAskExists,
+        slashUpdateExists,
+        slashDistillExists,
+      ].filter(Boolean).length;
       console.log(`    CLAUDE.md: ${claudeMdExists ? '✓' : '✗'}`);
       console.log(`    .claude/settings.json: ${settingsExists ? '✓' : '✗'}`);
       console.log(`    .claude/commands/pmem-*.md: ${slashCount}/4 slash commands`);
@@ -411,10 +483,22 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
       console.log('    File versions:');
       reportFileVersion(path.join(cwd, 'CLAUDE.md'), 'CLAUDE.md');
       reportFileVersion(path.join(cwd, '.claude', 'settings.json'), '.claude/settings.json');
-      reportFileVersion(path.join(cwd, '.claude', 'commands', 'pmem-recall.md'), '.claude/commands/pmem-recall.md');
-      reportFileVersion(path.join(cwd, '.claude', 'commands', 'pmem-ask.md'), '.claude/commands/pmem-ask.md');
-      reportFileVersion(path.join(cwd, '.claude', 'commands', 'pmem-update.md'), '.claude/commands/pmem-update.md');
-      reportFileVersion(path.join(cwd, '.claude', 'commands', 'pmem-distill.md'), '.claude/commands/pmem-distill.md');
+      reportFileVersion(
+        path.join(cwd, '.claude', 'commands', 'pmem-recall.md'),
+        '.claude/commands/pmem-recall.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.claude', 'commands', 'pmem-ask.md'),
+        '.claude/commands/pmem-ask.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.claude', 'commands', 'pmem-update.md'),
+        '.claude/commands/pmem-update.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.claude', 'commands', 'pmem-distill.md'),
+        '.claude/commands/pmem-distill.md',
+      );
     }
 
     if (active === 'cursor') {
@@ -426,8 +510,15 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
       const cursorSlashRecall = fileExists(path.join(cwd, '.cursor', 'commands', 'pmem-recall.md'));
       const cursorSlashAsk = fileExists(path.join(cwd, '.cursor', 'commands', 'pmem-ask.md'));
       const cursorSlashUpdate = fileExists(path.join(cwd, '.cursor', 'commands', 'pmem-update.md'));
-      const cursorSlashDistill = fileExists(path.join(cwd, '.cursor', 'commands', 'pmem-distill.md'));
-      const cursorSlashCount = [cursorSlashRecall, cursorSlashAsk, cursorSlashUpdate, cursorSlashDistill].filter(Boolean).length;
+      const cursorSlashDistill = fileExists(
+        path.join(cwd, '.cursor', 'commands', 'pmem-distill.md'),
+      );
+      const cursorSlashCount = [
+        cursorSlashRecall,
+        cursorSlashAsk,
+        cursorSlashUpdate,
+        cursorSlashDistill,
+      ].filter(Boolean).length;
       console.log(`    .cursor/commands/pmem-*.md: ${cursorSlashCount}/4 slash commands`);
       if (cursorSlashCount < 4) {
         if (!cursorSlashRecall) console.log('      ✗ pmem-recall.md');
@@ -440,10 +531,22 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
       // Polish 2: file-level version checks
       console.log('    File versions:');
       reportFileVersion(path.join(cwd, '.cursor', 'rules', 'pmem.mdc'), '.cursor/rules/pmem.mdc');
-      reportFileVersion(path.join(cwd, '.cursor', 'commands', 'pmem-recall.md'), '.cursor/commands/pmem-recall.md');
-      reportFileVersion(path.join(cwd, '.cursor', 'commands', 'pmem-ask.md'), '.cursor/commands/pmem-ask.md');
-      reportFileVersion(path.join(cwd, '.cursor', 'commands', 'pmem-update.md'), '.cursor/commands/pmem-update.md');
-      reportFileVersion(path.join(cwd, '.cursor', 'commands', 'pmem-distill.md'), '.cursor/commands/pmem-distill.md');
+      reportFileVersion(
+        path.join(cwd, '.cursor', 'commands', 'pmem-recall.md'),
+        '.cursor/commands/pmem-recall.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.cursor', 'commands', 'pmem-ask.md'),
+        '.cursor/commands/pmem-ask.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.cursor', 'commands', 'pmem-update.md'),
+        '.cursor/commands/pmem-update.md',
+      );
+      reportFileVersion(
+        path.join(cwd, '.cursor', 'commands', 'pmem-distill.md'),
+        '.cursor/commands/pmem-distill.md',
+      );
     }
     if (active === 'codex') {
       const agentsIntegPath = path.join(integDir, 'AGENTS.md');
@@ -457,7 +560,9 @@ function verifyIntegrations(pmemPath: string, manifest: ReturnType<typeof loadMa
         const hasCommandsSection = /##\s+Commands/.test(agentsContent);
         console.log(`    AGENTS.md ## Commands section: ${hasCommandsSection ? '✓' : '✗'}`);
         if (!hasCommandsSection) {
-          console.log('      Fix: re-run `pmem integration install codex` to regenerate AGENTS.md with ## Commands');
+          console.log(
+            '      Fix: re-run `pmem integration install codex` to regenerate AGENTS.md with ## Commands',
+          );
         }
       }
 

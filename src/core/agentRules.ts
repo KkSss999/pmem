@@ -48,15 +48,19 @@ export function writeAgentRules(cwd: string, options: InstallRulesOptions): stri
     { name: 'CLAUDE.md', filePath: path.join(cwd, 'CLAUDE.md') },
     { name: 'GEMINI.md', filePath: path.join(cwd, 'GEMINI.md') },
     { name: '.codex/instructions.md', filePath: path.join(cwd, '.codex', 'instructions.md') },
-    { name: '.cursor/rules/pmem.mdc', filePath: path.join(cwd, '.cursor/rules/pmem.mdc'), isMdc: true },
+    {
+      name: '.cursor/rules/pmem.mdc',
+      filePath: path.join(cwd, '.cursor/rules/pmem.mdc'),
+      isMdc: true,
+    },
     { name: '.clinerules/pmem.md', filePath: path.join(cwd, '.clinerules/pmem.md') },
     // Opt-ins
     { name: 'CONVENTIONS.md (Aider)', filePath: path.join(cwd, 'CONVENTIONS.md'), optIn: true },
-    { name: '.windsurfrules', filePath: path.join(cwd, '.windsurfrules'), optIn: true }
+    { name: '.windsurfrules', filePath: path.join(cwd, '.windsurfrules'), optIn: true },
   ];
 
   // Determine which files to write based on flags
-  const selectedTargets = targets.filter(t => {
+  const selectedTargets = targets.filter((t) => {
     // AGENTS.md is always written if we are running agentRules
     if (t.name === 'AGENTS.md') return true;
 
@@ -91,7 +95,8 @@ export function writeAgentRules(cwd: string, options: InstallRulesOptions): stri
         const endIndex = existing.indexOf(endMarker);
 
         if (startIndex >= 0 && endIndex >= 0 && endIndex > startIndex) {
-          const updated = existing.substring(0, startIndex) +
+          const updated =
+            existing.substring(0, startIndex) +
             contentToWrite +
             existing.substring(endIndex + endMarker.length);
           writeFile(target.filePath, updated);

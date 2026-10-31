@@ -5,9 +5,24 @@ import * as fs from 'fs';
 import * as os from 'os';
 import Database from 'better-sqlite3';
 
-import { BUILTIN_PATTERNS, loadPatternRegistry, isBuiltinModule, BUILTIN_MODULES } from './discover/patterns';
+import {
+  BUILTIN_PATTERNS,
+  loadPatternRegistry,
+  isBuiltinModule,
+  BUILTIN_MODULES,
+} from './discover/patterns';
 import { detectLanguages, filterPatterns } from './discover/detect';
-import { createSchema, insertEdge, deleteInferredEdges, getInferredEdges, getEdgesForCard, updateEdgeSource, deleteEdgesByIds, deleteExplicitCardEdges, getOrphanEdges } from './db';
+import {
+  createSchema,
+  insertEdge,
+  deleteInferredEdges,
+  getInferredEdges,
+  getEdgesForCard,
+  updateEdgeSource,
+  deleteEdgesByIds,
+  deleteExplicitCardEdges,
+  getOrphanEdges,
+} from './db';
 import type { LanguagePattern } from '../types';
 
 // --- Patterns ---
@@ -52,12 +67,12 @@ const db = require('./db');
 import('dynamic-lib').then();`;
 
     const re = new RegExp(nodePatterns[0].regex, 'gm');
-    const matches = [...testCode.matchAll(re)].map(m => m[1]);
+    const matches = [...testCode.matchAll(re)].map((m) => m[1]);
     assert.ok(matches.includes('./bar'));
     assert.ok(matches.includes('express'));
 
     const requireRe = new RegExp(nodePatterns[1].regex, 'gm');
-    const requireMatches = [...testCode.matchAll(requireRe)].map(m => m[1]);
+    const requireMatches = [...testCode.matchAll(requireRe)].map((m) => m[1]);
     assert.ok(requireMatches.includes('lodash'));
     assert.ok(requireMatches.includes('./db'));
   });
@@ -71,12 +86,12 @@ from ..core.db import connect`;
 
     // import xxx pattern
     const re1 = new RegExp(pyPatterns[1].regex, 'gm');
-    const matches1 = [...testCode.matchAll(re1)].map(m => m[1]);
+    const matches1 = [...testCode.matchAll(re1)].map((m) => m[1]);
     assert.ok(matches1.includes('os'));
 
     // from xxx import yyy pattern
     const re0 = new RegExp(pyPatterns[0].regex, 'gm');
-    const matches0 = [...testCode.matchAll(re0)].map(m => m[1]);
+    const matches0 = [...testCode.matchAll(re0)].map((m) => m[1]);
     assert.ok(matches0.includes('pathlib'));
   });
 
@@ -87,11 +102,11 @@ from ..core.db import connect`;
 #include <string>`;
 
     const localRe = new RegExp(cppPatterns[0].regex, 'gm');
-    const localMatches = [...testCode.matchAll(localRe)].map(m => m[1]);
+    const localMatches = [...testCode.matchAll(localRe)].map((m) => m[1]);
     assert.ok(localMatches.includes('mylib.h'));
 
     const sysRe = new RegExp(cppPatterns[1].regex, 'gm');
-    const sysMatches = [...testCode.matchAll(sysRe)].map(m => m[1]);
+    const sysMatches = [...testCode.matchAll(sysRe)].map((m) => m[1]);
     assert.ok(sysMatches.includes('vector'));
     assert.ok(sysMatches.includes('string'));
   });
@@ -113,7 +128,7 @@ describe('loadPatternRegistry', () => {
       exclude_dirs: [],
     };
     const patterns = loadPatternRegistry([custom]);
-    const nodejs = patterns.find(p => p.language === 'nodejs')!;
+    const nodejs = patterns.find((p) => p.language === 'nodejs')!;
     assert.strictEqual(nodejs.indicators.length, 1);
     assert.strictEqual(nodejs.indicators[0], 'custom.json');
   });
@@ -123,14 +138,12 @@ describe('loadPatternRegistry', () => {
       language: 'zig',
       indicators: ['build.zig'],
       extensions: ['.zig'],
-      source_patterns: [
-        { regex: '@import\\(\"([^\"]+)\"\\)', confidence: 0.7, scope: 'both' },
-      ],
+      source_patterns: [{ regex: '@import\\(\"([^\"]+)\"\\)', confidence: 0.7, scope: 'both' }],
       dep_files: [],
       exclude_dirs: [],
     };
     const patterns = loadPatternRegistry([custom]);
-    const zig = patterns.find(p => p.language === 'zig')!;
+    const zig = patterns.find((p) => p.language === 'zig')!;
     assert.ok(zig);
     assert.strictEqual(zig.extensions[0], '.zig');
   });
@@ -244,7 +257,15 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('insertEdge and getInferredEdges', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
     const inferred = getInferredEdges(db);
     assert.strictEqual(inferred.length, 1);
     assert.strictEqual(inferred[0].from_id, 'card-a');
@@ -254,8 +275,24 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('deleteInferredEdges removes only inferred', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'related_to', source: 'explicit', confidence: 1.0, created_at: 'now', updated_at: 'now' });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'related_to',
+      source: 'explicit',
+      confidence: 1.0,
+      created_at: 'now',
+      updated_at: 'now',
+    });
     const deleted = deleteInferredEdges(db);
     assert.strictEqual(deleted, 1);
     const allEdges = getEdgesForCard(db, 'card-a');
@@ -266,8 +303,24 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('deleteExplicitCardEdges removes only explicit', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'related_to', source: 'explicit', confidence: 1.0, created_at: 'now', updated_at: 'now' });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'related_to',
+      source: 'explicit',
+      confidence: 1.0,
+      created_at: 'now',
+      updated_at: 'now',
+    });
     deleteExplicitCardEdges(db, 'card-a');
     const allEdges = getEdgesForCard(db, 'card-a');
     assert.strictEqual(allEdges.length, 1);
@@ -277,8 +330,24 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('getEdgesForCard filters by source', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'related_to', source: 'explicit', confidence: 1.0, created_at: 'now', updated_at: 'now' });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'related_to',
+      source: 'explicit',
+      confidence: 1.0,
+      created_at: 'now',
+      updated_at: 'now',
+    });
 
     const explicit = getEdgesForCard(db, 'card-a', 'explicit');
     assert.strictEqual(explicit.length, 1);
@@ -292,11 +361,22 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('updateEdgeSource upgrades inferred to explicit', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
-    const rows = db.prepare("SELECT id FROM edges").all() as Array<{ id: number }>;
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
+    const rows = db.prepare('SELECT id FROM edges').all() as Array<{ id: number }>;
     const changed = updateEdgeSource(db, [rows[0].id], 'explicit', 1.0);
     assert.strictEqual(changed, 1);
-    const edge = db.prepare("SELECT * FROM edges WHERE id = ?").get(rows[0].id) as { source: string; confidence: number };
+    const edge = db.prepare('SELECT * FROM edges WHERE id = ?').get(rows[0].id) as {
+      source: string;
+      confidence: number;
+    };
     assert.strictEqual(edge.source, 'explicit');
     assert.strictEqual(edge.confidence, 1.0);
     db.close();
@@ -304,8 +384,16 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('deleteEdgesByIds removes specific edges', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'card-b', type: 'depends_on', source: 'inferred', confidence: 0.7, created_at: 'now', updated_at: 'now' });
-    const rows = db.prepare("SELECT id FROM edges").all() as Array<{ id: number }>;
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'card-b',
+      type: 'depends_on',
+      source: 'inferred',
+      confidence: 0.7,
+      created_at: 'now',
+      updated_at: 'now',
+    });
+    const rows = db.prepare('SELECT id FROM edges').all() as Array<{ id: number }>;
     const deleted = deleteEdgesByIds(db, [rows[0].id]);
     assert.strictEqual(deleted, 1);
     const remaining = getEdgesForCard(db, 'card-a');
@@ -315,7 +403,15 @@ describe('v0.6.3 edge CRUD', () => {
 
   it('getOrphanEdges finds edges with missing cards', () => {
     const db = makeDb();
-    insertEdge(db, { from_id: 'card-a', to_id: 'nonexistent', type: 'depends_on', source: 'explicit', confidence: 1.0, created_at: 'now', updated_at: 'now' });
+    insertEdge(db, {
+      from_id: 'card-a',
+      to_id: 'nonexistent',
+      type: 'depends_on',
+      source: 'explicit',
+      confidence: 1.0,
+      created_at: 'now',
+      updated_at: 'now',
+    });
     const orphans = getOrphanEdges(db);
     assert.strictEqual(orphans.length, 1);
     assert.strictEqual(orphans[0].to_id, 'nonexistent');
@@ -342,14 +438,36 @@ describe('BUILTIN_MODULES', () => {
 
   it('contains common Node.js core modules', () => {
     const set = BUILTIN_MODULES.nodejs;
-    for (const m of ['fs', 'path', 'os', 'http', 'https', 'crypto', 'child_process', 'stream', 'util', 'events']) {
+    for (const m of [
+      'fs',
+      'path',
+      'os',
+      'http',
+      'https',
+      'crypto',
+      'child_process',
+      'stream',
+      'util',
+      'events',
+    ]) {
       assert.ok(set.has(m), `nodejs builtin should include ${m}`);
     }
   });
 
   it('contains common Python stdlib', () => {
     const set = BUILTIN_MODULES.python;
-    for (const m of ['os', 'sys', 'json', 're', 'typing', 'collections', 'itertools', 'pathlib', 'asyncio', 'unittest']) {
+    for (const m of [
+      'os',
+      'sys',
+      'json',
+      're',
+      'typing',
+      'collections',
+      'itertools',
+      'pathlib',
+      'asyncio',
+      'unittest',
+    ]) {
       assert.ok(set.has(m), `python builtin should include ${m}`);
     }
   });
@@ -444,14 +562,20 @@ describe('discover noise filtering', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-discover-'));
     const srcDir = path.join(tmp, 'src');
     fs.mkdirSync(srcDir, { recursive: true });
-    fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
-      name: 'tmp', dependencies: { 'better-sqlite3': '^7.0.0' }
-    }));
-    fs.writeFileSync(path.join(srcDir, 'app.ts'),
+    fs.writeFileSync(
+      path.join(tmp, 'package.json'),
+      JSON.stringify({
+        name: 'tmp',
+        dependencies: { 'better-sqlite3': '^7.0.0' },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(srcDir, 'app.ts'),
       "import * as fs from 'fs';\n" +
-      "import * as path from 'path';\n" +
-      "import express from 'express';\n" +
-      "import { helper } from './helper';\n");
+        "import * as path from 'path';\n" +
+        "import express from 'express';\n" +
+        "import { helper } from './helper';\n",
+    );
     return tmp;
   }
 
@@ -461,9 +585,10 @@ describe('discover noise filtering', () => {
     const db = new Database(dbPath);
     createSchema(db);
     // Register one source file pointing to app.ts
-    db.prepare(
-      "INSERT INTO paths (path, card_id, relation) VALUES (?, ?, 'source_file')"
-    ).run('src/app.ts', 'card-app');
+    db.prepare("INSERT INTO paths (path, card_id, relation) VALUES (?, ?, 'source_file')").run(
+      'src/app.ts',
+      'card-app',
+    );
     return db;
   }
 
@@ -517,13 +642,19 @@ describe('discover noise filtering', () => {
       }
     }
 
-    const builtinRefs = allRefs.filter(r => isBuiltinModule(r.target_name, 'nodejs'));
+    const builtinRefs = allRefs.filter((r) => isBuiltinModule(r.target_name, 'nodejs'));
     assert.strictEqual(builtinRefs.length, 0, 'builtins should be filtered out');
 
-    const externals = allRefs.filter(r => r.target_kind === 'external_bare');
-    const locals = allRefs.filter(r => r.target_kind === 'local_file');
-    assert.ok(externals.some(r => r.target_name === 'express'), 'express should be external_bare');
-    assert.ok(locals.some(r => r.target_name.includes('./helper')), './helper should be local_file');
+    const externals = allRefs.filter((r) => r.target_kind === 'external_bare');
+    const locals = allRefs.filter((r) => r.target_kind === 'local_file');
+    assert.ok(
+      externals.some((r) => r.target_name === 'express'),
+      'express should be external_bare',
+    );
+    assert.ok(
+      locals.some((r) => r.target_name.includes('./helper')),
+      './helper should be local_file',
+    );
 
     db.close();
     fs.rmSync(tmp, { recursive: true, force: true });

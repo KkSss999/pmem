@@ -40,20 +40,20 @@ describe('formatRecallCompact — RECENT CHANGES', () => {
     const output = formatOutput(result, 'compact');
     assert.ok(
       output.includes('Modified src/App.jsx'),
-      `Expected "Modified src/App.jsx" in RECENT CHANGES, got:\n${output}`
+      `Expected "Modified src/App.jsx" in RECENT CHANGES, got:\n${output}`,
     );
     assert.ok(
       output.includes('added: calcScore'),
-      `Expected symbol detail "added: calcScore" in output, got:\n${output}`
+      `Expected symbol detail "added: calcScore" in output, got:\n${output}`,
     );
     assert.ok(
       output.includes('Modified src/utils.ts'),
-      `Expected "Modified src/utils.ts" in output, got:\n${output}`
+      `Expected "Modified src/utils.ts" in output, got:\n${output}`,
     );
     // The session-level summary should NOT crowd out the thick trace details
     assert.ok(
       !output.includes('Session summary only'),
-      `Expected thick trace to suppress session summary fallback, got:\n${output}`
+      `Expected thick trace to suppress session summary fallback, got:\n${output}`,
     );
   });
 
@@ -67,7 +67,7 @@ describe('formatRecallCompact — RECENT CHANGES', () => {
           file_path: '.pmem/traces/2025-01-02-001.md',
           created_at: '2025-01-02T00:00:00Z',
           changed_files: [],
-          what_changed: [],   // empty — should fall back to summary
+          what_changed: [], // empty — should fall back to summary
           decisions: [],
           architecture_notes: [],
           next: [],
@@ -78,7 +78,7 @@ describe('formatRecallCompact — RECENT CHANGES', () => {
     const output = formatOutput(result, 'compact');
     assert.ok(
       output.includes('Cleaned up imports'),
-      `Expected summary fallback "Cleaned up imports" in output, got:\n${output}`
+      `Expected summary fallback "Cleaned up imports" in output, got:\n${output}`,
     );
   });
 
@@ -87,22 +87,38 @@ describe('formatRecallCompact — RECENT CHANGES', () => {
     const result = makeRecallResult({
       recent_traces: [
         {
-          id: 'trace-003', title: 'A', summary: 'S',
-          file_path: '.pmem/traces/a.md', created_at: '',
-          changed_files: [], what_changed: [sharedItem],
-          decisions: [], architecture_notes: [], next: [],
+          id: 'trace-003',
+          title: 'A',
+          summary: 'S',
+          file_path: '.pmem/traces/a.md',
+          created_at: '',
+          changed_files: [],
+          what_changed: [sharedItem],
+          decisions: [],
+          architecture_notes: [],
+          next: [],
         },
         {
-          id: 'trace-004', title: 'B', summary: 'S',
-          file_path: '.pmem/traces/b.md', created_at: '',
-          changed_files: [], what_changed: [sharedItem],
-          decisions: [], architecture_notes: [], next: [],
+          id: 'trace-004',
+          title: 'B',
+          summary: 'S',
+          file_path: '.pmem/traces/b.md',
+          created_at: '',
+          changed_files: [],
+          what_changed: [sharedItem],
+          decisions: [],
+          architecture_notes: [],
+          next: [],
         },
       ],
     });
 
     const output = formatOutput(result, 'compact');
     const count = (output.match(/Modified src\/shared\.ts/g) || []).length;
-    assert.strictEqual(count, 1, `Duplicate item should appear only once, found ${count} times in:\n${output}`);
+    assert.strictEqual(
+      count,
+      1,
+      `Duplicate item should appear only once, found ${count} times in:\n${output}`,
+    );
   });
 });

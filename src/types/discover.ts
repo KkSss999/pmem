@@ -47,7 +47,12 @@ export interface DiscoveredEdge {
 }
 
 export interface AmbiguousRelation {
-  kind: 'low_confidence' | 'unmatched_target' | 'external_unmatched' | 'multiple_targets' | 'circular';
+  kind:
+    | 'low_confidence'
+    | 'unmatched_target'
+    | 'external_unmatched'
+    | 'multiple_targets'
+    | 'circular';
   /**
    * 'actionable' = agent should fix (e.g. create a card for an internal file).
    * 'informational' = no action needed (e.g. external package or language builtin).
