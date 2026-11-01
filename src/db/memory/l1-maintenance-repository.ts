@@ -192,8 +192,20 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
             );
           });
           if (changed) {
+            // A candidate changed while this batch was running. Keeping the memory
+            // is safe and bounded; leaving the task pending would strand it forever.
+            tx.update(l1Memories)
+              .set({ maintenanceStatus: 'complete' })
+              .where(eq(l1Memories.id, id))
+              .run();
             tx.update(l1MaintenanceTasks)
-              .set({ state: 'pending', claimToken: null, updatedAt: now })
+              .set({
+                state: 'succeeded',
+                claimToken: null,
+                outcome: 'deferred',
+                resultMemoryId: id,
+                updatedAt: now,
+              })
               .where(eq(l1MaintenanceTasks.memoryId, id))
               .run();
             continue;
@@ -204,8 +216,24 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
               !target ||
               !allowed.includes(target.spaceId) ||
               JSON.stringify(target.scope) !== JSON.stringify(current.scope)
-            )
-              throw new MemoryError('ACCESS_DENIED', 'Merge target is not eligible.');
+            ) {
+              // Ineligible merge target: keep both memories instead of failing.
+              tx.update(l1Memories)
+                .set({ maintenanceStatus: 'complete' })
+                .where(eq(l1Memories.id, id))
+                .run();
+              tx.update(l1MaintenanceTasks)
+                .set({
+                  state: 'succeeded',
+                  claimToken: null,
+                  outcome: 'uncertain',
+                  resultMemoryId: id,
+                  updatedAt: now,
+                })
+                .where(eq(l1MaintenanceTasks.memoryId, id))
+                .run();
+              continue;
+            }
             tx.update(l1Memories)
               .set({ content: decision.content, abstraction: decision.abstraction })
               .where(eq(l1Memories.id, target.id))
@@ -224,6 +252,28 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
             tx.update(l1MaintenanceTasks)
               .set({ resultMemoryId: target.id })
               .where(eq(l1MaintenanceTasks.resultMemoryId, id))
+              .run();
+            // The merge just reviewed the target's content, so it is complete and
+            // its own pending task must not run again. Without this, the L2 item
+            // queued for the target fails with "L1 memory is not ready".
+            tx.update(l1Memories)
+              .set({ maintenanceStatus: 'complete' })
+              .where(eq(l1Memories.id, target.id))
+              .run();
+            tx.update(l1MaintenanceTasks)
+              .set({
+                state: 'succeeded',
+                claimToken: null,
+                outcome: 'merge_target',
+                resultMemoryId: target.id,
+                updatedAt: now,
+              })
+              .where(
+                and(
+                  eq(l1MaintenanceTasks.memoryId, target.id),
+                  eq(l1MaintenanceTasks.state, 'pending')
+                )
+              )
               .run();
             tx.delete(l1Sources).where(eq(l1Sources.memoryId, id)).run();
             tx.delete(l1Cues).where(eq(l1Cues.memoryId, id)).run();

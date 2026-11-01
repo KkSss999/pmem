@@ -1,14 +1,10 @@
 'use strict';
 
-// Explicitly invoked evaluation; the API key is read from stdin, never recorded.
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+// Explicit L1 extraction evaluation over the production stream pipeline.
+// The API key is read from stdin and never written to disk.
+
 const { performance } = require('node:perf_hooks');
-const { OwnedDatabase } = require('../dist/db/database');
-const { assembleMemory } = require('../dist/server/memory');
-const { assembleL1 } = require('../dist/server/l1');
-const { OpenAIExtractionModel } = require('../dist/other/models/openai');
+const { createStreamEval } = require('./stream-eval-runtime.cjs');
 const suite = require('../tests/fixtures/l1-quality.json');
 
 function option(name, fallback) {
@@ -17,20 +13,82 @@ function option(name, fallback) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+async function evaluateCase({ scenario, round, apiKey, model }) {
+  const runtime = await createStreamEval({
+    apiKey,
+    model,
+    workspaceId: `l1-eval-${scenario.id}-${round}`,
+  });
+  const started = performance.now();
+  try {
+    const messages = scenario.messages.map((message) =>
+      runtime.append({
+        role: message.role,
+        content: String(message.content ?? ''),
+        ...(message.occurredAt ? { occurredAt: message.occurredAt } : {}),
+      })
+    );
+    await runtime.drain();
+    const memories = runtime.memoriesFrom(messages.map((message) => message.id));
+    const joined = memories.map((memory) => memory.content).join('\n');
+    const checks = scenario.checks.map((pattern) => ({
+      pattern,
+      matched: new RegExp(pattern, 'iu').test(joined),
+    }));
+    // This evaluation measures L1 extraction. L2/L3 items still run (they are the
+    // production path) but their failures are reported separately, not as L1 failures.
+    const states = runtime.queueStates();
+    const failed = states.filter((item) => item.kind === 'l1-extract' && item.state !== 'done');
+    const downstream = states.filter((item) => item.kind !== 'l1-extract' && item.state !== 'done');
+    return {
+      case: scenario.id,
+      round,
+      expectedMemory: scenario.expectMemory,
+      status: failed.length ? 'failed' : 'succeeded',
+      ...(failed.length ? { queue: failed } : {}),
+      ...(downstream.length ? { downstream } : {}),
+      messages: messages.length,
+      count: memories.length,
+      checks,
+      entries: memories.map((memory) => ({
+        content: memory.content,
+        abstraction: memory.abstraction,
+        cues: memory.cues,
+        sources: memory.sourceIds.map(
+          (id) => messages.findIndex((message) => message.id === id) + 1
+        ),
+      })),
+      elapsedMs: Math.round(performance.now() - started),
+      usage: runtime.usage(),
+    };
+  } catch (error) {
+    return {
+      case: scenario.id,
+      round,
+      expectedMemory: scenario.expectMemory,
+      status: 'error',
+      failureCode: error?.code ?? error?.name ?? 'UNKNOWN',
+      elapsedMs: Math.round(performance.now() - started),
+      usage: runtime.usage(),
+    };
+  } finally {
+    await runtime.close();
+  }
+}
+
 async function main(apiKey) {
   const split = option('split', 'development');
-  const api = option('api', 'chat');
   const rounds = Number(option('rounds', '1'));
   const concurrency = Number(option('concurrency', '2'));
   const caseId = option('case', '');
-  const provider = option('provider', 'deepseek');
-  const baseUrl = option('base-url', '');
-  const modelName = option('model', '');
+  const providerId = option('provider-id', 'eval');
+  const api = option('api', 'openai-completions');
+  const modelId = option('model', 'deepseek/deepseek-v4.1-flash-ultrafast');
+  const baseUrl = option('base-url', 'https://api.deepseek.com/v1');
   if (
     !apiKey ||
     !['development', 'holdout'].includes(split) ||
-    !['chat', 'responses'].includes(api) ||
-    !['deepseek', 'openai'].includes(provider) ||
+    !['openai-completions', 'openai-responses', 'anthropic-messages'].includes(api) ||
     !Number.isInteger(rounds) ||
     rounds < 1 ||
     rounds > 5 ||
@@ -39,148 +97,60 @@ async function main(apiKey) {
     concurrency > 4
   ) {
     throw new Error(
-      'Provide an API key on stdin and valid split, api, provider, rounds and concurrency options.'
+      'Provide an API key on stdin and valid split, api, rounds and concurrency options.'
     );
   }
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-l1-eval-'));
-  const db = OwnedDatabase.create(path.join(root, 'eval.sqlite'));
-  try {
-    const memory = assembleMemory(db);
-    const l1 = assembleL1(db);
-    const access = {
-      readableSpaceIds: ['personal'],
-      writableSpaceIds: ['personal'],
-      canManageSpaces: false,
-    };
-    const work = [];
-    const cases = suite.cases.filter(
-      (entry) => entry.split === split && (!caseId || entry.id === caseId)
-    );
-    if (!cases.length) throw new Error('No evaluation cases selected.');
-    for (const scenario of cases) {
-      const sources = scenario.messages.map(
-        (message) => memory.appendL0({ spaceId: 'personal', ...message }, access).message
-      );
-      for (let round = 1; round <= rounds; round++) {
-        const id = `${scenario.id}-${round}`;
-        l1.enqueue({ id, sourceIds: sources.map((source) => source.id) }, access);
-        work.push({ id, scenario, sources, round });
-      }
+  const model = { providerId, modelId, api, baseUrl };
+  const cases = suite.cases.filter(
+    (entry) => entry.split === split && (!caseId || entry.id === caseId)
+  );
+  if (!cases.length) throw new Error('No evaluation cases selected.');
+  const work = [];
+  for (const scenario of cases)
+    for (let round = 1; round <= rounds; round++) work.push({ scenario, round });
+
+  const results = [];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < work.length) {
+      const task = work[cursor++];
+      const result = await evaluateCase({ ...task, apiKey, model });
+      results.push(result);
+      process.stdout.write(JSON.stringify(result) + '\n');
     }
-    const results = [];
-    let cursor = 0;
-    async function worker() {
-      while (cursor < work.length) {
-        const task = work[cursor++];
-        let usage;
-        let httpStatus;
-        let output;
-        const fetcher = async (...args) => {
-          const response = await fetch(...args);
-          httpStatus = response.status;
-          const payload = await response
-            .clone()
-            .json()
-            .catch(() => ({}));
-          usage = payload.usage;
-          output =
-            api === 'chat'
-              ? payload.choices?.[0]?.message?.content
-              : payload.output
-                  ?.flatMap((item) => item.content ?? [])
-                  .filter((item) => item.type === 'output_text')
-                  .map((item) => item.text);
-          return response;
-        };
-        const model = new OpenAIExtractionModel({
-          provider,
-          api,
-          apiKey,
-          ...(baseUrl ? { baseUrl } : {}),
-          ...(modelName ? { model: modelName } : {}),
-          timeoutMs: 120000,
-          fetch: fetcher,
-        });
-        const start = performance.now();
-        try {
-          const job = await l1.run(task.id, model, access);
-          const memories = l1.getJobMemories(job.id, access);
-          const joined = memories.map((item) => item.content).join('\n');
-          const checks = task.scenario.checks.map((pattern) => ({
-            pattern,
-            matched: new RegExp(pattern, 'iu').test(joined),
-          }));
-          const entries = memories.map((item) => ({
-            content: item.content,
-            abstraction: item.abstraction,
-            cues: item.cues,
-            sources: item.sourceIds.map(
-              (id) => task.sources.findIndex((source) => source.id === id) + 1
-            ),
-          }));
-          results.push({
-            case: task.scenario.id,
-            round: task.round,
-            expectedMemory: task.scenario.expectMemory,
-            status: job.state,
-            count: memories.length,
-            checks,
-            entries,
-            elapsedMs: Math.round(performance.now() - start),
-            httpStatus,
-            usage,
-          });
-        } catch (error) {
-          const job = l1.getJob(task.id, access);
-          results.push({
-            case: task.scenario.id,
-            round: task.round,
-            expectedMemory: task.scenario.expectMemory,
-            status: job?.state ?? 'error',
-            failureCode: job?.failureCode ?? error.code ?? 'UNKNOWN',
-            ...(job?.failureCode === 'MODEL_OUTPUT_INVALID' ? { output } : {}),
-            elapsedMs: Math.round(performance.now() - start),
-            httpStatus,
-            usage,
-          });
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(concurrency, work.length) }, worker));
-    results.sort((a, b) => a.case.localeCompare(b.case) || a.round - b.round);
-    for (const result of results) process.stdout.write(JSON.stringify(result) + '\n');
-    const positives = results.filter((result) => result.expectedMemory);
-    const negatives = results.filter((result) => !result.expectedMemory);
-    const successful = results.filter((result) => result.status === 'succeeded');
-    process.stdout.write(
-      JSON.stringify({
-        summary: {
-          split,
-          api,
-          rounds,
-          total: results.length,
-          succeeded: successful.length,
-          positiveEmpty: positives.filter(
-            (result) => result.status === 'succeeded' && result.count === 0
-          ).length,
-          positiveWithAllChecks: positives.filter(
-            (result) =>
-              result.status === 'succeeded' &&
-              result.count > 0 &&
-              result.checks.every((check) => check.matched)
-          ).length,
-          positiveTotal: positives.length,
-          negativeNonempty: negatives.filter(
-            (result) => result.status === 'succeeded' && result.count > 0
-          ).length,
-          negativeTotal: negatives.length,
-        },
-      }) + '\n'
-    );
-  } finally {
-    db.close();
-    fs.rmSync(root, { recursive: true, force: true });
   }
+  await Promise.all(Array.from({ length: Math.min(concurrency, work.length) }, worker));
+  results.sort((a, b) => a.case.localeCompare(b.case) || a.round - b.round);
+
+  const positives = results.filter((result) => result.expectedMemory);
+  const negatives = results.filter((result) => !result.expectedMemory);
+  const successful = results.filter((result) => result.status === 'succeeded');
+  process.stdout.write(
+    JSON.stringify({
+      summary: {
+        split,
+        api,
+        model: modelId,
+        rounds,
+        total: results.length,
+        succeeded: successful.length,
+        positiveEmpty: positives.filter(
+          (result) => result.status === 'succeeded' && result.count === 0
+        ).length,
+        positiveWithAllChecks: positives.filter(
+          (result) =>
+            result.status === 'succeeded' &&
+            result.count > 0 &&
+            result.checks.every((check) => check.matched)
+        ).length,
+        positiveTotal: positives.length,
+        negativeNonempty: negatives.filter(
+          (result) => result.status === 'succeeded' && result.count > 0
+        ).length,
+        negativeTotal: negatives.length,
+      },
+    }) + '\n'
+  );
 }
 
 process.stdout.write('READY\n');
@@ -190,7 +160,7 @@ process.stdin.once('data', (data) => {
   main(data.trim()).then(
     () => process.exit(0),
     (error) => {
-      process.stderr.write(`Evaluation failed: ${error.code ?? error.name}\n`);
+      process.stderr.write(`Evaluation failed: ${error.code ?? error.name}: ${error.message}\n`);
       process.exit(1);
     }
   );

@@ -34,10 +34,14 @@ const KINDS: readonly L3KeywordKind[] = [
   'other',
 ];
 
-export interface L3StreamPreparation {
+export interface L3StreamEntry {
   l2Id: string;
   l2Hash: string;
   memory: L2Memory;
+}
+
+export interface L3StreamPreparation {
+  entries: readonly L3StreamEntry[];
   keywords: readonly L3Keyword[];
   now: string;
 }
@@ -106,9 +110,15 @@ function validateDraft(
     throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'Invalid L3 base weight.');
   if (!Array.isArray(item.l2Ids) || !item.l2Ids.length)
     throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'An L3 keyword needs source L2 IDs.');
-  const l2Ids = [...new Set(item.l2Ids)];
-  if (l2Ids.some((id) => typeof id !== 'string' || !allowedL2Ids.has(id as string)))
-    throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'An L3 keyword cites an unavailable L2.');
+  // Unknown IDs are dropped rather than failing the batch: a keyword that cites
+  // one extra L2 must not cost every other keyword in the same submission.
+  const l2Ids = [
+    ...new Set(
+      item.l2Ids.filter((id): id is string => typeof id === 'string' && allowedL2Ids.has(id))
+    ),
+  ];
+  if (!l2Ids.length)
+    throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'An L3 keyword cites no supplied L2.');
   const scope = intersectionScopes(
     (l2Ids as string[]).map((id) => {
       const memory = memories.get(id);
@@ -479,25 +489,42 @@ export class L3Service {
     return this.repository.l2Hash(l2Id);
   }
 
-  prepareStream(l2Id: string, expectedHash: string, access: MemoryAccess): L3StreamPreparation {
-    identifier(l2Id, 'L2 ID');
-    identifier(expectedHash, 'L2 hash');
+  /** Prepare keyword generation for a batch of changed L2 memories. */
+  prepareStream(
+    subjects: string | readonly string[] | readonly { l2Id: string; l2Hash: string }[],
+    access: MemoryAccess,
+    expectedHash?: string
+  ): L3StreamPreparation {
     validateAccess(access);
-    const memory = this.l2.getMemory(l2Id, access.readableSpaceIds);
-    if (
-      !memory ||
-      !memory.visible ||
-      !memory.sourcesComplete ||
-      !access.readableSpaceIds.includes(memory.ownerSpaceId) ||
-      this.repository.l2Hash(l2Id) !== expectedHash
-    )
-      throw new MemoryError('L3_STALE_INPUT', 'An L2 source is unavailable for streaming.');
+    const requested =
+      typeof subjects === 'string'
+        ? [{ l2Id: subjects, l2Hash: expectedHash }]
+        : (subjects as readonly { l2Id: string; l2Hash?: string }[]);
+    if (!Array.isArray(requested) || !requested.length)
+      throw new MemoryError('INVALID_INPUT', 'At least one L2 memory is required.');
     const now = new Date().toISOString();
+    const entries: L3StreamEntry[] = requested.map((entry) => {
+      identifier(entry.l2Id, 'L2 ID');
+      if (typeof entry.l2Hash !== 'string' || !entry.l2Hash)
+        throw new MemoryError('INVALID_INPUT', 'An L2 hash is required.');
+      const memory = this.l2.getMemory(entry.l2Id, access.readableSpaceIds);
+      if (
+        !memory ||
+        !memory.visible ||
+        !memory.sourcesComplete ||
+        !access.readableSpaceIds.includes(memory.ownerSpaceId) ||
+        this.repository.l2Hash(entry.l2Id) !== entry.l2Hash
+      )
+        throw new MemoryError('L3_STALE_INPUT', 'An L2 source is unavailable for streaming.');
+      return { l2Id: entry.l2Id, l2Hash: entry.l2Hash, memory };
+    });
     return {
-      l2Id,
-      l2Hash: expectedHash,
-      memory,
-      keywords: this.repository.listRelatedKeywords([l2Id], now, 100),
+      entries,
+      keywords: this.repository.listRelatedKeywords(
+        entries.map((entry) => entry.l2Id),
+        now,
+        100
+      ),
       now,
     };
   }
@@ -509,16 +536,16 @@ export class L3Service {
   ): readonly string[] {
     validateAccess(access);
     if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    if (this.repository.l2Hash(preparation.l2Id) !== preparation.l2Hash)
-      throw new MemoryError('L3_STALE_INPUT', 'An L2 source changed before stream commit.');
+    for (const entry of preparation.entries)
+      if (this.repository.l2Hash(entry.l2Id) !== entry.l2Hash)
+        throw new MemoryError('L3_STALE_INPUT', 'An L2 source changed before stream commit.');
     if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { keywords?: unknown }).keywords))
       throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'L3 output must contain keywords.');
     const rawKeywords = (raw as { keywords: unknown[] }).keywords;
     if (rawKeywords.length > MAX_RESULTS)
       throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'Too many L3 keywords.');
-    const memory = preparation.memory;
-    const allowed = new Set([memory.id]);
-    const memories = new Map([[memory.id, memory]]);
+    const allowed = new Set(preparation.entries.map((entry) => entry.l2Id));
+    const memories = new Map(preparation.entries.map((entry) => [entry.l2Id, entry.memory]));
     const committed: string[] = [];
     for (const rawKeyword of rawKeywords) {
       const validated = validateDraft(rawKeyword, allowed, memories);

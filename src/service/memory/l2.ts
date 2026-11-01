@@ -1,9 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  MEMORY_CHANGE_TYPES,
-  MemoryDecisionError,
-  type MemoryChangeJudge,
-} from '../../domain/memory/decision';
+import { MEMORY_CHANGE_TYPES, type MemoryChangeJudge } from '../../domain/memory/decision';
 import type { L1Memory } from '../../domain/memory/l1';
 import type {
   L2Candidate,
@@ -18,6 +14,7 @@ import type { MemoryRepository } from './ports';
 import type { L1Repository } from './l1-ports';
 import type { L2Repository } from './l2-ports';
 
+const JUDGE_LIMIT = 3;
 const MAX_TITLE = 200;
 const MAX_SUMMARY = 1000;
 const MAX_BODY = 20_000;
@@ -99,6 +96,8 @@ function validateProposal(
     candidates.flatMap((candidate) => candidate.memory.l1Ids.map((id) => id))
   );
   const updateIds = new Set<string>();
+  const allResultIds = (drafts: readonly L2Draft[]): Set<string> =>
+    new Set(drafts.flatMap((draft) => draft.l1Ids));
   const results = object.results.map((raw): L2Draft => {
     if (!raw || typeof raw !== 'object')
       throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'Invalid L2 result.');
@@ -158,13 +157,17 @@ function validateProposal(
       throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'Duplicate uncovered L1 ID.');
     uncoveredIds.add(item.l1Id);
   }
-  const covered = new Set(results.flatMap((result) => result.l1Ids));
-  for (const change of changes) {
-    if (!covered.has(change.l1Id) && !uncoveredIds.has(change.l1Id))
-      throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'A changed L1 is not covered.');
-  }
-  if ([...uncoveredIds].some((id) => covered.has(id)))
+  // A change the model silently skipped is left as an L1-only fact instead of
+  // failing the whole batch: the L1 stays readable evidence and the next change
+  // to it is synthesized normally.
+  const coveredIds = allResultIds(results);
+  if ([...uncoveredIds].some((id) => coveredIds.has(id)))
     throw new MemoryError('L2_MODEL_OUTPUT_INVALID', 'A changed L1 is both covered and uncovered.');
+  for (const change of changes) {
+    if (coveredIds.has(change.l1Id) || uncoveredIds.has(change.l1Id)) continue;
+    uncovered.push({ l1Id: change.l1Id, reason: 'model did not cover this change' });
+    uncoveredIds.add(change.l1Id);
+  }
   return { results, uncovered };
 }
 
@@ -178,7 +181,9 @@ export interface L2ServiceOptions {
 }
 
 export interface L2StreamPreparation {
-  l1Id: string;
+  l1Ids: readonly string[];
+  /** Changes that were left out because their L1 memory is not ready yet. */
+  deferredL1Ids: readonly string[];
   ownerSpaceId: string;
   loaded: readonly L2GenerationChange[];
   candidates: readonly L2Candidate[];
@@ -210,19 +215,42 @@ export class L2Service {
     return l1Hash(memory);
   }
 
-  async prepareStream(l1Id: string, access: MemoryAccess): Promise<L2StreamPreparation> {
-    identifier(l1Id, 'L1 ID');
+  /**
+   * Prepare one L2 generation for a batch of changed L1 memories. Each L1 is one
+   * change; candidates are shared, so the prompt carries one candidate set.
+   */
+  async prepareStream(
+    l1Ids: string | readonly string[],
+    access: MemoryAccess
+  ): Promise<L2StreamPreparation> {
+    if (typeof l1Ids === 'string') l1Ids = [l1Ids];
+    if (!Array.isArray(l1Ids) || !l1Ids.length)
+      throw new MemoryError('INVALID_INPUT', 'At least one L1 memory is required.');
+    const ids = [...new Set(l1Ids)];
     validateAccess(access);
-    const memory = this.l1.getMemory(l1Id, access.readableSpaceIds);
-    if (!memory || memory.maintenanceStatus !== 'complete' || !memory.sourcesComplete)
+    // A batch may contain an L1 whose maintenance is still pending (or failed).
+    // Skipping it keeps the rest of the batch usable instead of failing it all.
+    const loaded: L2GenerationChange[] = [];
+    const deferred: string[] = [];
+    for (const l1Id of ids) {
+      identifier(l1Id, 'L1 ID');
+      const memory = this.l1.getMemory(l1Id, access.readableSpaceIds);
+      if (!memory || memory.maintenanceStatus !== 'complete' || !memory.sourcesComplete) {
+        deferred.push(l1Id);
+        continue;
+      }
+      requireRead(access, memory.spaceId);
+      loaded.push({ l1Id, kind: 'created', memory });
+    }
+    if (!loaded.length)
       throw new MemoryError('INVALID_INPUT', 'L1 memory is not ready for L2 streaming.');
-    requireRead(access, memory.spaceId);
-    const ownerSpaceId = memory.spaceId;
+    const ownerSpaceId = loaded[0].memory.spaceId;
+    if (loaded.some((entry) => entry.memory.spaceId !== ownerSpaceId))
+      throw new MemoryError('INVALID_INPUT', 'A batch must stay inside one space.');
     const now = new Date().toISOString();
-    const loaded: L2GenerationChange[] = [{ l1Id, kind: 'created', memory }];
     const linked = this.repository.listLinkedCandidates(
       ownerSpaceId,
-      [l1Id],
+      ids,
       access.readableSpaceIds,
       10
     );
@@ -257,41 +285,55 @@ export class L2Service {
       if (evidence.length === candidate.l1Ids.length)
         candidates.push({ memory: candidate, evidence });
     }
+    const changes = loaded.map((entry) => ({
+      id: entry.l1Id,
+      content: entry.memory.content,
+      createdAt: entry.memory.createdAt,
+    }));
     const replacementByCandidate = new Map<string, ReadonlySet<string>>();
     let candidatesForModel = candidates;
     if (this.options.judge && candidates.length) {
-      const judged: L2Candidate[] = [];
-      try {
-        for (const candidate of candidates) {
-          const judgments = await this.options.judge.judge({
+      // Judging is one remote request per candidate, so it runs concurrently and
+      // only for the closest candidates.
+      const limit = Math.min(candidates.length, JUDGE_LIMIT);
+      const decided = await Promise.all(
+        candidates.slice(0, limit).map(async (candidate) => {
+          const judgments = await this.options.judge!.judge({
             current: {
               title: candidate.memory.title,
               summary: candidate.memory.summary,
               body: candidate.memory.body,
               updatedAt: candidate.memory.updatedAt,
             },
-            changes: [{ id: l1Id, content: memory.content, createdAt: memory.createdAt }],
+            changes,
           });
-          if (!Array.isArray(judgments) || judgments.length !== 1)
-            throw new MemoryDecisionError('JEV_OUTPUT_INVALID', 'failed', 'Incomplete judgment.');
-          const judgment = judgments[0];
+          return { candidate, judgments };
+        })
+      ).catch((cause: unknown) => {
+        throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment failed.', { cause });
+      });
+      const judged: L2Candidate[] = [];
+      for (const { candidate, judgments } of decided) {
+        if (!Array.isArray(judgments) || judgments.length !== changes.length)
+          throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment was incomplete.');
+        const replaced = new Set<string>();
+        for (const judgment of judgments) {
           if (
             !judgment ||
-            judgment.changedL1Id !== l1Id ||
+            !ids.includes(judgment.changedL1Id) ||
             !MEMORY_CHANGE_TYPES.includes(judgment.type)
           )
-            throw new MemoryDecisionError('JEV_OUTPUT_INVALID', 'failed', 'Invalid judgment.');
-          if (judgment.type === 'replacement')
-            replacementByCandidate.set(candidate.memory.id, new Set([l1Id]));
-          else judged.push(candidate);
+            throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment was invalid.');
+          if (judgment.type === 'replacement') replaced.add(judgment.changedL1Id);
         }
-        candidatesForModel = judged;
-      } catch (cause) {
-        throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment failed.', { cause });
+        if (replaced.size) replacementByCandidate.set(candidate.memory.id, replaced);
+        if (replaced.size < changes.length) judged.push(candidate);
       }
+      candidatesForModel = [...judged, ...candidates.slice(limit)];
     }
     return {
-      l1Id,
+      l1Ids: loaded.map((entry) => entry.l1Id),
+      deferredL1Ids: deferred,
       ownerSpaceId,
       loaded,
       candidates,
@@ -308,12 +350,14 @@ export class L2Service {
   ): L2StreamResult {
     validateAccess(access);
     if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    const memory = this.l1.getMemory(preparation.l1Id, access.readableSpaceIds);
-    if (!memory || l1Hash(memory) !== l1Hash(preparation.loaded[0].memory))
-      throw new MemoryError('L2_STALE_INPUT', 'The L1 source changed before stream commit.');
+    for (const entry of preparation.loaded) {
+      const current = this.l1.getMemory(entry.l1Id, access.readableSpaceIds);
+      if (!current || l1Hash(current) !== l1Hash(entry.memory))
+        throw new MemoryError('L2_STALE_INPUT', 'The L1 source changed before stream commit.');
+    }
     const proposal = validateProposal(raw, preparation.loaded, preparation.candidatesForModel);
     const known = new Map<string, L1Memory>();
-    known.set(memory.id, memory);
+    for (const entry of preparation.loaded) known.set(entry.l1Id, entry.memory);
     for (const candidate of preparation.candidates)
       for (const evidence of candidate.evidence) known.set(evidence.id, evidence);
     const candidateById = new Map(

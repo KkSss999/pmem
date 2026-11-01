@@ -20,7 +20,13 @@ export interface PreparedStreamItem {
 }
 
 export interface MemoryStreamHandler {
-  prepare(item: MemoryStreamItem): PreparedStreamItem | Promise<PreparedStreamItem>;
+  /**
+   * Prepare a batch of same-kind items for one model call. Returning `null` means
+   * the batch has no work left: the handler already applied or discarded it.
+   */
+  prepare(
+    items: readonly MemoryStreamItem[]
+  ): PreparedStreamItem | null | Promise<PreparedStreamItem | null>;
 }
 
 interface ActiveItem {
@@ -38,6 +44,7 @@ const HARNESS: HarnessCatalogDocument = {
         'Process exactly one supplied memory queue item.',
         'Use only IDs and evidence in the item envelope; do not invent facts or IDs.',
         'For L1 extraction, sourceIds must exactly match supplied message IDs and relatedSpaceIds must be empty unless a related space is explicitly supplied; never use the owner space.',
+        'For L1 maintenance, submit exactly one decision per supplied case: for keep or uncertain send only memoryId and action; for merge add targetId, content, abstraction and cues.',
         'Submit the result by calling memory_stream_submit exactly once.',
         'Keep the source language and preserve uncertainty, dates, numbers and context.',
         'This is a background task: do not answer in prose. You must call memory_stream_submit; a text-only response is invalid.',
@@ -136,10 +143,11 @@ async function createStreamPlugin(
                 Type.Literal('uncertain'),
                 Type.Literal('merge'),
               ]),
-              targetId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-              content: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-              abstraction: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
-              cues: Type.Array(Type.String({ minLength: 1 })),
+              // Only a merge decision carries these; keep/uncertain omit them.
+              targetId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
+              content: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
+              abstraction: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()])),
+              cues: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
             })
           )
         ),
@@ -244,6 +252,7 @@ export class MemoryStreamAgent {
   private readonly queue: MemoryStreamRepository;
   private readonly sessions: MemoryStreamSessionRepository;
   private readonly contextBudgetTokens: number;
+  private lastKind?: MemoryStreamItem['kind'];
 
   private constructor(
     private readonly runtime: PmemAgentRuntime,
@@ -262,6 +271,9 @@ export class MemoryStreamAgent {
 
   static async create(options: MemoryStreamAgentOptions): Promise<MemoryStreamAgent> {
     const workspaceId = options.workspaceId ?? PMEM_AGENT_WORKSPACE_ID;
+    // Memory work is mechanical: provider-side thinking only adds latency and
+    // tokens. Answering is a host concern and keeps the provider default.
+    const model = options.model ? { ...options.model, thinkingLevel: 'off' as const } : undefined;
     const scopeId = options.scopeId;
     const host =
       options.host ??
@@ -275,6 +287,7 @@ export class MemoryStreamAgent {
     const plugin = await createStreamPlugin(state, store.queue);
     const runtime = await PmemAgentRuntime.create({
       ...options,
+      ...(model ? { model } : {}),
       host,
       plugin,
       harnessContent: () => structuredClone(HARNESS),
@@ -292,7 +305,9 @@ export class MemoryStreamAgent {
       workspaceId,
       scopeId,
       state,
-      options.contextBudgetTokens ?? 700_000
+      // Rotate well before a typical 128k model window: a session that outgrows
+      // the window fails every call instead of rotating.
+      options.contextBudgetTokens ?? 1_000_000
     );
     return agent;
   }
@@ -309,14 +324,23 @@ export class MemoryStreamAgent {
     return this.runtime.cacheMetrics();
   }
 
+  /**
+   * Size of the current session context. Every call resends the whole session, so
+   * the last request's input + cacheRead + cacheWrite is exactly that size; the
+   * rotation budget is compared against it.
+   */
+  contextTokens(): number {
+    return this.runtime.contextTokens();
+  }
+
   async runNext(handler: MemoryStreamHandler): Promise<boolean> {
     const next = this.queue.next(this.workspaceId, this.scopeId);
     if (!next) return false;
     const item = this.queue.claim(next.id);
     this.lastItem = item;
-    let prepared: PreparedStreamItem;
+    let prepared: PreparedStreamItem | null;
     try {
-      prepared = await handler.prepare(item);
+      prepared = await handler.prepare([item]);
     } catch (error) {
       this.queue.finish(
         item.id,
@@ -325,6 +349,30 @@ export class MemoryStreamAgent {
       );
       return true;
     }
+    if (!prepared) {
+      // The handler re-queued or discarded the item; nothing to ask the model.
+      const current = this.queue.find(
+        item.workspaceId,
+        item.scopeId,
+        item.kind,
+        item.subjectId,
+        item.sourceHash
+      );
+      if (current?.state === 'running') this.queue.finish(item.id, 'done', undefined);
+      return true;
+    }
+    // Aggregate kinds do not need the extraction history, so they run in a fresh
+    // session; L1 extraction keeps its session to preserve the prompt cache.
+    if (item.kind !== 'l1-extract' && this.lastKind !== item.kind) {
+      await this.runtime.rotateSession();
+      this.sessions.set(
+        this.workspaceId,
+        this.scopeId,
+        this.runtime.agentId,
+        this.runtime.sessionId
+      );
+    }
+    this.lastKind = item.kind;
     this.state.current = { item, prepared };
     try {
       this.lastText = (

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, notExists, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { MemoryError, type L0Message } from '../../domain/memory/types';
@@ -11,6 +11,7 @@ import {
   l1Memories,
   l1Sources,
   l1SpaceLinks,
+  l2L1Links,
   spaces,
 } from './schema';
 import { SqliteMemoryRepository } from './repository';
@@ -25,6 +26,8 @@ export class SqliteL1Repository implements L1Repository {
 
   commitStream(input: readonly L0Message[], drafts: readonly L1Draft[], now: string): L1Memory[] {
     if (!input.length) throw new MemoryError('INVALID_INPUT', 'A stream source is required.');
+    if (input.some((message) => message.spaceId !== input[0].spaceId))
+      throw new MemoryError('INVALID_INPUT', 'A commit must stay inside one space.');
     const created: string[] = [];
     this.db.transaction(
       (tx) => {
@@ -45,13 +48,14 @@ export class SqliteL1Repository implements L1Repository {
             throw new MemoryError('SOURCE_CONFLICT', 'A stream source changed before commit.');
         }
         const jobId = `stream:${input[0].id}`;
+        const spaceId = input[0].spaceId;
         for (const draft of drafts) {
           const memoryId = randomUUID();
           tx.insert(l1Memories)
             .values({
               id: memoryId,
               jobId,
-              spaceId: input[0].spaceId,
+              spaceId,
               content: draft.content,
               abstraction: draft.abstraction,
               maintenanceStatus: 'pending',
@@ -61,7 +65,7 @@ export class SqliteL1Repository implements L1Repository {
           tx.insert(l1MaintenanceTasks)
             .values({
               memoryId,
-              spaceId: input[0].spaceId,
+              spaceId,
               state: 'pending',
               resultMemoryId: memoryId,
               createdAt: now,
@@ -79,7 +83,7 @@ export class SqliteL1Repository implements L1Repository {
             .map((id) => input.find((source) => source.id === id)?.spaceId)
             .filter((id): id is string => !!id);
           const relatedSpaceIds = [...new Set([...draft.relatedSpaceIds, ...sourceSpaces])].filter(
-            (id) => id !== input[0].spaceId
+            (id) => id !== spaceId
           );
           if (relatedSpaceIds.length)
             tx.insert(l1SpaceLinks)
@@ -195,6 +199,35 @@ export class SqliteL1Repository implements L1Repository {
       maintenanceStatus: row.maintenanceStatus as L1Memory['maintenanceStatus'],
       createdAt: row.createdAt,
     };
+  }
+
+  uncoveredMemoryIds(
+    anchoredSpaceIds: readonly string[],
+    readableSpaceIds: readonly string[],
+    limit: number
+  ): string[] {
+    if (!anchoredSpaceIds.length || !readableSpaceIds.length || limit < 1) return [];
+    const rows = this.db
+      .select({ id: l1Memories.id })
+      .from(l1Memories)
+      .where(
+        and(
+          inArray(l1Memories.spaceId, [...anchoredSpaceIds]),
+          inArray(l1Memories.spaceId, [...readableSpaceIds]),
+          eq(l1Memories.maintenanceStatus, 'complete'),
+          notExists(
+            this.db
+              .select({ id: l2L1Links.l1Id })
+              .from(l2L1Links)
+              .where(eq(l2L1Links.l1Id, l1Memories.id))
+          )
+        )
+      )
+      .orderBy(asc(l1Memories.createdAt), asc(l1Memories.id))
+      .limit(limit)
+      .all()
+      .map((row) => row.id);
+    return rows;
   }
 
   checkSearchIndex(): import('../../domain/memory/l1').L1IndexStatus {

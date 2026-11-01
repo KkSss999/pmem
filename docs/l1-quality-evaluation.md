@@ -2,6 +2,25 @@
 
 2026-10-30 使用 DeepSeek Flash 和合成对话评估内部 L1 提炼。样本见 `tests/fixtures/l1-quality.json`，运行器为 `scripts/eval-l1.cjs`：读取标准输入中的 API 密钥、使用临时数据库并在退出时清理。结果仅用于分析提炼，不代表召回质量或真实用户数据的表现。
 
+## 2026-11-01 复测：Stream 路径与网关模型
+
+运行器改为驱动生产 Stream 流水线：`scripts/stream-eval-runtime.cjs` 为每个样本创建独立数据库和 Stream 会话，L0 入队后由 `MemoryStreamAgent` 串行消费 L1 提炼、L1 维护、L2、L3，不再使用已删除的 job API。模型为 `deepseek/deepseek-v4.1-flash-ultrafast`（`openai-completions` 网关），单轮、并发 3。
+
+| 样本与协议     | 样本 | L1 提炼成功 | 应产生记忆且检查词全中 | 寒暄产生记忆 |
+| -------------- | ---: | ----------: | ---------------------: | -----------: |
+| 开发样本，Chat |   10 |          10 |                    9/9 |          0/1 |
+
+10 个样本的 `l1-extract` 队列项全部 `done`；9 个正例都产生了记忆并命中各自检查词，问候样本没有产生记忆。该表只衡量 L1 提炼。
+
+同一轮的 L1 维护、L2、L3 失败单独记录，集中在模型输出未通过服务端校验，而不是流水线错误：
+
+- `l1-maintenance` 报 `MODEL_OUTPUT_INVALID`（决策条数与 case 数不一致，或 `memoryId` 不在 case 内）。该 L1 因此停留在 `pending`，随后 `l2-synthesize` 报 `INVALID_INPUT`（`L1 memory is not ready for L2 streaming`）。
+- `l3-keywords` 报 `L3_MODEL_OUTPUT_INVALID`（关键词条数超限，或 `l2Ids` 不是本次 envelope 的 L2、scope 交集为空）。
+
+这属于 prompt 与校验器对齐问题（M5 下一步），不是运行器缺陷；模型随机性会放大它，因此单轮数字不能当作准确率。
+
+同轮修掉一个流水线缺陷：队列项在 `*_STALE_INPUT` 时原先直接失败，现在改用当前 source hash 重新入队（source 已不存在则直接跳过），由 `tests/memory-stream.test.cjs` 覆盖。
+
 ## 提示词调整
 
 旧提示词允许空记忆，但没有说明哪些场景值得保留。新版补充个人、工作、代码、创作和研究场景，要求保留主体、作品或项目语境、限定条件、时间和未决状态，避免将建议当成已确认决策，并尽量使用来源语言。模型原始响应为空白时现在报告 `MODEL_OUTPUT_EMPTY`；合法的 `{"memories":[]}` 仍表示模型判断没有可提炼记忆，无法仅凭格式判断该判断是否正确。

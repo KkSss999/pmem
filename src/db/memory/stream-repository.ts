@@ -93,6 +93,31 @@ export class MemoryStreamRepository {
     return row ? map(row) : undefined;
   }
 
+  /** Pending items of one kind, oldest first; used to batch one model call. */
+  pending(
+    workspaceId: string,
+    scopeId: string,
+    kind: MemoryStreamKind,
+    limit: number
+  ): MemoryStreamItem[] {
+    if (!Number.isSafeInteger(limit) || limit < 1) return [];
+    return this.db
+      .select()
+      .from(memoryStreamQueue)
+      .where(
+        and(
+          eq(memoryStreamQueue.workspaceId, workspaceId),
+          eq(memoryStreamQueue.scopeId, scopeId),
+          eq(memoryStreamQueue.kind, kind),
+          eq(memoryStreamQueue.state, 'pending')
+        )
+      )
+      .orderBy(asc(memoryStreamQueue.createdAt), asc(memoryStreamQueue.id))
+      .limit(limit)
+      .all()
+      .map(map);
+  }
+
   next(workspaceId: string, scopeId: string): MemoryStreamItem | undefined {
     const row = this.db
       .select()
@@ -134,6 +159,17 @@ export class MemoryStreamRepository {
       .get();
     if (!row) throw new MemoryError('JOB_NOT_PENDING', 'Memory stream item is not running.');
     return map(row);
+  }
+
+  /** Mark a still-pending item as covered by another item's model call. */
+  absorb(id: string, now = new Date().toISOString()): MemoryStreamItem | undefined {
+    const row = this.db
+      .update(memoryStreamQueue)
+      .set({ state: 'done', finishedAt: now })
+      .where(and(eq(memoryStreamQueue.id, id), eq(memoryStreamQueue.state, 'pending')))
+      .returning()
+      .get();
+    return row ? map(row) : undefined;
   }
 
   retry(id: string, now = new Date().toISOString()): MemoryStreamItem {

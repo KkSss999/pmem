@@ -10,16 +10,20 @@ export class L2StreamHandler implements MemoryStreamHandler {
     private readonly onCommitted?: (l2Ids: readonly string[]) => void
   ) {}
 
-  async prepare(item: MemoryStreamItem): Promise<PreparedStreamItem> {
-    if (item.kind !== 'l2-synthesize')
-      throw new Error(`L2StreamHandler cannot process ${item.kind}.`);
-    if (this.service.streamSourceHash(item.subjectId, this.access) !== item.sourceHash)
-      throw Object.assign(new Error('L2 stream source changed.'), { code: 'L2_STALE_INPUT' });
-    const preparation = await this.service.prepareStream(item.subjectId, this.access);
+  async prepare(items: readonly MemoryStreamItem[]): Promise<PreparedStreamItem> {
+    if (!items.length || items.some((item) => item.kind !== 'l2-synthesize'))
+      throw new Error('L2StreamHandler only processes l2-synthesize items.');
+    for (const item of items)
+      if (this.service.streamSourceHash(item.subjectId, this.access) !== item.sourceHash)
+        throw Object.assign(new Error('L2 stream source changed.'), { code: 'L2_STALE_INPUT' });
+    const preparation = await this.service.prepareStream(
+      items.map((item) => item.subjectId),
+      this.access
+    );
     return {
       envelope: {
-        itemId: item.id,
-        kind: item.kind,
+        itemIds: items.map((item) => item.id),
+        kind: 'l2-synthesize',
         l1: preparation.loaded.map((entry) => ({
           id: entry.memory.id,
           content: entry.memory.content,
@@ -29,6 +33,7 @@ export class L2StreamHandler implements MemoryStreamHandler {
           spaceId: entry.memory.spaceId,
           createdAt: entry.memory.createdAt,
         })),
+        allowedL1Ids: preparation.loaded.map((entry) => entry.l1Id),
         candidates: preparation.candidatesForModel.map((candidate) => ({
           l2Id: candidate.memory.id,
           title: candidate.memory.title,
@@ -42,6 +47,12 @@ export class L2StreamHandler implements MemoryStreamHandler {
             cues: memory.cues,
           })),
         })),
+        allowedCandidateIds: preparation.candidatesForModel.map((item) => item.memory.id),
+        rules: [
+          'Every supplied L1 must be covered by exactly one result or listed once in uncoveredL1Ids.',
+          'Use action create or update; update needs the candidate l2Id and supersede true when the change replaces it.',
+          'Never cite an L1 or candidate ID that is not supplied.',
+        ],
         outputTool: 'memory_stream_submit',
       },
       apply: (payload) => {

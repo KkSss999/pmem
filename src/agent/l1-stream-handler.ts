@@ -10,24 +10,31 @@ export class L1StreamHandler implements MemoryStreamHandler {
     private readonly onCommitted?: (memories: import('../domain/memory/l1').L1Memory[]) => void
   ) {}
 
-  prepare(item: MemoryStreamItem): PreparedStreamItem {
-    if (item.kind !== 'l1-extract') throw new Error(`L1StreamHandler cannot process ${item.kind}.`);
-    const actual = this.service.streamSourceHash(item.subjectId, this.access);
-    if (actual !== item.sourceHash)
-      throw Object.assign(new Error('L1 stream source changed.'), { code: 'L1_STALE_INPUT' });
-    const preparation = this.service.prepareStream(item.subjectId, this.access);
+  prepare(items: readonly MemoryStreamItem[]): PreparedStreamItem | null {
+    if (!items.length || items.some((item) => item.kind !== 'l1-extract'))
+      throw new Error('L1StreamHandler only processes l1-extract items.');
+    const messageIds = items.map((item) => item.subjectId);
+    for (const item of items) {
+      const actual = this.service.streamSourceHash(item.subjectId, this.access);
+      if (actual !== item.sourceHash)
+        throw Object.assign(new Error('L1 stream source changed.'), { code: 'L1_STALE_INPUT' });
+    }
+    const preparation = this.service.prepareStream(messageIds, this.access);
+    // Nothing durable to extract from: finish without asking the model.
+    if (preparation.messages.every((message) => !message.content.trim())) return null;
     return {
       envelope: {
-        itemId: item.id,
-        kind: item.kind,
+        itemIds: items.map((item) => item.id),
+        kind: 'l1-extract',
         space: { id: preparation.space.id, name: preparation.space.name },
-        message: {
-          id: preparation.message.id,
-          spaceId: preparation.message.spaceId,
-          role: preparation.message.role,
-          content: preparation.message.content,
-          occurredAt: preparation.message.occurredAt ?? null,
-        },
+        messages: preparation.messages.map((message) => ({
+          id: message.id,
+          spaceId: message.spaceId,
+          role: message.role,
+          content: message.content,
+          occurredAt: message.occurredAt ?? null,
+        })),
+        allowedMessageIds: preparation.messages.map((message) => message.id),
         outputTool: 'memory_stream_submit',
       },
       apply: (payload) => {

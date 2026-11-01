@@ -293,6 +293,38 @@ else next pending item
 - L2 commit enqueue L3 item。
 - 失败后继续队列，不阻塞其他 item。
 
+## 9.4 记忆工作改为单次结构化调用（2026-11-01）
+
+原先每条 item 都走 Miao 的工具循环：user 消息（envelope）→ `memory_stream_submit` 工具调用 → 工具结果 → 再要一句收尾。这等于**每条 item 两次模型调用**，还额外发送 harness 指令和工具 schema。
+
+现在记忆工作不再经过 agent 会话，而是一次性构建 prompt：
+
+- `MemoryStreamWorker`（`src/agent/memory-worker.ts`）只做「取队列 → 批处理 prepare → 一次模型调用 → apply → 收尾」，没有 session、没有工具循环。
+- `OpenAIMemoryStreamModel`（`src/agent/memory-model.ts`）按 kind 选 system prompt 与 JSON Schema：system 放规则，user 只放数据（`itemIds`/`rules`/`outputTool` 等路由字段不进入 prompt），请求带 `response_format: json_schema`（strict）+ `max_tokens`，直接解析 JSON。
+- 旧路径仍然保留：`MemoryStreamAgent` 用 Miao 会话跑队列，供需要工具/多轮能力的宿主使用；评测与无头处理应使用 Worker。
+
+收益：每条 item 从 2 次调用降到 1 次，prompt 里不再有 harness/工具定义/历史会话，上下文大小稳定（不再随 item 累积增长）。
+
+## 9.5 一次调用覆盖多条 item（2026-11-01）
+
+串行不等于「一条 item 一次模型调用」。`MemoryStreamPipeline` 在取到一条 item 后，会把同 kind、同 scope 的 pending sibling 一起准备，一次 prompt 覆盖整批：
+
+| kind             | 每批上限 |
+| ---------------- | -------: |
+| `l1-extract`     |        5 |
+| `l1-maintenance` |        5 |
+| `l2-synthesize`  |        3 |
+| `l3-keywords`    |        6 |
+
+- sibling 只在其 source hash 仍然匹配时并入；source 变化或消失的项不进入批次。
+- 成功 apply 后，被覆盖的 sibling 标记为 `done`（`MemoryStreamRepository.absorb`），失败时保持 pending，下一条 item 会重新组成批次，因此单条失败不会拖垮整批。
+- 生产环境逐轮捕获时队列里通常只有一条 pending item，批大小为 1，行为与之前一致；收益出现在积压（批量导入、评测、追平）场景。
+- L2 改为在 **maintenance 提交之后**入队（`L1MaintenanceStreamHandler.onCommitted`），此前 L1 一提交就入队，导致 L2 可能先于 maintenance 被消费并以 `INVALID_INPUT`（L1 尚未 ready）失败。
+- 非 `l1-extract` 的 item 切换时轮换 session（`MemoryStreamAgent.runNext`），避免把整段抽取历史带给 maintenance/L2/L3；L1 保持同一 session 以维持 prompt cache。
+- 记忆工作全局关闭 provider 侧 thinking（`MemoryStreamAgent` 强制 `thinkingLevel: 'off'`，catalog 使用 `thinking: 'off'`）：抽取/维护/合成是机械任务，thinking 只增加延迟与 token。回答由宿主决定，保持 provider 默认。
+- 模型能力按 1M 上下文窗口、256k 单次输出配置；session 轮换预算默认取满窗口 1M（`contextBudgetTokens`），暂不设置额外上限，成本核对后再收紧。
+- 过期（`*_STALE_INPUT`）会以当前 hash 重新入队；source 已不存在或工作已完成（`JOB_NOT_FOUND` / `JOB_NOT_PENDING`）直接跳过。
+
 ## 10. 迁移
 
 ### Phase A：新队列

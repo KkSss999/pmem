@@ -11,6 +11,12 @@ export interface L1Repository {
     writableSpaceIds: readonly string[],
     now: string
   ): L1Memory;
+  /** L1 memories whose maintenance finished but that no L2 memory cites yet. */
+  uncoveredMemoryIds(
+    anchoredSpaceIds: readonly string[],
+    readableSpaceIds: readonly string[],
+    limit: number
+  ): string[];
   checkSearchIndex(): L1IndexStatus;
   rebuildSearchIndex(): void;
   searchMemories(

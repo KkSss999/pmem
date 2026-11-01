@@ -6,7 +6,7 @@ import type { MemoryRepository } from './ports';
 import type { L1Repository } from './l1-ports';
 
 export interface L1StreamPreparation {
-  message: L0Message;
+  messages: L0Message[];
   space: import('../../domain/memory/types').MemorySpace;
   now: string;
 }
@@ -23,7 +23,8 @@ function validateDrafts(
   ) {
     throw new MemoryError('MODEL_OUTPUT_INVALID', 'Model output must contain a memories array.');
   }
-  return (value as { memories: unknown[] }).memories.map((item) => {
+  const drafts: L1Draft[] = [];
+  for (const item of (value as { memories: unknown[] }).memories) {
     if (!item || typeof item !== 'object')
       throw new MemoryError('MODEL_OUTPUT_INVALID', 'Invalid memory output.');
     const draft = item as Record<string, unknown>;
@@ -34,32 +35,45 @@ function validateDrafts(
       !draft.abstraction.trim() ||
       !Array.isArray(draft.cues) ||
       !Array.isArray(draft.relatedSpaceIds) ||
-      !Array.isArray(draft.sourceIds) ||
-      !draft.sourceIds.length
+      !Array.isArray(draft.sourceIds)
     ) {
       throw new MemoryError(
         'MODEL_OUTPUT_INVALID',
         'A memory needs content, an abstraction, cues and source IDs.'
       );
     }
-    if (
-      draft.cues.some((cue) => typeof cue !== 'string' || !cue.trim()) ||
-      draft.sourceIds.some((id) => typeof id !== 'string' || !allowedIds.includes(id)) ||
-      draft.relatedSpaceIds.some((id) => typeof id !== 'string' || !allowedSpaces.includes(id))
-    ) {
-      throw new MemoryError(
-        'MODEL_OUTPUT_INVALID',
-        'The memory contains invalid cues or source IDs.'
-      );
-    }
-    return {
+    // Unknown IDs are dropped instead of discarding the memory: one invented
+    // citation must not cost the whole extraction.
+    const sourceIds = [
+      ...new Set(
+        draft.sourceIds.filter(
+          (id): id is string => typeof id === 'string' && allowedIds.includes(id)
+        )
+      ),
+    ];
+    if (!sourceIds.length) continue;
+    const relatedSpaceIds = [
+      ...new Set(
+        draft.relatedSpaceIds.filter(
+          (id): id is string => typeof id === 'string' && allowedSpaces.includes(id)
+        )
+      ),
+    ];
+    drafts.push({
       content: draft.content.trim(),
       abstraction: draft.abstraction.trim(),
-      cues: [...new Set((draft.cues as string[]).map((cue) => cue.trim()))],
-      sourceIds: [...new Set(draft.sourceIds as string[])],
-      relatedSpaceIds: [...new Set(draft.relatedSpaceIds as string[])],
-    };
-  });
+      cues: [
+        ...new Set(
+          draft.cues
+            .filter((cue): cue is string => typeof cue === 'string' && !!cue.trim())
+            .map((cue) => cue.trim())
+        ),
+      ],
+      sourceIds,
+      relatedSpaceIds,
+    });
+  }
+  return drafts;
 }
 
 export class L1Service {
@@ -88,25 +102,62 @@ export class L1Service {
       .digest('hex');
   }
 
-  prepareStream(messageId: string, access: MemoryAccess): L1StreamPreparation {
-    identifier(messageId, 'message ID');
+  /**
+   * Prepare one extraction for a batch of L0 messages. All messages must belong
+   * to the same space, so the batch shares one target space and one prompt.
+   */
+  /** Stable identity of an L1 memory's reviewed content, used as the item hash. */
+  streamContentHash(memoryId: string, access: MemoryAccess): string {
+    identifier(memoryId, 'memory ID');
     validateAccess(access);
-    const message = this.l0.getMessage(messageId, access.readableSpaceIds);
-    if (!message) throw new MemoryError('JOB_NOT_FOUND', 'L0 message not found.');
-    requireRead(access, message.spaceId);
-    requireWrite(access, message.spaceId);
-    const space = this.l0.getSpace(message.spaceId);
+    const memory = this.repository.getMemory(memoryId, access.readableSpaceIds);
+    if (!memory) throw new MemoryError('JOB_NOT_FOUND', 'L1 memory not found.');
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          content: memory.content,
+          abstraction: memory.abstraction,
+          cues: [...memory.cues].sort(),
+          spaceId: memory.spaceId,
+          relatedSpaceIds: [...memory.relatedSpaceIds].sort(),
+          sourceIds: [...memory.sourceIds].sort(),
+        })
+      )
+      .digest('hex');
+  }
+
+  prepareStream(messageIds: string | readonly string[], access: MemoryAccess): L1StreamPreparation {
+    if (typeof messageIds === 'string') messageIds = [messageIds];
+    if (!Array.isArray(messageIds) || !messageIds.length)
+      throw new MemoryError('INVALID_INPUT', 'At least one L0 message is required.');
+    validateAccess(access);
+    const messages = [...new Set(messageIds)].map((messageId) => {
+      identifier(messageId, 'message ID');
+      const message = this.l0.getMessage(messageId, access.readableSpaceIds);
+      if (!message) throw new MemoryError('JOB_NOT_FOUND', 'L0 message not found.');
+      return message;
+    });
+    const spaceId = messages[0].spaceId;
+    if (messages.some((message) => message.spaceId !== spaceId))
+      throw new MemoryError('INVALID_INPUT', 'A batch must share one space.');
+    requireRead(access, spaceId);
+    requireWrite(access, spaceId);
+    const space = this.l0.getSpace(spaceId);
     if (!space) throw new MemoryError('SPACE_NOT_FOUND', 'Space does not exist.');
-    return { message, space, now: new Date().toISOString() };
+    return { messages, space, now: new Date().toISOString() };
   }
 
   applyStream(prep: L1StreamPreparation, raw: unknown, access: MemoryAccess): L1Memory[] {
     validateAccess(access);
     if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    requireRead(access, prep.message.spaceId);
-    requireWrite(access, prep.message.spaceId);
-    const drafts = validateDrafts(raw, [prep.message.id], []);
-    return this.repository.commitStream([prep.message], drafts, new Date().toISOString());
+    requireRead(access, prep.space.id);
+    requireWrite(access, prep.space.id);
+    const drafts = validateDrafts(
+      raw,
+      prep.messages.map((message) => message.id),
+      []
+    );
+    return this.repository.commitStream(prep.messages, drafts, new Date().toISOString());
   }
 
   getMemory(id: string, access: MemoryAccess): L1Memory | undefined {
@@ -139,6 +190,20 @@ export class L1Service {
       access.writableSpaceIds,
       new Date().toISOString()
     );
+  }
+
+  /** L1 memories whose maintenance finished but no L2 memory cites yet. */
+  uncoveredMemoryIds(
+    anchoredSpaceIds: readonly string[],
+    access: MemoryAccess,
+    limit = 200
+  ): string[] {
+    validateAccess(access);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
+      throw new MemoryError('INVALID_INPUT', 'Invalid coverage limit.');
+    const anchored = [...new Set(anchoredSpaceIds)];
+    for (const spaceId of anchored) identifier(spaceId, 'space ID');
+    return this.repository.uncoveredMemoryIds(anchored, access.readableSpaceIds, limit);
   }
 
   searchIndexStatus(access: MemoryAccess): L1IndexStatus {

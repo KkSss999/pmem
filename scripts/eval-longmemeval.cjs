@@ -2,16 +2,9 @@
 
 // Explicitly invoked evaluation. The API key is read from stdin and never written to disk.
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { performance } = require('node:perf_hooks');
-const { OwnedDatabase } = require('../dist/db/database');
-const { assembleMemory } = require('../dist/server/memory');
-const { assembleL1 } = require('../dist/server/l1');
-const { assembleL1Maintenance } = require('../dist/server/l1-maintenance');
-const { assembleL2 } = require('../dist/server/l2');
-const { assembleL3 } = require('../dist/server/l3');
-const { OpenAIExtractionModel } = require('../dist/other/models/openai');
+const { createStreamEval } = require('./stream-eval-runtime.cjs');
 
 function option(name, fallback) {
   const prefix = `--${name}=`;
@@ -158,17 +151,19 @@ async function main(apiKey) {
   const topK = numberOption('top-k', 5, 1, 100);
   const maxContextChars = numberOption('max-context', 24_000, 1_000, 128_000);
   const sample = option('sample', 'stratified');
-  const l2Mode = option('l2', 'fallback');
-  const modelName = option('model', 'deepseek-flash');
+  const modelId = option('model', 'deepseek/deepseek-v4.1-flash-ultrafast');
   const baseUrl = option('base-url', 'https://api.deepseek.com/v1');
-  const provider = option('provider', 'deepseek');
-  const api = option('api', 'chat');
+  const apiFormat = option('api', 'openai-completions');
   const type = option('type', '');
+  const contextBudgetTokens = numberOption('context-budget', 1_000_000, 4_000, 1_000_000);
+  const answerMaxTokens = numberOption('answer-max-tokens', 262_144, 256, 262_144);
+  const concurrency = numberOption('concurrency', 1, 1, 16);
+  const itemTimeoutMs = numberOption('item-timeout', 90_000, 10_000, 600_000);
+  const resume = option('resume', 'on') !== 'off';
   const outDir = path.resolve(option('out', path.join('/tmp', `pmem-longmemeval-${Date.now()}`)));
   if (!['first', 'stratified'].includes(sample)) throw new Error('Invalid --sample.');
-  if (!['fallback', 'real', 'deterministic'].includes(l2Mode)) throw new Error('Invalid --l2.');
-  if (api !== 'chat') throw new Error('This harness currently supports --api=chat only.');
-  if (!['deepseek', 'openai'].includes(provider)) throw new Error('Invalid --provider.');
+  if (!['openai-completions', 'openai-responses', 'anthropic-messages'].includes(apiFormat))
+    throw new Error('Invalid --api.');
   const endpoint = new URL(
     'chat/completions',
     baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
@@ -187,13 +182,16 @@ async function main(apiKey) {
     offset,
     sample,
     type: type || null,
-    model: modelName,
+    model: modelId,
     baseUrl,
-    provider,
-    api,
+    api: apiFormat,
     topK,
     maxContextChars,
-    l2Mode,
+    contextBudgetTokens,
+    answerMaxTokens,
+    concurrency,
+    itemTimeoutMs,
+    resume,
     questionCount: questions.length,
     outDir,
   });
@@ -274,50 +272,12 @@ async function main(apiKey) {
     return response;
   };
 
-  const model = new OpenAIExtractionModel({
-    provider,
-    api,
-    model: modelName,
-    baseUrl,
-    apiKey,
-    timeoutMs: 120_000,
-    fetch: fetcher,
-  });
-
-  function deterministicL2Model() {
-    return {
-      generate: async ({ changes }) => ({
-        results: changes.map(({ memory }) => ({
-          action: 'create',
-          title: memory.content.slice(0, 80),
-          summary: memory.abstraction,
-          body: memory.content,
-          l1Ids: [memory.id],
-        })),
-        uncoveredL1Ids: [],
-      }),
-    };
-  }
-
-  function keepMaintenanceModel() {
-    return {
-      review: async ({ cases }) => ({
-        decisions: cases.map((item) => ({
-          memoryId: item.memory.id,
-          action: 'keep',
-          targetId: null,
-          content: null,
-          abstraction: null,
-          cues: [],
-        })),
-      }),
-    };
-  }
+  const modelOptions = { providerId: 'eval', modelId, api: apiFormat, baseUrl };
 
   async function chat(system, user, stage, json = false, maxTokens = 1024) {
     beginStage(stage);
     const body = {
-      model: modelName,
+      model: modelId,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -375,26 +335,38 @@ async function main(apiKey) {
     return [...new Set(values)];
   }
 
+  // Resumable: a previous run's questions.json is reused so a killed run can continue.
+  const results = new Map();
+  const questionsPath = path.join(outDir, 'questions.json');
+  if (resume && fs.existsSync(questionsPath)) {
+    try {
+      for (const item of JSON.parse(fs.readFileSync(questionsPath, 'utf8'))) {
+        if (item && !item.failure) results.set(item.index, item);
+      }
+      sink.write('run.resume', { reused: results.size, path: questionsPath });
+    } catch {
+      results.clear();
+    }
+  }
+
   const questionResults = [];
-  for (const [index, question] of questions.entries()) {
+  async function runQuestion(index, question) {
     const questionStarted = performance.now();
     const questionId = question.question_id ?? `question-${index}`;
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-longmemeval-'));
-    const databasePath = path.join(root, 'eval.sqlite');
-    const db = OwnedDatabase.create(databasePath);
-    const memory = assembleMemory(db);
-    const l1 = assembleL1(db);
-    const maintenance = assembleL1Maintenance(db);
-    const l2 = assembleL2(db);
-    const l3 = assembleL3(db);
+    const runtime = await createStreamEval({
+      apiKey,
+      model: modelOptions,
+      workspaceId: `longmemeval-q${index}`,
+      contextBudgetTokens,
+      timeoutMs: itemTimeoutMs,
+    });
+    const memory = runtime.memory;
+    const l3 = runtime.l3;
     const l0ById = new Map();
     const answerSessions = new Set(question.answer_session_ids ?? []);
     const stages = [];
-    const l1Jobs = [];
-    let l2Jobs = 0;
-    let l3Jobs = 0;
-    let l2Fallbacks = 0;
     let failure;
+    let outcome;
     try {
       sink.write('question.start', {
         index,
@@ -425,17 +397,13 @@ async function main(apiKey) {
         beginStage('ingest');
         let sessionL0 = 0;
         for (const turn of entry.session) {
-          const message = memory.appendL0(
-            {
-              spaceId: 'personal',
-              role: turn.role === 'assistant' ? 'assistant' : 'user',
-              content: String(turn.content ?? ''),
-              source: 'longmemeval',
-              sessionId,
-              ...(entry.occurredAt ? { occurredAt: entry.occurredAt } : {}),
-            },
-            access
-          ).message;
+          const message = runtime.append({
+            role: turn.role === 'assistant' ? 'assistant' : 'user',
+            content: String(turn.content ?? ''),
+            source: 'longmemeval',
+            sessionId,
+            ...(entry.occurredAt ? { occurredAt: entry.occurredAt } : {}),
+          });
           l0ById.set(message.id, {
             id: message.id,
             sessionId,
@@ -445,123 +413,45 @@ async function main(apiKey) {
         }
         endStage(stages, { sessionIndex, sessionId, l0: sessionL0 });
 
-        const sourceIds = [...l0ById.values()]
-          .filter((item) => item.sessionId === sessionId)
-          .map((item) => item.id);
-        const jobId = `${questionId}-l1-${sessionIndex}`;
-        let l1Job;
-        beginStage('l1.extract');
-        try {
-          l1.enqueue({ id: jobId, sourceIds, relatedSpaceIds: [] }, access);
-          const job = await l1.run(jobId, model, access);
-          const memories = l1.getJobMemories(job.id, access);
-          l1Job = { jobId, state: job.state, memories: memories.length };
-        } catch (error) {
-          l1Job = {
-            jobId,
-            state: l1.getJob(jobId, access)?.state ?? 'error',
-            failureCode: l1.getJob(jobId, access)?.failureCode ?? error?.code ?? 'UNKNOWN',
-            memories: 0,
-          };
-        }
-        l1Jobs.push(l1Job);
-        endStage(stages, { sessionIndex, sessionId, job: l1Job });
-
-        beginStage('l1.maintenance');
-        let maintenanceBatches = 0;
-        for (;;) {
-          const pending = maintenance.listTasks(
-            { spaceId: 'personal', state: 'pending' },
-            access
-          ).tasks;
-          if (!pending.length || maintenanceBatches >= 30) break;
-          const work = maintenance.startBatch(keepMaintenanceModel(), access);
-          if (!work) break;
-          await work;
-          maintenanceBatches++;
-        }
-        endStage(stages, { sessionIndex, sessionId, batches: maintenanceBatches });
-
-        beginStage('l2.generate');
-        const l2Before = l2Jobs;
-        const l2FallbackBefore = l2Fallbacks;
-        for (;;) {
-          const pending = l2
-            .listChanges({ ownerSpaceId: 'personal' }, access)
-            .filter((change) => change.state === 'pending');
-          if (!pending.length || l2Jobs >= 60) break;
-          const l2JobId = `${questionId}-l2-${l2Jobs}`;
-          l2.enqueue({ id: l2JobId, ownerSpaceId: 'personal' }, access);
-          let job;
-          if (l2Mode === 'deterministic') {
-            job = await l2.run(l2JobId, deterministicL2Model(), access);
-          } else {
-            try {
-              job = await l2.run(l2JobId, model, access);
-            } catch (error) {
-              sink.write('l2.error', {
-                jobId: l2JobId,
-                code: error?.code ?? 'UNKNOWN',
-                message: error?.message ?? String(error),
-              });
-              job = l2.getJob(l2JobId, access);
-              if (l2Mode === 'fallback' && job && ['failed', 'partial'].includes(job.state)) {
-                l2.retry(l2JobId, access);
-                job = await l2.run(l2JobId, deterministicL2Model(), access);
-                l2Fallbacks++;
-              }
-            }
-          }
-          l2Jobs++;
-          sink.write('l2.job', {
-            jobId: l2JobId,
-            state: job?.state,
-            failureCode: job?.failureCode ?? null,
-          });
-        }
+        // The production stream consumes L1, maintenance, L2 and L3 serially.
+        beginStage('stream');
+        let items = 0;
+        const processed = await runtime.runTraced((record) => {
+          items++;
+          sink.write('stream.item', { index, questionId, sessionIndex, sessionId, ...record });
+        });
+        const states = runtime.queueStates();
+        const failed = states.filter((item) => item.state !== 'done');
         endStage(stages, {
           sessionIndex,
           sessionId,
-          jobs: l2Jobs - l2Before,
-          fallbacks: l2Fallbacks - l2FallbackBefore,
+          processed,
+          items: states.length,
+          failed: failed.length,
         });
-
-        beginStage('l3.generate');
-        const l3Before = l3Jobs;
-        for (;;) {
-          const pending = l3.listChanges(access).filter((change) => change.state === 'pending');
-          if (!pending.length || l3Jobs >= 60) break;
-          const l3JobId = `${questionId}-l3-${l3Jobs}`;
-          l3.enqueue({ id: l3JobId }, access);
-          try {
-            const job = await l3.run(l3JobId, model, access);
-            sink.write('l3.job', {
-              jobId: l3JobId,
-              state: job.state,
-              failureCode: job.failureCode ?? null,
-            });
-          } catch (error) {
-            sink.write('l3.error', {
-              jobId: l3JobId,
-              code: error?.code ?? 'UNKNOWN',
-              message: error?.message ?? String(error),
-            });
-          }
-          l3Jobs++;
-        }
-        endStage(stages, { sessionIndex, sessionId, jobs: l3Jobs - l3Before });
+        if (failed.length)
+          sink.write('stream.failures', { index, questionId, sessionIndex, failures: failed });
         sink.write('session.end', {
           index,
           questionId,
           sessionIndex,
           sessionId,
           l0: sessionL0,
-          l1: l1Job,
-          maintenanceBatches,
-          l2Jobs: l2Jobs - l2Before,
-          l3Jobs: l3Jobs - l3Before,
+          processed,
+          items: states.length,
+          failed: failed.length,
         });
       }
+
+      beginStage('stream.total');
+      const states = runtime.queueStates();
+      const queueFailures = states.filter((item) => item.state !== 'done');
+      const counts = runtime.counts();
+      const dump = runtime.dump();
+      const dumpPath = path.join(outDir, `memory-${questionId}.json`);
+      fs.writeFileSync(dumpPath, JSON.stringify(dump, null, 2));
+      sink.write('memory.dump', { index, questionId, path: dumpPath, counts });
+      endStage(stages, { items: states.length, failed: queueFailures.length, ...counts });
 
       beginStage('retrieval');
       const query = String(question.question ?? '').slice(0, 256);
@@ -607,7 +497,7 @@ async function main(apiKey) {
         answerPrompt,
         'qa.answer',
         false,
-        4096
+        answerMaxTokens
       );
       endStage(stages, { answerChars: hypothesis.length });
 
@@ -641,9 +531,11 @@ async function main(apiKey) {
         answerContains: normalizeText(question.answer).length
           ? normalizeText(hypothesis).includes(normalizeText(question.answer))
           : null,
-        l1Jobs,
-        l2Jobs,
-        l3Jobs,
+        items: counts,
+        memoryDump: dumpPath,
+        queueItems: states.length,
+        queueFailures,
+        usage: runtime.usage(),
         retrieval: {
           keywords: retrieval.keywords.map((keyword) => ({
             term: keyword.term,
@@ -686,7 +578,7 @@ async function main(apiKey) {
         },
         stages,
       };
-      questionResults.push(result);
+      outcome = result;
       sink.write('question.end', result);
     } catch (error) {
       failure = {
@@ -696,14 +588,10 @@ async function main(apiKey) {
       };
       sink.write('question.error', { index, questionId, failure });
     } finally {
-      try {
-        db.close();
-      } catch {}
-      fs.rmSync(root, { recursive: true, force: true });
+      await runtime.close();
       if (failure) {
-        const result = { index, questionId, failure, stages };
-        questionResults.push(result);
-        sink.write('question.end', result);
+        outcome = { index, questionId, failure, stages };
+        sink.write('question.end', outcome);
       }
       sink.write('question.finish', {
         index,
@@ -712,7 +600,28 @@ async function main(apiKey) {
         failed: !!failure,
       });
     }
+    return outcome;
   }
+
+  function flushResults() {
+    const ordered = [...results.values()].sort((left, right) => left.index - right.index);
+    fs.writeFileSync(questionsPath, JSON.stringify(ordered, null, 2));
+  }
+
+  const pending = questions
+    .map((question, index) => ({ question, index }))
+    .filter(({ index }) => !results.has(index));
+  let cursor = 0;
+  async function worker() {
+    while (cursor < pending.length) {
+      const { question, index } = pending[cursor++];
+      const result = await runQuestion(index, question);
+      if (result) results.set(index, result);
+      flushResults();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, worker));
+  questionResults.push(...[...results.values()].sort((left, right) => left.index - right.index));
 
   const aggregate = {
     questions: questionResults.length,
@@ -729,6 +638,11 @@ async function main(apiKey) {
     avgL1SessionRecall: mean(questionResults.map((item) => item.metrics?.l1?.recalls)),
     avgL3TurnRecall: mean(questionResults.map((item) => item.metrics?.l3?.turnRecall)),
     avgContextChars: mean(questionResults.map((item) => item.metrics?.contextChars)),
+    queueItems: questionResults.reduce((total, item) => total + (item.queueItems ?? 0), 0),
+    queueFailures: questionResults.reduce(
+      (total, item) => total + (item.queueFailures?.length ?? 0),
+      0
+    ),
   };
   const stages = stageSummary(questionResults.flatMap((item) => item.stages ?? []));
   const summary = {
@@ -739,11 +653,10 @@ async function main(apiKey) {
       offset,
       sample,
       type: type || null,
-      model: modelName,
-      api,
+      model: modelId,
+      api: apiFormat,
       topK,
       maxContextChars,
-      l2Mode,
       questionCount: questions.length,
       startedAt: new Date(Date.now() - (performance.now() - runStarted)).toISOString(),
       finishedAt: now(),

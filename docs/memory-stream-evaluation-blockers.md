@@ -224,25 +224,16 @@ result state
 
 没有这些数据，只能看到“慢”，不能判断该砍哪一段。
 
-### 8. 评测脚本本身已过期
+### 8. 评测脚本已迁移到 Stream（已修复）
 
-仓库里的 `scripts/eval-longmemeval.cjs` 仍使用旧 job API：
+`scripts/eval-l1.cjs` 和 `scripts/eval-longmemeval.cjs` 曾调用旧的 `l1.enqueue/run`、`l2.enqueue/run`、`l3.enqueue/run`，在 job 路径删除后无法运行。
 
-```text
-l1.enqueue / l1.run
-l2.enqueue / l2.run
-l3.enqueue / l3.run
-```
+现在两个脚本都通过 `scripts/stream-eval-runtime.cjs` 驱动生产流水线：独立数据库、独立 Stream 会话、`MemoryStreamAgent.runUntilIdle`，L1 维护、L2、L3 由流水线自动产生，脚本只负责构造 L0、检索、回答与打分。评测结果按队列项状态统计，models 调用与 token 用量来自 runtime 的 model journal。
 
-旧 scheduler 和 job 路径删除后，这个脚本不能直接用于当前 Stream。
+仍有待处理：
 
-本次实际使用的临时脚本是：
-
-```text
-/tmp/pmem-stream-eval.cjs
-```
-
-它不在仓库里，不应作为长期评测入口。需要把 Stream 版评测脚本正式收进仓库，并去掉临时调试逻辑。
+- 单 item 失败（模型输出未通过校验）会留在队列里，脚本只做统计不做重跑。
+- 缺少按 kind、按题恢复运行的能力。
 
 ### 9. Jev 不是本次瓶颈
 
@@ -269,13 +260,13 @@ Stream 评测临时脚本（/tmp）
 
 ## 下一步顺序
 
-1. **先做 kind 级 instrumentation**，跑一个 12 条 L0 的单 session，拿到 L1 / maintenance / L2 / L3 的精确分布。
-2. **跳过无候选 maintenance 的模型调用**，直接 keep。
-3. **重新设计 L2/L3 聚合粒度**：会话级 L1 集合，而不是每条 L1 单独触发。
-4. **控制 session 上下文**：不能每个 item 都带完整历史；确定轮转预算或独立上下文策略。
-5. **从设计上限制 envelope**，去掉 `fitStreamEnvelope` 静默截断。
-6. **加 item 级超时和失败隔离**，单 item 失败不能废掉整题。
-7. **把 Stream 版评测脚本收进仓库**，支持按 kind、按题恢复运行。
+1. ~~**先做 kind 级 instrumentation**，跑一个 12 条 L0 的单 session，拿到 L1 / maintenance / L2 / L3 的精确分布。~~ 已完成：`scripts/stream-eval-runtime.cjs` 的 `runTraced` 记录每条 item 的 envelope、模型原文、提交 payload、每次调用的耗时/tokens/上下文大小。
+2. ~~**跳过无候选 maintenance 的模型调用**，直接 keep。~~ 已完成：`L1MaintenanceStreamHandler` 在无可比较 case 时本地收尾。
+3. ~~**重新设计 L2/L3 聚合粒度**：会话级 L1 集合，而不是每条 L1 单独触发。~~ 已完成：同 kind 的 pending item 合并成一次调用（L1 5 / maintenance 5 / L2 3 / L3 6），见 [memory-stream-agent-design](memory-stream-agent-design.md#95-一次调用覆盖多条-item2026-11-01)。
+4. ~~**控制 session 上下文**：不能每个 item 都带完整历史。~~ 已完成：非 `l1-extract` 的 kind 切换时轮换 session；模型按 1M 窗口 / 256k 输出配置，轮换预算默认 1M（`--context-budget` 可覆盖）；记忆工作全局关闭 thinking，仅回答保留 provider 默认。
+5. **从设计上限制 envelope**，去掉 `fitStreamEnvelope` 静默截断。（未做：截断仍静默，需要 envelope 预算和显式报错。）
+6. ~~**加 item 级超时和失败隔离**，单 item 失败不能废掉整题。~~ 已完成：`--item-timeout` 映射到 `promptTimeoutMs`；失败项只标记自身，sibling 保持 pending 重新组批。
+7. ~~**把 Stream 版评测脚本收进仓库**，支持按 kind、按题恢复运行。~~ 部分完成：脚本已收进仓库，`questions.json` 支持按题恢复（`--resume=off` 关闭）；按 kind 恢复未做。
 8. 用 12 条 L0 的单 session 设性能门槛；达标后再跑 10 题。
 9. 10 题通过后，再开 Jev 做 knowledge-update 对比。
 

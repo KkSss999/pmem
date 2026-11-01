@@ -10,7 +10,7 @@ import { identifier, validateAccess } from './index';
 import type { L1MaintenanceRepository, PreparedMaintenance } from './l1-maintenance-ports';
 
 export interface L1MaintenanceStreamPreparation {
-  memoryId: string;
+  memoryIds: string[];
   token: string;
   cases: readonly PreparedMaintenance[];
   modelCases: readonly MaintenanceCase[];
@@ -34,7 +34,9 @@ function view(memory: MaintenanceMemory): MaintenanceMemory {
 function validate(value: unknown, cases: readonly PreparedMaintenance[]): MaintenanceDecision[] {
   const rows =
     value && typeof value === 'object' ? (value as { decisions?: unknown }).decisions : undefined;
-  if (!Array.isArray(rows) || rows.length !== cases.length)
+  // A model may skip a case; keeping it is the conservative outcome, so only an
+  // unusable payload is rejected. Extra or duplicate IDs are still errors.
+  if (!Array.isArray(rows) || rows.length > cases.length)
     throw new MemoryError('MODEL_OUTPUT_INVALID', 'Invalid maintenance decisions.');
   const seen = new Set<string>();
   return rows.map((row) => {
@@ -46,14 +48,8 @@ function validate(value: unknown, cases: readonly PreparedMaintenance[]): Mainte
       throw new MemoryError('MODEL_OUTPUT_INVALID', 'Invalid maintenance memory ID.');
     seen.add(d.memoryId);
     if (d.action === 'keep' || d.action === 'uncertain') {
-      if (
-        d.targetId !== null ||
-        d.content !== null ||
-        d.abstraction !== null ||
-        !Array.isArray(d.cues) ||
-        d.cues.length
-      )
-        throw new MemoryError('MODEL_OUTPUT_INVALID', 'Invalid keep decision.');
+      // Keeping a memory changes nothing, so any extra fields a model adds are
+      // meaningless here. Rejecting them only produced retries and failures.
       return { memoryId: d.memoryId, action: d.action };
     }
     if (
@@ -66,8 +62,11 @@ function validate(value: unknown, cases: readonly PreparedMaintenance[]): Mainte
       !d.abstraction.trim() ||
       !Array.isArray(d.cues) ||
       d.cues.some((cue) => typeof cue !== 'string' || !cue.trim())
-    )
-      throw new MemoryError('MODEL_OUTPUT_INVALID', 'Invalid merge decision.');
+    ) {
+      // An unusable merge is treated as "keep both": dropping the memory would be
+      // worse than skipping one merge.
+      return { memoryId: d.memoryId, action: 'uncertain' };
+    }
     return {
       memoryId: d.memoryId,
       action: 'merge',
@@ -85,35 +84,52 @@ export class L1MaintenanceService {
     private readonly readOnly: boolean
   ) {}
 
-  prepareStream(memoryId: string, access: MemoryAccess): L1MaintenanceStreamPreparation {
+  prepareStream(
+    memoryIds: string | readonly string[],
+    access: MemoryAccess
+  ): L1MaintenanceStreamPreparation {
     if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    identifier(memoryId, 'memory ID');
+    if (typeof memoryIds === 'string') memoryIds = [memoryIds];
+    if (!Array.isArray(memoryIds) || !memoryIds.length)
+      throw new MemoryError('INVALID_INPUT', 'At least one memory ID is required.');
+    const ids = [...new Set(memoryIds)];
+    for (const id of ids) identifier(id, 'memory ID');
     const spaces = allowed(access);
     const token = randomUUID();
     const now = new Date().toISOString();
-    if (!this.repository.claimStream(memoryId, spaces, token, now))
+    const claimed: string[] = [];
+    for (const id of ids) {
+      if (!this.repository.claimStream(id, spaces, token, now)) continue;
+      claimed.push(id);
+    }
+    if (!claimed.length)
       throw new MemoryError('JOB_NOT_PENDING', 'Maintenance item is not pending.');
-    const cases = this.repository.prepare([memoryId], spaces, token);
+    const cases = this.repository.prepare(claimed, spaces, token);
     const modelCases: MaintenanceCase[] = cases
       .filter((item) => item.candidates.length)
       .map((item) => ({
         memory: view(item.memory),
         candidates: item.candidates.map(view),
       }));
-    return { memoryId, token, cases, modelCases, now };
+    return { memoryIds: claimed, token, cases, modelCases, now };
   }
 
+  /** Apply the model decisions and return the memories whose maintenance committed. */
   applyStream(
     preparation: L1MaintenanceStreamPreparation,
     raw: unknown,
     access: MemoryAccess
-  ): string | undefined {
+  ): string[] {
     const spaces = allowed(access);
     try {
       const withCandidates = preparation.cases.filter((item) => item.candidates.length);
-      const decisions = withCandidates.length ? validate(raw, withCandidates) : [];
-      for (const item of preparation.cases)
-        if (!item.candidates.length) decisions.push({ memoryId: item.memory.id, action: 'keep' });
+      const proposed = withCandidates.length ? validate(raw, withCandidates) : [];
+      const decided = new Set(proposed.map((decision) => decision.memoryId));
+      const decisions = [...proposed];
+      for (const item of preparation.cases) {
+        if (!item.candidates.length || !decided.has(item.memory.id))
+          decisions.push({ memoryId: item.memory.id, action: 'keep' });
+      }
       this.repository.apply(
         preparation.cases,
         decisions,
@@ -121,18 +137,21 @@ export class L1MaintenanceService {
         preparation.token,
         new Date().toISOString()
       );
-      return this.repository.getTask(preparation.memoryId, spaces)?.resultMemoryId;
+      // Return the memory each case ended up as: a merge points at its target, so
+      // the follow-up L2 work names a memory that still exists.
+      const results = preparation.memoryIds
+        .map((id) => this.repository.getTask(id, spaces))
+        .filter((task) => task?.state === 'succeeded')
+        .map((task) => task!.resultMemoryId)
+        .filter((id): id is string => typeof id === 'string');
+      return [...new Set(results)];
     } catch (cause) {
       if (cause instanceof MemoryError && cause.code === 'SOURCE_CONFLICT') {
-        this.repository.release(
-          [preparation.memoryId],
-          preparation.token,
-          new Date().toISOString()
-        );
-        return undefined;
+        this.repository.release(preparation.memoryIds, preparation.token, new Date().toISOString());
+        return [];
       }
       this.repository.fail(
-        [preparation.memoryId],
+        preparation.memoryIds,
         preparation.token,
         'failed',
         cause instanceof MemoryError ? cause.code : 'MAINTENANCE_UNKNOWN',
@@ -140,6 +159,12 @@ export class L1MaintenanceService {
       );
       throw cause;
     }
+  }
+
+  /** Cases whose task is still pending after apply, e.g. a changed candidate. */
+  pendingIds(memoryIds: readonly string[], access: MemoryAccess): string[] {
+    const spaces = allowed(access);
+    return memoryIds.filter((id) => this.repository.getTask(id, spaces)?.state === 'pending');
   }
 
   getTask(id: string, access: MemoryAccess): MaintenanceTask | undefined {
