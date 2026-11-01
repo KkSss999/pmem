@@ -84,8 +84,8 @@ export function buildL2Input(input: Parameters<L2GenerationModel['generate']>[0]
   return JSON.stringify({
     ownerSpaceId: input.ownerSpaceId,
     now: input.now,
-    changedL1: input.changes.map(({ change, memory }) => ({
-      changeKind: change.kind,
+    changedL1: input.changes.map(({ kind, memory }) => ({
+      changeKind: kind,
       memory: {
         id: memory.id,
         spaceId: memory.spaceId,

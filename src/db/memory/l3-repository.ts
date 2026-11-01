@@ -1,25 +1,18 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   l3ScopeKey,
   normalizeL3Term,
-  type L3ChangeState,
-  type L3Job,
   type L3Keyword,
   type L3KeywordKind,
-  type L3ResultState,
 } from '../../domain/memory/l3';
 import { MemoryError } from '../../domain/memory/types';
 import type { L3KeywordInput, L3Repository } from '../../service/memory/l3-ports';
-import type { L3Change } from '../../domain/memory/l3';
-import { l2SnapshotHash, registerL3ChangeForL2 } from './l3-invalidation';
 import {
+  l2L1Links,
   l2Memories,
   l2SpaceLinks,
-  l3Changes,
-  l3JobResults,
-  l3Jobs,
   l3KeywordL2Links,
   l3KeywordSpaces,
   l3Keywords,
@@ -34,6 +27,40 @@ function aliases(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** Stable identity of an L2 generation, used only to detect stale stream input. */
+function l2SnapshotHash(db: BetterSQLite3Database, l2Id: string): string | undefined {
+  const row = db.select().from(l2Memories).where(eq(l2Memories.id, l2Id)).get();
+  if (!row) return undefined;
+  const related = db
+    .select({ spaceId: l2SpaceLinks.spaceId })
+    .from(l2SpaceLinks)
+    .where(eq(l2SpaceLinks.l2Id, l2Id))
+    .all()
+    .map((item) => item.spaceId)
+    .sort();
+  const l1Ids = db
+    .select({ id: l2L1Links.l1Id })
+    .from(l2L1Links)
+    .where(eq(l2L1Links.l2Id, l2Id))
+    .all()
+    .map((item) => item.id)
+    .sort();
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        title: row.title,
+        summary: row.summary,
+        body: row.body,
+        contentHash: row.contentHash,
+        visible: row.visible,
+        ownerSpaceId: row.ownerSpaceId,
+        relatedSpaceIds: related,
+        l1Ids,
+      })
+    )
+    .digest('hex');
 }
 
 export class SqliteL3Repository implements L3Repository {
@@ -312,89 +339,6 @@ export class SqliteL3Repository implements L3Repository {
       .filter((keyword): keyword is L3Keyword => keyword !== undefined);
   }
 
-  private loadJob(row: typeof l3Jobs.$inferSelect): L3Job {
-    return {
-      id: row.id,
-      state: row.state as L3Job['state'],
-      ...(row.runId === null ? {} : { runId: row.runId }),
-      ...(row.promptVersion === null ? {} : { promptVersion: row.promptVersion }),
-      ...(row.errorCode === null ? {} : { errorCode: row.errorCode }),
-      ...(row.errorMessage === null ? {} : { errorMessage: row.errorMessage }),
-      createdAt: row.createdAt,
-      ...(row.startedAt === null ? {} : { startedAt: row.startedAt }),
-      ...(row.finishedAt === null ? {} : { finishedAt: row.finishedAt }),
-    };
-  }
-
-  private loadChange(row: typeof l3Changes.$inferSelect): L3Change {
-    return {
-      id: row.id,
-      l2Id: row.l2Id,
-      kind: row.kind as L3Change['kind'],
-      l2Hash: row.l2Hash,
-      state: row.state as L3Change['state'],
-      ...(row.jobId === null ? {} : { jobId: row.jobId }),
-      ...(row.reason === null ? {} : { reason: row.reason }),
-      createdAt: row.createdAt,
-      ...(row.processedAt === null ? {} : { processedAt: row.processedAt }),
-    };
-  }
-
-  listChanges(readableSpaceIds: readonly string[], limit: number): L3Change[] {
-    if (!readableSpaceIds.length) return [];
-    const rows = this.db.all<{ id: string }>(sql`
-      SELECT c.id FROM memory_l3_changes c
-      JOIN memory_l2 m ON m.id = c.l2_id
-      WHERE m.owner_space_id IN (${sql.join(
-        readableSpaceIds.map((id) => sql`${id}`),
-        sql`, `
-      )}) OR EXISTS (
-        SELECT 1 FROM memory_l2_space_links s
-        WHERE s.l2_id = m.id AND s.space_id IN (${sql.join(
-          readableSpaceIds.map((id) => sql`${id}`),
-          sql`, `
-        )})
-      )
-      ORDER BY c.created_at DESC, c.id DESC
-      LIMIT ${limit}
-    `);
-    return rows
-      .map((row) => this.db.select().from(l3Changes).where(eq(l3Changes.id, row.id)).get())
-      .filter((row): row is typeof l3Changes.$inferSelect => row !== undefined)
-      .map((row) => this.loadChange(row));
-  }
-
-  enqueueColdStart(readableSpaceIds: readonly string[], limit: number, now: string): number {
-    if (!readableSpaceIds.length) return 0;
-    return this.db.transaction(
-      () => {
-        const rows = this.db.all<{ id: string }>(sql`
-          SELECT m.id FROM memory_l2 m
-          WHERE m.visible = 1
-            AND (
-              m.owner_space_id IN (${sql.join(
-                readableSpaceIds.map((id) => sql`${id}`),
-                sql`, `
-              )})
-              OR EXISTS (
-                SELECT 1 FROM memory_l2_space_links s
-                WHERE s.l2_id = m.id AND s.space_id IN (${sql.join(
-                  readableSpaceIds.map((id) => sql`${id}`),
-                  sql`, `
-                )})
-              )
-            )
-          ORDER BY m.updated_at ASC, m.id ASC
-          LIMIT ${limit}
-        `);
-        let count = 0;
-        for (const row of rows) if (registerL3ChangeForL2(this.db, row.id, 'created', now)) count++;
-        return count;
-      },
-      { behavior: 'immediate' }
-    );
-  }
-
   l2Hash(l2Id: string): string | undefined {
     return l2SnapshotHash(this.db, l2Id);
   }
@@ -423,176 +367,6 @@ export class SqliteL3Repository implements L3Repository {
       .filter((keyword): keyword is L3Keyword => keyword !== undefined);
   }
 
-  createJob(job: L3Job): L3Job {
-    return this.db.transaction((tx) => {
-      const existing = tx.select().from(l3Jobs).where(eq(l3Jobs.id, job.id)).get();
-      if (existing) return this.loadJob(existing);
-      tx.insert(l3Jobs)
-        .values({
-          id: job.id,
-          state: job.state,
-          runId: job.runId ?? null,
-          promptVersion: job.promptVersion ?? null,
-          errorCode: job.errorCode ?? null,
-          errorMessage: job.errorMessage ?? null,
-          createdAt: job.createdAt,
-          startedAt: job.startedAt ?? null,
-          finishedAt: job.finishedAt ?? null,
-        })
-        .run();
-      return this.loadJob(tx.select().from(l3Jobs).where(eq(l3Jobs.id, job.id)).get()!);
-    });
-  }
-
-  getJob(id: string): L3Job | undefined {
-    const row = this.db.select().from(l3Jobs).where(eq(l3Jobs.id, id)).get();
-    return row ? this.loadJob(row) : undefined;
-  }
-
-  setPromptVersion(id: string, runId: string, version: string, now: string): void {
-    const result = this.db
-      .update(l3Jobs)
-      .set({ promptVersion: version, startedAt: now })
-      .where(and(eq(l3Jobs.id, id), eq(l3Jobs.state, 'running'), eq(l3Jobs.runId, runId)))
-      .run();
-    if (!result.changes)
-      throw new MemoryError('JOB_NOT_PENDING', 'The L3 job is no longer running.');
-  }
-
-  claim(
-    id: string,
-    runId: string,
-    now: string,
-    batchSize: number
-  ): { job: L3Job; changes: L3Change[] } | undefined {
-    return this.db.transaction(
-      (tx) => {
-        const job = tx
-          .select()
-          .from(l3Jobs)
-          .where(and(eq(l3Jobs.id, id), eq(l3Jobs.state, 'pending')))
-          .get();
-        if (!job) return undefined;
-        const pending = tx
-          .select()
-          .from(l3Changes)
-          .where(eq(l3Changes.state, 'pending'))
-          .orderBy(asc(l3Changes.createdAt), asc(l3Changes.id))
-          .limit(batchSize)
-          .all();
-        if (!pending.length) return undefined;
-        tx.update(l3Jobs)
-          .set({ state: 'running', runId, startedAt: now, errorCode: null, errorMessage: null })
-          .where(and(eq(l3Jobs.id, id), eq(l3Jobs.state, 'pending')))
-          .run();
-        tx.update(l3Changes)
-          .set({ state: 'claimed', jobId: id })
-          .where(
-            inArray(
-              l3Changes.id,
-              pending.map((row) => row.id)
-            )
-          )
-          .run();
-        return {
-          job: this.loadJob(tx.select().from(l3Jobs).where(eq(l3Jobs.id, id)).get()!),
-          changes: pending.map((row) => this.loadChange({ ...row, state: 'claimed', jobId: id })),
-        };
-      },
-      { behavior: 'immediate' }
-    );
-  }
-
-  finishChanges(
-    ids: readonly string[],
-    state: L3ChangeState,
-    jobId: string,
-    reason: string | undefined,
-    now: string
-  ): void {
-    if (!ids.length) return;
-    this.db
-      .update(l3Changes)
-      .set({ state, jobId, reason: reason ?? null, processedAt: now })
-      .where(and(inArray(l3Changes.id, [...ids]), eq(l3Changes.jobId, jobId)))
-      .run();
-  }
-
-  recordResult(
-    jobId: string,
-    resultIndex: number,
-    state: L3ResultState,
-    action: 'upsert',
-    keywordId: string | undefined,
-    l2Ids: readonly string[],
-    errorCode: string | undefined,
-    now: string
-  ): void {
-    this.db
-      .insert(l3JobResults)
-      .values({
-        id: randomUUID(),
-        jobId,
-        resultIndex,
-        state,
-        action,
-        keywordId: keywordId ?? null,
-        l2IdsJson: JSON.stringify(l2Ids),
-        errorCode: errorCode ?? null,
-        errorMessage: null,
-        createdAt: now,
-      })
-      .run();
-  }
-
-  finishJob(
-    id: string,
-    runId: string,
-    state: 'succeeded' | 'partial' | 'failed' | 'unknown',
-    errorCode: string | undefined,
-    errorMessage: string | undefined,
-    now: string
-  ): void {
-    const result = this.db
-      .update(l3Jobs)
-      .set({
-        state,
-        runId: null,
-        errorCode: errorCode ?? null,
-        errorMessage: errorMessage ?? null,
-        finishedAt: now,
-      })
-      .where(and(eq(l3Jobs.id, id), eq(l3Jobs.state, 'running'), eq(l3Jobs.runId, runId)))
-      .run();
-    if (!result.changes)
-      throw new MemoryError('JOB_NOT_PENDING', 'The L3 job is no longer running.');
-  }
-
-  retryJob(id: string, state: 'failed' | 'unknown' | 'partial', now: string): L3Job | undefined {
-    return this.db.transaction((tx) => {
-      const row = tx
-        .update(l3Jobs)
-        .set({
-          state: 'pending',
-          runId: null,
-          errorCode: null,
-          errorMessage: null,
-          startedAt: null,
-          finishedAt: null,
-        })
-        .where(and(eq(l3Jobs.id, id), eq(l3Jobs.state, state)))
-        .returning()
-        .get();
-      if (!row) return undefined;
-      tx.delete(l3JobResults).where(eq(l3JobResults.jobId, id)).run();
-      tx.update(l3Changes)
-        .set({ state: 'pending', jobId: null, reason: null, processedAt: null })
-        .where(and(eq(l3Changes.jobId, id), eq(l3Changes.state, 'failed')))
-        .run();
-      return this.loadJob(row);
-    });
-  }
-
   expireKeywords(now: string): number {
     const result = this.db
       .update(l3Keywords)
@@ -612,10 +386,6 @@ export class SqliteL3Repository implements L3Repository {
           .all()
           .map((row) => row.id);
         if (!ids.length) return 0;
-        tx.update(l3JobResults)
-          .set({ keywordId: null })
-          .where(inArray(l3JobResults.keywordId, ids))
-          .run();
         tx.delete(l3KeywordSpaces).where(inArray(l3KeywordSpaces.keywordId, ids)).run();
         tx.delete(l3KeywordL2Links).where(inArray(l3KeywordL2Links.keywordId, ids)).run();
         tx.delete(l3Keywords).where(inArray(l3Keywords.id, ids)).run();

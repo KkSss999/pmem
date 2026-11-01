@@ -2,7 +2,7 @@
 
 本文替代此前的 Memory Worker 池设计。L1/L2/L3 不再按 batch job 并行生成，也不再使用 Worker pool。所有待处理记忆进入一个持久化队列，由单个 Memory Stream Agent 按顺序逐条处理。
 
-状态：目标架构，待替换现有 job/worker 实现。用户数据和迁移表不在此过程中删除。
+状态：Phase A–D 已完成（`0012_drop_jobs`、`0013_drop_orphan_job_results` 与 2026-11-01 的 batch job API 清理）。用户数据表（L0/L1/L2/L3 事实）没有被删除。
 
 ## 实现进度
 
@@ -299,7 +299,7 @@ else next pending item
 
 - 新增 `memory_queue_items`。
 - L0 append 入队 L1 extract。
-- 旧的 job 表保留但不写入，作为回退。
+- 旧的 job 表保留但不写入，作为回退。（后续 `0012_drop_jobs` 已删除这些表：它们只保存派生状态，不属于用户数据。）
 
 ### Phase B：单 session stream
 
@@ -316,10 +316,12 @@ else next pending item
 - L3 逐条处理。
 - 删除旧 job 调用路径。
 
-### Phase D：清理
+### Phase D：清理（已完成）
 
 - 删除 Worker 代码、worker pool、L1/L2/L3 scheduler 的 job 路径。
-- 删除 job 表和迁移只在新迁移中完成，不直接删除用户数据。
+- 删除 job 表和迁移只在新迁移中完成，不直接删除用户数据：`0012_drop_jobs` 删除 12 张 job/change 表，`0013_drop_orphan_job_results` 清掉漏掉的 `memory_l3_job_results`。
+- 代码侧同步删除：`L1Service.enqueue/run/getJob/listJobs/retry/markInterrupted/getJobMemories`、`L2Service.recordChange/listChanges/enqueue/getJob/retry/run`、`L3Service.listChanges/enqueueColdStart/enqueue/getJob/retry/run`、`L1MaintenanceService.startBatch/listTasks/retry/markInterrupted`，以及 `schema.ts` 中对应的表声明。
+- 保留的是真实行为：`scope-propagation.ts` 继续在 L1 scope 变化、L1 合并和 L2 写入后重算 L2 scope 与 L3 关键词（`l2-invalidation.ts`/`l3-invalidation.ts` 中只写 change 表的部分已删除）。
 - 保留旧迁移和回退说明。
 
 ## 11. 删除边界

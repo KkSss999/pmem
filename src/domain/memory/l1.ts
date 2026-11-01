@@ -1,25 +1,6 @@
 import type { L0Message, MemorySpace } from './types';
 
-export type L1JobState = 'pending' | 'running' | 'succeeded' | 'failed' | 'unknown';
-
 export type L1IndexStatus = 'healthy' | 'missing' | 'stale' | 'corrupt' | 'unavailable';
-
-export interface L1Job {
-  id: string;
-  spaceId: string;
-  sourceIds: readonly string[];
-  relatedSpaceIds: readonly string[];
-  state: L1JobState;
-  createdAt: string;
-  updatedAt: string;
-  failureCode?: string;
-  claimToken?: string;
-}
-
-export interface L1JobPage {
-  jobs: readonly L1Job[];
-  nextId?: string;
-}
 
 export interface L1Memory {
   id: string;

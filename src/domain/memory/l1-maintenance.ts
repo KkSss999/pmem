@@ -10,10 +10,6 @@ export interface MaintenanceCase {
   candidates: readonly MaintenanceMemory[];
 }
 
-export interface L1MaintenanceModel {
-  review(input: { cases: readonly MaintenanceCase[] }): Promise<unknown>;
-}
-
 export type MaintenanceDecision =
   | { memoryId: string; action: 'keep' | 'uncertain' }
   | {
@@ -32,9 +28,4 @@ export interface MaintenanceTask {
   outcome?: string;
   resultMemoryId?: string;
   failureCode?: string;
-}
-
-export interface MaintenanceTaskPage {
-  tasks: readonly MaintenanceTask[];
-  nextId?: string;
 }

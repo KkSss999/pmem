@@ -23,10 +23,14 @@ async function main(apiKey) {
   const rounds = Number(option('rounds', '1'));
   const concurrency = Number(option('concurrency', '2'));
   const caseId = option('case', '');
+  const provider = option('provider', 'deepseek');
+  const baseUrl = option('base-url', '');
+  const modelName = option('model', '');
   if (
     !apiKey ||
     !['development', 'holdout'].includes(split) ||
     !['chat', 'responses'].includes(api) ||
+    !['deepseek', 'openai'].includes(provider) ||
     !Number.isInteger(rounds) ||
     rounds < 1 ||
     rounds > 5 ||
@@ -35,7 +39,7 @@ async function main(apiKey) {
     concurrency > 4
   ) {
     throw new Error(
-      'Provide an API key on stdin and valid split, api, rounds and concurrency options.'
+      'Provide an API key on stdin and valid split, api, provider, rounds and concurrency options.'
     );
   }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-l1-eval-'));
@@ -89,9 +93,11 @@ async function main(apiKey) {
           return response;
         };
         const model = new OpenAIExtractionModel({
-          provider: 'deepseek',
+          provider,
           api,
           apiKey,
+          ...(baseUrl ? { baseUrl } : {}),
+          ...(modelName ? { model: modelName } : {}),
           timeoutMs: 120000,
           fetch: fetcher,
         });

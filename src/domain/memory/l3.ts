@@ -6,25 +6,10 @@ export type L3KeywordState = 'active' | 'expired';
 export type L3IndexStatus = 'healthy' | 'missing' | 'stale' | 'corrupt' | 'unavailable';
 export type L3Fallback = 'none' | 'l2' | 'l1';
 export type L3ChangeKind = 'created' | 'updated' | 'scope_changed' | 'merged' | 'removed';
-export type L3ChangeState = 'pending' | 'claimed' | 'processed' | 'failed';
-export type L3JobState = 'pending' | 'running' | 'succeeded' | 'partial' | 'failed' | 'unknown';
-export type L3ResultState = 'committed' | 'failed' | 'skipped';
-export type L3Action = 'upsert';
-
-export interface L3Job {
-  id: string;
-  state: L3JobState;
-  runId?: string;
-  promptVersion?: string;
-  errorCode?: string;
-  errorMessage?: string;
-  createdAt: string;
-  startedAt?: string;
-  finishedAt?: string;
-}
 
 export interface L3GenerationChange {
-  change: L3Change;
+  l2Id: string;
+  kind: L3ChangeKind;
   memory: L2Memory;
 }
 
@@ -45,18 +30,6 @@ export interface L3GenerationModel {
     keywords: readonly L3Keyword[];
     now: string;
   }): Promise<unknown>;
-}
-
-export interface L3Change {
-  id: string;
-  l2Id: string;
-  kind: L3ChangeKind;
-  l2Hash: string;
-  state: L3ChangeState;
-  jobId?: string;
-  reason?: string;
-  createdAt: string;
-  processedAt?: string;
 }
 
 export interface L3Keyword {

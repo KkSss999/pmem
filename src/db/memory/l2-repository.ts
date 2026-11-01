@@ -1,188 +1,15 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import type {
-  L2Change,
-  L2ChangeState,
-  L2Job,
-  L2Memory,
-  L2ResultState,
-} from '../../domain/memory/l2';
+import type { L2Memory } from '../../domain/memory/l2';
 import type { L2Repository } from '../../service/memory/l2-ports';
 import { MemoryError } from '../../domain/memory/types';
-import {
-  l0Messages,
-  l2Changes,
-  l2JobResults,
-  l2Jobs,
-  l2L0Sources,
-  l2L1Links,
-  l2Memories,
-  l2SpaceLinks,
-} from './schema';
+import { l0Messages, l2L0Sources, l2L1Links, l2Memories, l2SpaceLinks } from './schema';
 import { assertIndexHealthy, indexStatus, rebuildIndex } from './l2-search-index';
-import { invalidateL3ForL2Change } from './l3-invalidation';
+import { invalidateL3ForL2Change } from './scope-propagation';
 
 export class SqliteL2Repository implements L2Repository {
   constructor(private readonly db: BetterSQLite3Database) {}
-
-  private loadJob(id: string, readableSpaceIds: readonly string[]): L2Job | undefined {
-    if (!readableSpaceIds.length) return undefined;
-    const row = this.db
-      .select()
-      .from(l2Jobs)
-      .where(and(eq(l2Jobs.id, id), inArray(l2Jobs.ownerSpaceId, [...readableSpaceIds])))
-      .get();
-    if (!row) return undefined;
-    return {
-      id: row.id,
-      ownerSpaceId: row.ownerSpaceId,
-      state: row.state as L2Job['state'],
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      ...(row.failureCode === null ? {} : { failureCode: row.failureCode }),
-      ...(row.claimToken === null ? {} : { claimToken: row.claimToken }),
-      ...(row.promptVersion === null ? {} : { promptVersion: row.promptVersion }),
-    };
-  }
-
-  private loadChange(row: typeof l2Changes.$inferSelect): L2Change {
-    return {
-      id: row.id,
-      l1Id: row.l1Id,
-      ownerSpaceId: row.ownerSpaceId,
-      kind: row.kind as L2Change['kind'],
-      l1Hash: row.l1Hash,
-      ...(row.survivorL1Id === null ? {} : { survivorL1Id: row.survivorL1Id }),
-      state: row.state as L2Change['state'],
-      ...(row.jobId === null ? {} : { jobId: row.jobId }),
-      ...(row.reason === null ? {} : { reason: row.reason }),
-      createdAt: row.createdAt,
-      ...(row.processedAt === null ? {} : { processedAt: row.processedAt }),
-    };
-  }
-
-  recordChange(change: L2Change): L2Change {
-    return this.db.transaction((tx) => {
-      tx.delete(l2Changes)
-        .where(and(eq(l2Changes.l1Id, change.l1Id), eq(l2Changes.state, 'pending')))
-        .run();
-      const row = tx
-        .insert(l2Changes)
-        .values({
-          id: change.id,
-          l1Id: change.l1Id,
-          ownerSpaceId: change.ownerSpaceId,
-          kind: change.kind,
-          l1Hash: change.l1Hash,
-          survivorL1Id: change.survivorL1Id ?? null,
-          state: change.state,
-          jobId: change.jobId ?? null,
-          reason: change.reason ?? null,
-          createdAt: change.createdAt,
-          processedAt: change.processedAt ?? null,
-        })
-        .returning()
-        .get();
-      return this.loadChange(row);
-    });
-  }
-
-  listChanges(
-    ownerSpaceId: string,
-    readableSpaceIds: readonly string[],
-    limit: number
-  ): L2Change[] {
-    if (!readableSpaceIds.includes(ownerSpaceId)) return [];
-    return this.db
-      .select()
-      .from(l2Changes)
-      .where(eq(l2Changes.ownerSpaceId, ownerSpaceId))
-      .orderBy(desc(l2Changes.createdAt), asc(l2Changes.id))
-      .limit(limit)
-      .all()
-      .map((row) => this.loadChange(row));
-  }
-
-  createJob(job: L2Job): L2Job {
-    return this.db.transaction((tx) => {
-      const existing = tx.select().from(l2Jobs).where(eq(l2Jobs.id, job.id)).get();
-      if (existing) {
-        if (existing.ownerSpaceId !== job.ownerSpaceId)
-          throw new MemoryError('SOURCE_CONFLICT', 'L2 job ID is already in use.');
-        return this.loadJob(job.id, [job.ownerSpaceId])!;
-      }
-      tx.insert(l2Jobs)
-        .values({
-          id: job.id,
-          ownerSpaceId: job.ownerSpaceId,
-          state: job.state,
-          createdAt: job.createdAt,
-          updatedAt: job.updatedAt,
-        })
-        .run();
-      return this.loadJob(job.id, [job.ownerSpaceId])!;
-    });
-  }
-
-  getJob(id: string, readableSpaceIds: readonly string[]): L2Job | undefined {
-    return this.loadJob(id, readableSpaceIds);
-  }
-
-  setPromptVersion(id: string, token: string, version: string, now: string): void {
-    const result = this.db
-      .update(l2Jobs)
-      .set({ promptVersion: version, updatedAt: now })
-      .where(and(eq(l2Jobs.id, id), eq(l2Jobs.state, 'running'), eq(l2Jobs.claimToken, token)))
-      .run();
-    if (!result.changes)
-      throw new MemoryError('JOB_NOT_PENDING', 'The L2 job is no longer running.');
-  }
-
-  claim(
-    id: string,
-    writableSpaceIds: readonly string[],
-    token: string,
-    now: string
-  ): { job: L2Job; changes: L2Change[] } | undefined {
-    if (!writableSpaceIds.length) return undefined;
-    return this.db.transaction(
-      (tx) => {
-        const job = tx
-          .select()
-          .from(l2Jobs)
-          .where(and(eq(l2Jobs.id, id), eq(l2Jobs.state, 'pending')))
-          .get();
-        if (!job || !writableSpaceIds.includes(job.ownerSpaceId)) return undefined;
-        const pending = tx
-          .select()
-          .from(l2Changes)
-          .where(and(eq(l2Changes.state, 'pending'), eq(l2Changes.ownerSpaceId, job.ownerSpaceId)))
-          .orderBy(asc(l2Changes.createdAt), asc(l2Changes.id))
-          .limit(10)
-          .all();
-        if (!pending.length) return undefined;
-        tx.update(l2Jobs)
-          .set({ state: 'running', claimToken: token, updatedAt: now, failureCode: null })
-          .where(and(eq(l2Jobs.id, id), eq(l2Jobs.state, 'pending')))
-          .run();
-        tx.update(l2Changes)
-          .set({ state: 'claimed', jobId: id })
-          .where(
-            inArray(
-              l2Changes.id,
-              pending.map((row) => row.id)
-            )
-          )
-          .run();
-        return {
-          job: this.loadJob(id, writableSpaceIds)!,
-          changes: pending.map((row) => this.loadChange({ ...row, state: 'claimed', jobId: id })),
-        };
-      },
-      { behavior: 'immediate' }
-    );
-  }
 
   getMemory(id: string, readableSpaceIds: readonly string[]): L2Memory | undefined {
     return this.loadMemory(id, readableSpaceIds);
@@ -317,27 +144,25 @@ export class SqliteL2Repository implements L2Repository {
         .run();
   }
 
-  applyCreate(
-    job: L2Job,
-    input: {
-      title: string;
-      summary: string;
-      body: string;
-      l1Ids: readonly string[];
-      sourceIds: readonly string[];
-      relatedSpaceIds: readonly string[];
-      generationId: string;
-      contentHash: string;
-      now: string;
-    }
-  ): L2Memory {
+  applyCreate(input: {
+    ownerSpaceId: string;
+    title: string;
+    summary: string;
+    body: string;
+    l1Ids: readonly string[];
+    sourceIds: readonly string[];
+    relatedSpaceIds: readonly string[];
+    generationId: string;
+    contentHash: string;
+    now: string;
+  }): L2Memory {
     const id = randomUUID();
     this.db.transaction(
       (tx) => {
         tx.insert(l2Memories)
           .values({
             id,
-            ownerSpaceId: job.ownerSpaceId,
+            ownerSpaceId: input.ownerSpaceId,
             title: input.title,
             summary: input.summary,
             body: input.body,
@@ -354,7 +179,7 @@ export class SqliteL2Repository implements L2Repository {
       },
       { behavior: 'immediate' }
     );
-    return this.loadMemory(id, [job.ownerSpaceId, ...input.relatedSpaceIds])!;
+    return this.loadMemory(id, [input.ownerSpaceId, ...input.relatedSpaceIds])!;
   }
 
   applySupersede(oldL2Id: string, newL2Id: string, expectedHash: string, now: string): void {
@@ -375,27 +200,25 @@ export class SqliteL2Repository implements L2Repository {
     );
   }
 
-  applyUpdate(
-    job: L2Job,
-    input: {
-      l2Id: string;
-      expectedHash: string;
-      expectedL1Ids: readonly string[];
-      title: string;
-      summary: string;
-      body: string;
-      l1Ids: readonly string[];
-      sourceIds: readonly string[];
-      relatedSpaceIds: readonly string[];
-      generationId: string;
-      contentHash: string;
-      now: string;
-    }
-  ): L2Memory {
+  applyUpdate(input: {
+    ownerSpaceId: string;
+    l2Id: string;
+    expectedHash: string;
+    expectedL1Ids: readonly string[];
+    title: string;
+    summary: string;
+    body: string;
+    l1Ids: readonly string[];
+    sourceIds: readonly string[];
+    relatedSpaceIds: readonly string[];
+    generationId: string;
+    contentHash: string;
+    now: string;
+  }): L2Memory {
     this.db.transaction(
       (tx) => {
         const current = tx.select().from(l2Memories).where(eq(l2Memories.id, input.l2Id)).get();
-        if (!current || current.ownerSpaceId !== job.ownerSpaceId)
+        if (!current || current.ownerSpaceId !== input.ownerSpaceId)
           throw new MemoryError('L2_STALE_INPUT', 'The L2 memory is no longer available.');
         if (current.contentHash !== input.expectedHash)
           throw new MemoryError('L2_STALE_INPUT', 'The L2 memory changed before commit.');
@@ -426,88 +249,7 @@ export class SqliteL2Repository implements L2Repository {
       },
       { behavior: 'immediate' }
     );
-    return this.loadMemory(input.l2Id, [job.ownerSpaceId, ...input.relatedSpaceIds])!;
-  }
-
-  refreshChangeHash(id: string, l1Hash: string): void {
-    this.db
-      .update(l2Changes)
-      .set({ l1Hash })
-      .where(and(eq(l2Changes.id, id), eq(l2Changes.state, 'failed')))
-      .run();
-  }
-
-  finishChanges(
-    ids: readonly string[],
-    state: L2ChangeState,
-    jobId: string,
-    reason: string | undefined,
-    now: string
-  ): void {
-    if (!ids.length) return;
-    this.db
-      .update(l2Changes)
-      .set({ state, jobId, reason: reason ?? null, processedAt: now })
-      .where(and(inArray(l2Changes.id, [...ids]), eq(l2Changes.jobId, jobId)))
-      .run();
-  }
-
-  recordResult(
-    jobId: string,
-    resultIndex: number,
-    state: L2ResultState,
-    action: 'create' | 'update',
-    l2Id: string | undefined,
-    errorCode: string | undefined,
-    now: string
-  ): void {
-    this.db
-      .insert(l2JobResults)
-      .values({
-        id: randomUUID(),
-        jobId,
-        resultIndex,
-        state,
-        action,
-        l2Id: l2Id ?? null,
-        errorCode: errorCode ?? null,
-        createdAt: now,
-      })
-      .run();
-  }
-
-  finishJob(
-    id: string,
-    token: string,
-    state: 'succeeded' | 'partial' | 'failed' | 'unknown',
-    failureCode: string | undefined,
-    now: string
-  ): void {
-    const result = this.db
-      .update(l2Jobs)
-      .set({ state, claimToken: null, failureCode: failureCode ?? null, updatedAt: now })
-      .where(and(eq(l2Jobs.id, id), eq(l2Jobs.state, 'running'), eq(l2Jobs.claimToken, token)))
-      .run();
-    if (!result.changes)
-      throw new MemoryError('JOB_NOT_PENDING', 'The L2 job is no longer running.');
-  }
-
-  retryJob(id: string, state: 'failed' | 'unknown' | 'partial', now: string): L2Job | undefined {
-    return this.db.transaction((tx) => {
-      const row = tx
-        .update(l2Jobs)
-        .set({ state: 'pending', claimToken: null, failureCode: null, updatedAt: now })
-        .where(and(eq(l2Jobs.id, id), eq(l2Jobs.state, state)))
-        .returning()
-        .get();
-      if (!row) return undefined;
-      tx.delete(l2JobResults).where(eq(l2JobResults.jobId, id)).run();
-      tx.update(l2Changes)
-        .set({ state: 'pending', jobId: null, reason: null, processedAt: null })
-        .where(and(eq(l2Changes.jobId, id), eq(l2Changes.state, 'failed')))
-        .run();
-      return this.loadJob(id, [row.ownerSpaceId])!;
-    });
+    return this.loadMemory(input.l2Id, [input.ownerSpaceId, ...input.relatedSpaceIds])!;
   }
 
   checkSearchIndex(): import('../../domain/memory/l2').L2IndexStatus {

@@ -8,6 +8,8 @@ const { test } = require('node:test');
 const { Worker } = require('node:worker_threads');
 const Database = require('better-sqlite3');
 
+const MEMORY_MIGRATIONS = require('../migrations/memory/meta/_journal.json').entries.length;
+
 function fixture(t, withMemory = true) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-l0-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -263,7 +265,10 @@ test('foundation migration requires explicit backup and rolls back on failure', 
   assert.ok(fs.existsSync(failedBackup));
   fs.writeFileSync(migration, originalSql);
   const backupPath = path.join(root, 'backup.sqlite');
-  assert.equal((await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied, 13);
+  assert.equal(
+    (await OwnedDatabase.migrate(databasePath, backupPath)).migrationsApplied,
+    MEMORY_MIGRATIONS
+  );
   const backup = new Database(backupPath, { readonly: true });
   assert.equal(
     backup.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'memory_spaces'").get().n,

@@ -68,8 +68,8 @@ export const l3OutputSchema = {
 export function buildL3Input(input: Parameters<L3GenerationModel['generateKeywords']>[0]): string {
   return JSON.stringify({
     now: input.now,
-    changedL2: input.changes.map(({ change, memory }) => ({
-      changeKind: change.kind,
+    changedL2: input.changes.map(({ kind, memory }) => ({
+      changeKind: kind,
       memory: {
         id: memory.id,
         title: memory.title,

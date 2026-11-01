@@ -1,14 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import type { L1Memory } from '../../domain/memory/l1';
 import type { L2Memory } from '../../domain/memory/l2';
 import {
   normalizeL3Term,
-  type L3Change,
   type L3Draft,
   type L3Fallback,
-  type L3GenerationChange,
-  type L3GenerationModel,
-  type L3Job,
   type L3Keyword,
   type L3KeywordMatch,
   type L3KeywordKind,
@@ -17,7 +12,6 @@ import {
   type L3ResolveOptions,
   type L3ResolveResult,
 } from '../../domain/memory/l3';
-import { L3ModelError } from '../../domain/memory/l3';
 import { MemoryError, type MemoryAccess } from '../../domain/memory/types';
 import { identifier, requireRead, validateAccess } from './index';
 import type { L2Repository } from './l2-ports';
@@ -31,7 +25,6 @@ const MAX_TERM = 64;
 const MAX_ALIASES = 5;
 const MAX_TERM_WORDS = 8;
 const MAX_RESULTS = 100;
-const MAX_INPUT_CHARS = 200_000;
 const KINDS: readonly L3KeywordKind[] = [
   'topic',
   'entity',
@@ -65,12 +58,6 @@ function intersectionScopes(scopes: readonly (readonly string[])[]): string[] {
     result = new Set([...result].filter((id) => next.has(id)));
   }
   return [...result].sort();
-}
-
-function rawL2Ids(value: unknown): string[] {
-  if (!value || typeof value !== 'object') return [];
-  const ids = (value as { l2Ids?: unknown }).l2Ids;
-  return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : [];
 }
 
 function validateDraft(
@@ -367,29 +354,6 @@ export class L3Service {
     return this.repository.getKeyword(id, access.readableSpaceIds, new Date().toISOString());
   }
 
-  listChanges(access: MemoryAccess, options: { limit?: number } = {}): L3Change[] {
-    validateAccess(access);
-    const limit = options.limit ?? 100;
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
-      throw new MemoryError('INVALID_INPUT', 'Invalid L3 change limit.');
-    return this.repository.listChanges(access.readableSpaceIds, limit);
-  }
-
-  enqueueColdStart(access: MemoryAccess, options: { limit?: number } = {}): number {
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    const limit = options.limit ?? 1000;
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10_000)
-      throw new MemoryError('INVALID_INPUT', 'Invalid L3 cold-start limit.');
-    return this.repository.enqueueColdStart(
-      access.readableSpaceIds,
-      limit,
-      new Date().toISOString()
-    );
-  }
-
   resolve(
     query: string,
     anchoredSpaceIds: readonly string[],
@@ -510,43 +474,6 @@ export class L3Service {
     };
   }
 
-  enqueue(input: { id: string }, access: MemoryAccess): L3Job {
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    identifier(input?.id, 'L3 job ID');
-    const now = new Date().toISOString();
-    return this.repository.createJob({ id: input.id, state: 'pending', createdAt: now });
-  }
-
-  getJob(id: string, access: MemoryAccess): L3Job | undefined {
-    identifier(id, 'L3 job ID');
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    return this.repository.getJob(id);
-  }
-
-  retry(id: string, access: MemoryAccess): L3Job {
-    identifier(id, 'L3 job ID');
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    const job = this.repository.getJob(id);
-    if (!job) throw new MemoryError('JOB_NOT_FOUND', 'L3 job not found.');
-    if (!['failed', 'unknown', 'partial'].includes(job.state))
-      throw new MemoryError('JOB_NOT_PENDING', 'L3 job is not retryable.');
-    const result = this.repository.retryJob(
-      id,
-      job.state as 'failed' | 'unknown' | 'partial',
-      new Date().toISOString()
-    );
-    if (!result) throw new MemoryError('JOB_NOT_PENDING', 'L3 job changed before retry.');
-    return result;
-  }
-
   streamSourceHash(l2Id: string): string | undefined {
     identifier(l2Id, 'L2 ID');
     return this.repository.l2Hash(l2Id);
@@ -616,207 +543,5 @@ export class L3Service {
       committed.push(keyword.id);
     }
     return committed;
-  }
-
-  async run(id: string, model: L3GenerationModel, access: MemoryAccess): Promise<L3Job> {
-    identifier(id, 'L3 job ID');
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    if (!model || typeof model.generateKeywords !== 'function')
-      throw new MemoryError('INVALID_INPUT', 'An L3 generation model is required.');
-    const existingJob = this.repository.getJob(id);
-    if (!existingJob) throw new MemoryError('JOB_NOT_FOUND', 'L3 job not found.');
-    const runId = randomUUID();
-    const now = new Date().toISOString();
-    const claimed = this.repository.claim(id, runId, now, 10);
-    if (!claimed) throw new MemoryError('JOB_NOT_PENDING', 'L3 job is not pending.');
-    const changeIds = claimed.changes.map((change) => change.id);
-    const promptVersion = model.l3PromptVersion ?? model.promptVersion;
-    if (promptVersion) this.repository.setPromptVersion(id, runId, promptVersion, now);
-    const failAll = (
-      code: string,
-      state: 'failed' | 'unknown' = 'failed',
-      message = code
-    ): void => {
-      this.repository.finishChanges(changeIds, 'failed', id, code, now);
-      this.repository.finishJob(id, runId, state, code, message, now);
-    };
-
-    const loaded: L3GenerationChange[] = [];
-    for (const change of claimed.changes) {
-      const memory = this.l2.getMemory(change.l2Id, access.readableSpaceIds);
-      if (
-        !memory ||
-        !memory.visible ||
-        !memory.sourcesComplete ||
-        !access.readableSpaceIds.includes(memory.ownerSpaceId) ||
-        this.repository.l2Hash(change.l2Id) !== change.l2Hash
-      ) {
-        failAll('L3_STALE_INPUT');
-        throw new MemoryError('L3_STALE_INPUT', 'An L2 source changed before L3 generation.');
-      }
-      loaded.push({ change, memory });
-    }
-    const inputChars = loaded.reduce(
-      (total, item) =>
-        total + item.memory.title.length + item.memory.summary.length + item.memory.body.length,
-      0
-    );
-    if (inputChars > MAX_INPUT_CHARS) {
-      failAll('L3_INPUT_TOO_LARGE');
-      throw new MemoryError('L3_INPUT_TOO_LARGE', 'L3 model input exceeds the limit.');
-    }
-    const l2Ids = loaded.map((item) => item.memory.id);
-    const existingKeywords = this.repository.listRelatedKeywords(l2Ids, now, 100);
-    let raw: unknown;
-    try {
-      raw = await model.generateKeywords({ changes: loaded, keywords: existingKeywords, now });
-    } catch (cause) {
-      const state = cause instanceof L3ModelError ? cause.outcome : 'unknown';
-      const code = cause instanceof L3ModelError ? cause.code : 'L3_MODEL_OUTCOME_UNKNOWN';
-      failAll(code, state === 'unknown' ? 'unknown' : 'failed', code);
-      if (cause instanceof Error) throw cause;
-      throw new MemoryError('L3_MODEL_OUTCOME_UNKNOWN', 'L3 generation failed.');
-    }
-    if (
-      !raw ||
-      typeof raw !== 'object' ||
-      !Array.isArray((raw as { keywords?: unknown }).keywords)
-    ) {
-      failAll('L3_MODEL_OUTPUT_INVALID');
-      throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'L3 output must contain keywords.');
-    }
-    const rawKeywords = (raw as { keywords: unknown[] }).keywords;
-    if (rawKeywords.length > MAX_RESULTS) {
-      failAll('L3_MODEL_OUTPUT_INVALID');
-      throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'Too many L3 keywords.');
-    }
-    const memories = new Map(loaded.map((item) => [item.memory.id, item.memory]));
-    const allowed = new Set(memories.keys());
-    const failedL2 = new Set<string>();
-    let failureCount = 0;
-    let firstFailure: string | undefined;
-    const drafts: { draft: L3Draft; relatedSpaceIds: string[]; index: number }[] = [];
-    for (const [index, rawKeyword] of rawKeywords.entries()) {
-      try {
-        const validated = validateDraft(rawKeyword, allowed, memories);
-        drafts.push({ ...validated, index });
-      } catch (cause) {
-        const code = cause instanceof MemoryError ? cause.code : 'L3_MODEL_OUTPUT_INVALID';
-        failureCount++;
-        firstFailure ??= code;
-        for (const l2Id of rawL2Ids(rawKeyword)) if (allowed.has(l2Id)) failedL2.add(l2Id);
-        this.repository.recordResult(id, index, 'failed', 'upsert', undefined, [], code, now);
-      }
-    }
-    if (!drafts.length && rawKeywords.length) {
-      failAll('L3_MODEL_OUTPUT_INVALID');
-      throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'No valid L3 keywords were produced.');
-    }
-    let committed = 0;
-    for (const item of drafts) {
-      try {
-        const normalizedTerm = normalizeL3Term(item.draft.term);
-        const existing = existingKeywords.find(
-          (keyword) =>
-            keyword.normalizedTerm === normalizedTerm &&
-            keyword.sourceL2Ids.some((id) => item.draft.l2Ids.includes(id))
-        );
-        const keyword = this.repository.upsertKeyword({
-          id: existing?.id,
-          term: item.draft.term,
-          aliases: item.draft.aliases,
-          kind: item.draft.kind,
-          baseWeight: item.draft.baseWeight,
-          relatedSpaceIds: item.relatedSpaceIds,
-          sourceL2Ids: item.draft.l2Ids,
-          expiresAt: this.expiry(now),
-          now,
-          mergeSources: true,
-        });
-        this.repository.recordResult(
-          id,
-          item.index,
-          'committed',
-          'upsert',
-          keyword.id,
-          item.draft.l2Ids,
-          undefined,
-          now
-        );
-        committed++;
-      } catch (cause) {
-        const code = cause instanceof MemoryError ? cause.code : 'L3_COMMIT_FAILED';
-        failureCount++;
-        firstFailure ??= code;
-        for (const l2Id of item.draft.l2Ids) failedL2.add(l2Id);
-        this.repository.recordResult(
-          id,
-          item.index,
-          'failed',
-          'upsert',
-          undefined,
-          item.draft.l2Ids,
-          code,
-          now
-        );
-      }
-    }
-    const failedChanges = claimed.changes.filter((change) => failedL2.has(change.l2Id));
-    const processedChanges = claimed.changes.filter((change) => !failedL2.has(change.l2Id));
-    this.repository.finishChanges(
-      processedChanges.map((change) => change.id),
-      'processed',
-      id,
-      undefined,
-      now
-    );
-    this.repository.finishChanges(
-      failedChanges.map((change) => change.id),
-      'failed',
-      id,
-      firstFailure ?? 'L3_MODEL_OUTPUT_INVALID',
-      now
-    );
-    const state =
-      failureCount > 0 && committed > 0 ? 'partial' : failureCount > 0 ? 'failed' : 'succeeded';
-    this.repository.finishJob(
-      id,
-      runId,
-      state,
-      state === 'partial' ? 'L3_PARTIAL' : firstFailure,
-      state === 'partial' ? 'Some L3 keywords failed.' : undefined,
-      now
-    );
-    return this.repository.getJob(id)!;
-  }
-
-  expire(access: MemoryAccess): number {
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    const now = new Date().toISOString();
-    const expired = this.repository.expireKeywords(now);
-    const cutoff = new Date(Date.parse(now) - this.graceMs).toISOString();
-    this.repository.cleanupExpired(cutoff);
-    return expired;
-  }
-
-  searchIndexStatus(access: MemoryAccess): import('../../domain/memory/l3').L3IndexStatus {
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    return this.repository.checkSearchIndex();
-  }
-
-  rebuildSearchIndex(access: MemoryAccess): void {
-    validateAccess(access);
-    if (!access.canManageSpaces)
-      throw new MemoryError('ACCESS_DENIED', 'Memory management is not allowed.');
-    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
-    this.repository.rebuildSearchIndex();
   }
 }

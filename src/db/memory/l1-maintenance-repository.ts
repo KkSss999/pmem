@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { MemoryError } from '../../domain/memory/types';
 import type { MaintenanceDecision, MaintenanceTask } from '../../domain/memory/l1-maintenance';
@@ -9,7 +9,7 @@ import type {
 } from '../../service/memory/l1-maintenance-ports';
 import { l1Cues, l1MaintenanceTasks, l1Memories, l1Sources, l1SpaceLinks } from './schema';
 import { assertIndexHealthy } from './l1-search-index';
-import { migrateL2LinksForMerge } from './l2-invalidation';
+import { migrateL2LinksForMerge } from './scope-propagation';
 
 export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
   constructor(private readonly db: BetterSQLite3Database) {}
@@ -55,50 +55,9 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
       cues,
       scope: this.scope(id, row.spaceId),
       sourceIds,
-      jobIds: [],
       sequence: task.sequence,
       createdAt: row.createdAt,
     };
-  }
-
-  claim(allowed: readonly string[], token: string, now: string): string[] {
-    if (!allowed.length) return [];
-    return this.db.transaction(
-      (tx) => {
-        const running = tx
-          .select({ id: l1MaintenanceTasks.memoryId, spaceId: l1Memories.spaceId })
-          .from(l1MaintenanceTasks)
-          .innerJoin(l1Memories, eq(l1Memories.id, l1MaintenanceTasks.memoryId))
-          .where(inArray(l1MaintenanceTasks.state, ['running', 'failed', 'unknown']))
-          .all();
-        const busyScopes = new Set(
-          running.map((row) => JSON.stringify(this.scope(row.id, row.spaceId)))
-        );
-        const rows = tx
-          .select({ id: l1MaintenanceTasks.memoryId, spaceId: l1Memories.spaceId })
-          .from(l1MaintenanceTasks)
-          .innerJoin(l1Memories, eq(l1Memories.id, l1MaintenanceTasks.memoryId))
-          .where(
-            and(eq(l1MaintenanceTasks.state, 'pending'), inArray(l1Memories.spaceId, [...allowed]))
-          )
-          .orderBy(asc(l1MaintenanceTasks.sequence))
-          .all();
-        const selected = [];
-        for (const row of rows) {
-          if (!busyScopes.has(JSON.stringify(this.scope(row.id, row.spaceId)))) selected.push(row);
-          if (selected.length === 5) break;
-        }
-        for (const row of selected)
-          tx.update(l1MaintenanceTasks)
-            .set({ state: 'running', claimToken: token, failureCode: null, updatedAt: now })
-            .where(
-              and(eq(l1MaintenanceTasks.memoryId, row.id), eq(l1MaintenanceTasks.state, 'pending'))
-            )
-            .run();
-        return selected.map((row) => row.id);
-      },
-      { behavior: 'immediate' }
-    );
   }
 
   claimStream(id: string, allowed: readonly string[], token: string, now: string): boolean {
@@ -374,77 +333,5 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
       ...(row.resultMemoryId ? { resultMemoryId: row.resultMemoryId } : {}),
       ...(row.failureCode ? { failureCode: row.failureCode } : {}),
     };
-  }
-
-  listTasks(
-    spaceId: string,
-    state: MaintenanceTask['state'] | undefined,
-    afterId: string | undefined,
-    limit: number
-  ): import('../../domain/memory/l1-maintenance').MaintenanceTaskPage {
-    const rows = this.db
-      .select({ id: l1MaintenanceTasks.memoryId })
-      .from(l1MaintenanceTasks)
-      .where(
-        and(
-          eq(l1MaintenanceTasks.spaceId, spaceId),
-          ...(state ? [eq(l1MaintenanceTasks.state, state)] : []),
-          ...(afterId ? [gt(l1MaintenanceTasks.memoryId, afterId)] : [])
-        )
-      )
-      .orderBy(asc(l1MaintenanceTasks.memoryId))
-      .limit(limit + 1)
-      .all();
-    const page = rows.slice(0, limit);
-    return {
-      tasks: page.map((row) => this.getTask(row.id, [spaceId])!),
-      ...(rows.length > limit ? { nextId: page[page.length - 1].id } : {}),
-    };
-  }
-
-  retry(id: string, allowed: readonly string[], now: string): void {
-    this.transition(id, allowed, ['failed', 'unknown'], 'pending', null, now);
-  }
-
-  interrupt(id: string, allowed: readonly string[], now: string): void {
-    this.transition(id, allowed, ['running'], 'unknown', 'INTERRUPTED', now);
-  }
-
-  private transition(
-    id: string,
-    allowed: readonly string[],
-    states: readonly string[],
-    state: 'pending' | 'unknown',
-    code: string | null,
-    now: string
-  ): void {
-    if (!allowed.length)
-      throw new MemoryError('ACCESS_DENIED', 'Maintenance space is not writable.');
-    this.db.transaction(
-      (tx) => {
-        const updated = tx
-          .update(l1MaintenanceTasks)
-          .set({ state, failureCode: code, claimToken: null, updatedAt: now })
-          .where(
-            and(
-              eq(l1MaintenanceTasks.memoryId, id),
-              inArray(l1MaintenanceTasks.spaceId, [...allowed]),
-              inArray(l1MaintenanceTasks.state, [...states])
-            )
-          )
-          .returning()
-          .get();
-        if (!updated)
-          throw new MemoryError(
-            'JOB_NOT_PENDING',
-            'Maintenance task is not in the required state.'
-          );
-        tx.update(l1Memories)
-          .set({ maintenanceStatus: state === 'pending' ? 'pending' : 'failed' })
-          .where(eq(l1Memories.id, id))
-          .run();
-      },
-      { behavior: 'immediate' }
-    );
   }
 }

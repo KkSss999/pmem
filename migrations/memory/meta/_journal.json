@@ -92,6 +92,13 @@
       "when": 1793439800000,
       "tag": "0012_drop_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1793439900000,
+      "tag": "0013_drop_orphan_job_results",
+      "breakpoints": true
     }
   ]
 }
