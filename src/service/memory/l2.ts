@@ -190,6 +190,22 @@ export interface L2ServiceOptions {
   judge?: MemoryChangeJudge;
 }
 
+export interface L2StreamPreparation {
+  l1Id: string;
+  ownerSpaceId: string;
+  loaded: readonly L2GenerationChange[];
+  candidates: readonly L2Candidate[];
+  candidatesForModel: readonly L2Candidate[];
+  replacementByCandidate: ReadonlyMap<string, ReadonlySet<string>>;
+  now: string;
+}
+
+export interface L2StreamResult {
+  committed: number;
+  skipped: number;
+  l2Ids: readonly string[];
+}
+
 export class L2Service {
   constructor(
     private readonly repository: L2Repository,
@@ -286,6 +302,222 @@ export class L2Service {
     const result = this.repository.retryJob(id, job.state, new Date().toISOString());
     if (!result) throw new MemoryError('JOB_NOT_PENDING', 'L2 job changed before retry.');
     return result;
+  }
+
+  streamSourceHash(l1Id: string, access: MemoryAccess): string {
+    identifier(l1Id, 'L1 ID');
+    validateAccess(access);
+    const memory = this.l1.getMemory(l1Id, access.readableSpaceIds);
+    if (!memory) throw new MemoryError('JOB_NOT_FOUND', 'L1 memory not found.');
+    return l1Hash(memory);
+  }
+
+  async prepareStream(l1Id: string, access: MemoryAccess): Promise<L2StreamPreparation> {
+    identifier(l1Id, 'L1 ID');
+    validateAccess(access);
+    const memory = this.l1.getMemory(l1Id, access.readableSpaceIds);
+    if (!memory || memory.maintenanceStatus !== 'complete' || !memory.sourcesComplete)
+      throw new MemoryError('INVALID_INPUT', 'L1 memory is not ready for L2 streaming.');
+    requireRead(access, memory.spaceId);
+    const ownerSpaceId = memory.spaceId;
+    const now = new Date().toISOString();
+    const change: L2Change = {
+      id: `stream:${l1Id}`,
+      l1Id,
+      ownerSpaceId,
+      kind: 'created',
+      l1Hash: l1Hash(memory),
+      state: 'pending',
+      createdAt: now,
+    };
+    const loaded: L2GenerationChange[] = [{ change, memory }];
+    const linked = this.repository.listLinkedCandidates(
+      ownerSpaceId,
+      [l1Id],
+      access.readableSpaceIds,
+      10
+    );
+    let searched: L2Memory[] = [];
+    try {
+      searched = this.repository.search(
+        candidateTerms(loaded),
+        [ownerSpaceId],
+        access.readableSpaceIds,
+        10
+      );
+    } catch (cause) {
+      if (
+        !(cause instanceof MemoryError) ||
+        ![
+          'L2_INDEX_MISSING',
+          'L2_INDEX_STALE',
+          'L2_INDEX_CORRUPT',
+          'L2_INDEX_UNAVAILABLE',
+        ].includes(cause.code)
+      )
+        throw cause;
+      searched = this.repository.listCandidates(ownerSpaceId, access.readableSpaceIds, 10);
+    }
+    const candidates: L2Candidate[] = [];
+    const byId = new Map<string, L2Memory>();
+    for (const candidate of [...linked, ...searched]) byId.set(candidate.id, candidate);
+    for (const candidate of [...byId.values()].slice(0, 10)) {
+      const evidence = candidate.l1Ids
+        .map((id) => this.l1.getMemory(id, access.readableSpaceIds))
+        .filter((item): item is L1Memory => item !== undefined);
+      if (evidence.length === candidate.l1Ids.length)
+        candidates.push({ memory: candidate, evidence });
+    }
+    const replacementByCandidate = new Map<string, ReadonlySet<string>>();
+    let candidatesForModel = candidates;
+    if (this.options.judge && candidates.length) {
+      const judged: L2Candidate[] = [];
+      try {
+        for (const candidate of candidates) {
+          const judgments = await this.options.judge.judge({
+            current: {
+              title: candidate.memory.title,
+              summary: candidate.memory.summary,
+              body: candidate.memory.body,
+              updatedAt: candidate.memory.updatedAt,
+            },
+            changes: [{ id: l1Id, content: memory.content, createdAt: memory.createdAt }],
+          });
+          if (!Array.isArray(judgments) || judgments.length !== 1)
+            throw new MemoryDecisionError('JEV_OUTPUT_INVALID', 'failed', 'Incomplete judgment.');
+          const judgment = judgments[0];
+          if (
+            !judgment ||
+            judgment.changedL1Id !== l1Id ||
+            !MEMORY_CHANGE_TYPES.includes(judgment.type)
+          )
+            throw new MemoryDecisionError('JEV_OUTPUT_INVALID', 'failed', 'Invalid judgment.');
+          if (judgment.type === 'replacement')
+            replacementByCandidate.set(candidate.memory.id, new Set([l1Id]));
+          else judged.push(candidate);
+        }
+        candidatesForModel = judged;
+      } catch (cause) {
+        throw new MemoryError('L2_DECISION_FAILED', 'Memory change judgment failed.', { cause });
+      }
+    }
+    return {
+      l1Id,
+      ownerSpaceId,
+      loaded,
+      candidates,
+      candidatesForModel,
+      replacementByCandidate,
+      now,
+    };
+  }
+
+  applyStream(
+    preparation: L2StreamPreparation,
+    raw: unknown,
+    access: MemoryAccess
+  ): L2StreamResult {
+    validateAccess(access);
+    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
+    const memory = this.l1.getMemory(preparation.l1Id, access.readableSpaceIds);
+    if (!memory || l1Hash(memory) !== l1Hash(preparation.loaded[0].memory))
+      throw new MemoryError('L2_STALE_INPUT', 'The L1 source changed before stream commit.');
+    const proposal = validateProposal(raw, preparation.loaded, preparation.candidatesForModel);
+    const known = new Map<string, L1Memory>();
+    known.set(memory.id, memory);
+    for (const candidate of preparation.candidates)
+      for (const evidence of candidate.evidence) known.set(evidence.id, evidence);
+    const candidateById = new Map(
+      preparation.candidatesForModel.map((item) => [item.memory.id, item])
+    );
+    const replacementTarget = new Map<string, string>();
+    let committed = 0;
+    let skipped = 0;
+    const l2Ids: string[] = [];
+    const now = new Date().toISOString();
+    for (const draft of proposal.results) {
+      const used = draft.l1Ids.map((id) => {
+        const item = known.get(id);
+        if (!item) throw new MemoryError('L2_STALE_INPUT', 'An L1 source is unavailable.');
+        return item;
+      });
+      const scope = intersection(used.map(l1Scope));
+      if (!scope.includes(preparation.ownerSpaceId))
+        throw new MemoryError('L2_SCOPE_EMPTY', 'No common scope.');
+      const relatedSpaceIds = scope.filter((id) => id !== preparation.ownerSpaceId);
+      const sourceIds = [...new Set(used.flatMap((item) => item.sourceIds))].sort();
+      const contentHash = l2Hash(draft);
+      const generationId = randomUUID();
+      const syntheticJob = {
+        id: `stream:${preparation.l1Id}`,
+        ownerSpaceId: preparation.ownerSpaceId,
+        state: 'running' as const,
+        createdAt: now,
+        updatedAt: now,
+      };
+      if (draft.action === 'update') {
+        const candidate = draft.l2Id ? candidateById.get(draft.l2Id) : undefined;
+        if (!candidate) throw new MemoryError('L2_STALE_INPUT', 'L2 candidate unavailable.');
+        const current = this.repository.getMemory(candidate.memory.id, access.readableSpaceIds);
+        if (!current) throw new MemoryError('L2_STALE_INPUT', 'L2 candidate unavailable.');
+        const unchanged =
+          current.visible &&
+          !current.needsUpdate &&
+          current.title === draft.title &&
+          current.summary === draft.summary &&
+          current.body === draft.body &&
+          JSON.stringify([...current.l1Ids].sort()) === JSON.stringify([...draft.l1Ids].sort()) &&
+          JSON.stringify(current.relatedSpaceIds) === JSON.stringify(relatedSpaceIds) &&
+          JSON.stringify(current.sourceIds) === JSON.stringify(sourceIds);
+        if (unchanged) {
+          skipped++;
+          l2Ids.push(current.id);
+        } else {
+          const applied = this.repository.applyUpdate(syntheticJob, {
+            l2Id: current.id,
+            expectedHash: candidate.memory.contentHash,
+            expectedL1Ids: candidate.memory.l1Ids,
+            title: draft.title,
+            summary: draft.summary,
+            body: draft.body,
+            l1Ids: draft.l1Ids,
+            sourceIds,
+            relatedSpaceIds,
+            generationId,
+            contentHash,
+            now,
+          });
+          committed++;
+          l2Ids.push(applied.id);
+          for (const [oldId, triggers] of preparation.replacementByCandidate)
+            if (!replacementTarget.has(oldId) && draft.l1Ids.some((id) => triggers.has(id)))
+              replacementTarget.set(oldId, applied.id);
+        }
+      } else {
+        const created = this.repository.applyCreate(syntheticJob, {
+          title: draft.title,
+          summary: draft.summary,
+          body: draft.body,
+          l1Ids: draft.l1Ids,
+          sourceIds,
+          relatedSpaceIds,
+          generationId,
+          contentHash,
+          now,
+        });
+        committed++;
+        l2Ids.push(created.id);
+        for (const [oldId, triggers] of preparation.replacementByCandidate)
+          if (!replacementTarget.has(oldId) && draft.l1Ids.some((id) => triggers.has(id)))
+            replacementTarget.set(oldId, created.id);
+      }
+    }
+    for (const [oldId, newId] of replacementTarget) {
+      const candidate = preparation.candidates.find((item) => item.memory.id === oldId);
+      if (candidate && candidate.memory.id !== newId)
+        this.repository.applySupersede(oldId, newId, candidate.memory.contentHash, now);
+    }
+    return { committed, skipped, l2Ids };
   }
 
   async run(id: string, model: L2GenerationModel, access: MemoryAccess): Promise<L2Job> {
@@ -476,6 +708,7 @@ export class L2Service {
     const failed = new Map<string, string>();
     let committed = 0;
     let skipped = 0;
+    const l2Ids: string[] = [];
     let failedCount = 0;
     let firstFailure: string | undefined;
 

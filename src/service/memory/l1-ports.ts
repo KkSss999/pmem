@@ -31,6 +31,7 @@ export interface L1Repository {
     drafts: readonly L1Draft[],
     now: string
   ): void;
+  commitStream(input: readonly L0Message[], drafts: readonly L1Draft[], now: string): L1Memory[];
   failJob(id: string, token: string, state: 'failed' | 'unknown', code: string, now: string): void;
   retryJob(id: string, state: 'failed' | 'unknown', now: string): L1Job | undefined;
   getMemory(id: string, readableSpaceIds: readonly string[]): L1Memory | undefined;

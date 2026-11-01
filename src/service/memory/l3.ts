@@ -41,6 +41,14 @@ const KINDS: readonly L3KeywordKind[] = [
   'other',
 ];
 
+export interface L3StreamPreparation {
+  l2Id: string;
+  l2Hash: string;
+  memory: L2Memory;
+  keywords: readonly L3Keyword[];
+  now: string;
+}
+
 export interface L3ServiceOptions {
   ttlMs?: number;
   defaultLimit?: number;
@@ -537,6 +545,77 @@ export class L3Service {
     );
     if (!result) throw new MemoryError('JOB_NOT_PENDING', 'L3 job changed before retry.');
     return result;
+  }
+
+  streamSourceHash(l2Id: string): string | undefined {
+    identifier(l2Id, 'L2 ID');
+    return this.repository.l2Hash(l2Id);
+  }
+
+  prepareStream(l2Id: string, expectedHash: string, access: MemoryAccess): L3StreamPreparation {
+    identifier(l2Id, 'L2 ID');
+    identifier(expectedHash, 'L2 hash');
+    validateAccess(access);
+    const memory = this.l2.getMemory(l2Id, access.readableSpaceIds);
+    if (
+      !memory ||
+      !memory.visible ||
+      !memory.sourcesComplete ||
+      !access.readableSpaceIds.includes(memory.ownerSpaceId) ||
+      this.repository.l2Hash(l2Id) !== expectedHash
+    )
+      throw new MemoryError('L3_STALE_INPUT', 'An L2 source is unavailable for streaming.');
+    const now = new Date().toISOString();
+    return {
+      l2Id,
+      l2Hash: expectedHash,
+      memory,
+      keywords: this.repository.listRelatedKeywords([l2Id], now, 100),
+      now,
+    };
+  }
+
+  applyStream(
+    preparation: L3StreamPreparation,
+    raw: unknown,
+    access: MemoryAccess
+  ): readonly string[] {
+    validateAccess(access);
+    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
+    if (this.repository.l2Hash(preparation.l2Id) !== preparation.l2Hash)
+      throw new MemoryError('L3_STALE_INPUT', 'An L2 source changed before stream commit.');
+    if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { keywords?: unknown }).keywords))
+      throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'L3 output must contain keywords.');
+    const rawKeywords = (raw as { keywords: unknown[] }).keywords;
+    if (rawKeywords.length > MAX_RESULTS)
+      throw new MemoryError('L3_MODEL_OUTPUT_INVALID', 'Too many L3 keywords.');
+    const memory = preparation.memory;
+    const allowed = new Set([memory.id]);
+    const memories = new Map([[memory.id, memory]]);
+    const committed: string[] = [];
+    for (const rawKeyword of rawKeywords) {
+      const validated = validateDraft(rawKeyword, allowed, memories);
+      const normalizedTerm = normalizeL3Term(validated.draft.term);
+      const existing = preparation.keywords.find(
+        (keyword) =>
+          keyword.normalizedTerm === normalizedTerm &&
+          keyword.sourceL2Ids.some((id) => validated.draft.l2Ids.includes(id))
+      );
+      const keyword = this.repository.upsertKeyword({
+        id: existing?.id,
+        term: validated.draft.term,
+        aliases: validated.draft.aliases,
+        kind: validated.draft.kind,
+        baseWeight: validated.draft.baseWeight,
+        relatedSpaceIds: validated.relatedSpaceIds,
+        sourceL2Ids: validated.draft.l2Ids,
+        expiresAt: this.expiry(preparation.now),
+        now: preparation.now,
+        mergeSources: true,
+      });
+      committed.push(keyword.id);
+    }
+    return committed;
   }
 
   async run(id: string, model: L3GenerationModel, access: MemoryAccess): Promise<L3Job> {

@@ -7,31 +7,35 @@ const path = require('node:path');
 const { test } = require('node:test');
 const Database = require('better-sqlite3');
 
+const sharedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-agent-'));
+process.on('exit', () => fs.rmSync(sharedRoot, { recursive: true, force: true }));
+fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(sharedRoot, 'dist'), { recursive: true });
+fs.cpSync(path.join(__dirname, '..', 'migrations'), path.join(sharedRoot, 'migrations'), {
+  recursive: true,
+});
+fs.symlinkSync(
+  path.join(__dirname, '..', 'node_modules'),
+  path.join(sharedRoot, 'node_modules'),
+  'dir'
+);
+let caseIndex = 0;
 function fixture(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pmem-agent-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.cpSync(path.join(__dirname, '..', 'dist'), path.join(root, 'dist'), { recursive: true });
-  fs.cpSync(path.join(__dirname, '..', 'migrations'), path.join(root, 'migrations'), {
-    recursive: true,
-  });
-  fs.symlinkSync(
-    path.join(__dirname, '..', 'node_modules'),
-    path.join(root, 'node_modules'),
-    'dir'
-  );
-  const { OwnedDatabase } = require(path.join(root, 'dist/db/database'));
-  const { assembleL1 } = require(path.join(root, 'dist/server/l1'));
-  const { assembleL1Maintenance } = require(path.join(root, 'dist/server/l1-maintenance'));
-  const { assembleL2 } = require(path.join(root, 'dist/server/l2'));
-  const { AgentMemory } = require(path.join(root, 'dist/agent/memory'));
-  const { createSingleUserAgentHost } = require(path.join(root, 'dist/agent/access'));
-  const { createPmemMemoryPlugin } = require(path.join(root, 'dist/agent/plugin'));
-  const { PmemAgentRuntime } = require(path.join(root, 'dist/agent/runtime'));
+  const root = path.join(sharedRoot, `case-${++caseIndex}`);
+  fs.mkdirSync(root);
+  const { OwnedDatabase } = require(path.join(sharedRoot, 'dist/db/database'));
+  const { assembleL1 } = require(path.join(sharedRoot, 'dist/server/l1'));
+  const { assembleL1Maintenance } = require(path.join(sharedRoot, 'dist/server/l1-maintenance'));
+  const { assembleL2 } = require(path.join(sharedRoot, 'dist/server/l2'));
+  const { AgentMemory } = require(path.join(sharedRoot, 'dist/agent/memory'));
+  const { createSingleUserAgentHost } = require(path.join(sharedRoot, 'dist/agent/access'));
+  const { createPmemMemoryPlugin } = require(path.join(sharedRoot, 'dist/agent/plugin'));
+  const { PmemAgentRuntime } = require(path.join(sharedRoot, 'dist/agent/runtime'));
   const db = OwnedDatabase.create(path.join(root, 'memory.sqlite'));
   return {
-    root,
+    root: sharedRoot,
+    caseRoot: root,
     db,
-    memoryService: require(path.join(root, 'dist/server/memory')).assembleMemory(db),
+    memoryService: require(path.join(sharedRoot, 'dist/server/memory')).assembleMemory(db),
     l1: assembleL1(db),
     maintenance: assembleL1Maintenance(db),
     l2: assembleL2(db),
@@ -61,57 +65,46 @@ async function makeL1(f, jobId, content) {
     { spaceId: 'personal', role: 'user', content: `source ${jobId} ${content}` },
     personal
   ).message;
-  f.l1.enqueue({ id: jobId, sourceIds: [source.id], relatedSpaceIds: [] }, personal);
-  await f.l1.run(
-    jobId,
+  const preparation = f.l1.prepareStream(source.id, personal);
+  const [memory] = f.l1.applyStream(
+    preparation,
     {
-      extract: async () => ({
-        memories: [
-          {
-            content,
-            abstraction: '主题',
-            cues: ['线索'],
-            sourceIds: [source.id],
-            relatedSpaceIds: [],
-          },
-        ],
-      }),
+      memories: [
+        {
+          content,
+          abstraction: '主题',
+          cues: ['线索'],
+          sourceIds: [source.id],
+          relatedSpaceIds: [],
+        },
+      ],
     },
     personal
   );
-  const memory = f.l1.getJobMemories(jobId, personal)[0];
-  const work = f.maintenance.startBatch(
-    {
-      review: async ({ cases }) => ({ decisions: cases.map((item) => keep(item.memory.id)) }),
-    },
-    personal
-  );
-  if (work) await work;
+  const maintenance = f.maintenance.prepareStream(memory.id, personal);
+  f.maintenance.applyStream(maintenance, { decisions: [keep(memory.id)] }, personal);
   return f.l1.getMemory(memory.id, personal);
 }
 
 async function makeL2(f, l1) {
-  f.l2.recordChange({ l1Id: l1.id, kind: 'created' }, personal);
-  f.l2.enqueue({ id: `job-${l1.id}`, ownerSpaceId: 'personal' }, personal);
-  await f.l2.run(
-    `job-${l1.id}`,
+  const preparation = await f.l2.prepareStream(l1.id, personal);
+  const result = f.l2.applyStream(
+    preparation,
     {
-      generate: async ({ changes }) => ({
-        results: changes.map((item) => ({
+      results: [
+        {
           action: 'create',
           title: '阿岚',
           summary: '角色与偏好',
-          body: item.memory.content,
-          l1Ids: [item.memory.id],
-        })),
-        uncoveredL1Ids: [],
-      }),
+          body: l1.content,
+          l1Ids: [l1.id],
+        },
+      ],
+      uncoveredL1Ids: [],
     },
     personal
   );
-  return f.l2
-    .listMemories({ ownerSpaceId: 'personal' }, personal)
-    .find((memory) => memory.l1Ids.includes(l1.id));
+  return f.l2.getMemory(result.l2Ids[0], personal);
 }
 
 const pluginContext = {
@@ -190,7 +183,7 @@ test('PmemAgentRuntime uses MiaoTs and captures the conversation into L0', async
   const f = fixture(t);
   const runtime = await f.PmemAgentRuntime.create({
     database: f.db,
-    agentDatabasePath: path.join(f.root, 'agent.sqlite'),
+    agentDatabasePath: path.join(f.caseRoot, 'agent.sqlite'),
     faux: true,
   });
   try {
@@ -213,7 +206,7 @@ test('PmemAgentRuntime uses MiaoTs and captures the conversation into L0', async
 
 test('PmemAgentRuntime persists Sessions across process-local runtimes', async (t) => {
   const f = fixture(t);
-  const agentDatabasePath = path.join(f.root, 'agent.sqlite');
+  const agentDatabasePath = path.join(f.caseRoot, 'agent.sqlite');
   const first = await f.PmemAgentRuntime.create({
     database: f.db,
     agentDatabasePath,
@@ -249,7 +242,7 @@ test('PmemAgentRuntime auto-recalls memory into appended context and records mod
   const l2 = await makeL2(f, l1);
   const runtime = await f.PmemAgentRuntime.create({
     database: f.db,
-    agentDatabasePath: path.join(f.root, 'agent.sqlite'),
+    agentDatabasePath: path.join(f.caseRoot, 'agent.sqlite'),
     faux: true,
   });
   try {
@@ -288,9 +281,9 @@ test('PmemAgentRuntime auto-recalls memory into appended context and records mod
 test('Pmem SDK exposes the Agent runtime over its own database', async (t) => {
   const f = fixture(t);
   const { Pmem } = require(path.join(f.root, 'dist/sdk/index'));
-  const pmem = Pmem.create({ databasePath: path.join(f.root, 'sdk-memory.sqlite') });
+  const pmem = Pmem.create({ databasePath: path.join(f.caseRoot, 'sdk-memory.sqlite') });
   const runtime = await pmem.agent({
-    agentDatabasePath: path.join(f.root, 'sdk-agent.sqlite'),
+    agentDatabasePath: path.join(f.caseRoot, 'sdk-agent.sqlite'),
     faux: true,
   });
   try {

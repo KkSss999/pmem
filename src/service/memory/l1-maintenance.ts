@@ -12,6 +12,14 @@ import { MemoryError, type MemoryAccess } from '../../domain/memory/types';
 import { identifier, requireRead, validateAccess } from './index';
 import type { L1MaintenanceRepository, PreparedMaintenance } from './l1-maintenance-ports';
 
+export interface L1MaintenanceStreamPreparation {
+  memoryId: string;
+  token: string;
+  cases: readonly PreparedMaintenance[];
+  modelCases: readonly MaintenanceCase[];
+  now: string;
+}
+
 function allowed(access: MemoryAccess): string[] {
   validateAccess(access);
   return access.readableSpaceIds.filter((id) => access.writableSpaceIds.includes(id));
@@ -79,6 +87,63 @@ export class L1MaintenanceService {
     private readonly repository: L1MaintenanceRepository,
     private readonly readOnly: boolean
   ) {}
+
+  prepareStream(memoryId: string, access: MemoryAccess): L1MaintenanceStreamPreparation {
+    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
+    identifier(memoryId, 'memory ID');
+    const spaces = allowed(access);
+    const token = randomUUID();
+    const now = new Date().toISOString();
+    if (!this.repository.claimStream(memoryId, spaces, token, now))
+      throw new MemoryError('JOB_NOT_PENDING', 'Maintenance item is not pending.');
+    const cases = this.repository.prepare([memoryId], spaces, token);
+    const modelCases: MaintenanceCase[] = cases
+      .filter((item) => item.candidates.length)
+      .map((item) => ({
+        memory: view(item.memory),
+        candidates: item.candidates.map(view),
+      }));
+    return { memoryId, token, cases, modelCases, now };
+  }
+
+  applyStream(
+    preparation: L1MaintenanceStreamPreparation,
+    raw: unknown,
+    access: MemoryAccess
+  ): string | undefined {
+    const spaces = allowed(access);
+    try {
+      const withCandidates = preparation.cases.filter((item) => item.candidates.length);
+      const decisions = withCandidates.length ? validate(raw, withCandidates) : [];
+      for (const item of preparation.cases)
+        if (!item.candidates.length) decisions.push({ memoryId: item.memory.id, action: 'keep' });
+      this.repository.apply(
+        preparation.cases,
+        decisions,
+        spaces,
+        preparation.token,
+        new Date().toISOString()
+      );
+      return this.repository.getTask(preparation.memoryId, spaces)?.resultMemoryId;
+    } catch (cause) {
+      if (cause instanceof MemoryError && cause.code === 'SOURCE_CONFLICT') {
+        this.repository.release(
+          [preparation.memoryId],
+          preparation.token,
+          new Date().toISOString()
+        );
+        return undefined;
+      }
+      this.repository.fail(
+        [preparation.memoryId],
+        preparation.token,
+        'failed',
+        cause instanceof MemoryError ? cause.code : 'MAINTENANCE_UNKNOWN',
+        new Date().toISOString()
+      );
+      throw cause;
+    }
+  }
 
   startBatch(model: L1MaintenanceModel, access: MemoryAccess): Promise<void> | undefined {
     if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');

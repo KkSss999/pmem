@@ -301,6 +301,81 @@ export class SqliteL1Repository implements L1Repository {
     });
   }
 
+  commitStream(input: readonly L0Message[], drafts: readonly L1Draft[], now: string): L1Memory[] {
+    if (!input.length) throw new MemoryError('INVALID_INPUT', 'A stream source is required.');
+    const created: string[] = [];
+    this.db.transaction(
+      (tx) => {
+        for (const old of input) {
+          const row = tx.select().from(l0Messages).where(eq(l0Messages.id, old.id)).get();
+          if (
+            !row ||
+            row.content !== old.content ||
+            row.spaceId !== old.spaceId ||
+            row.role !== old.role ||
+            row.sequence !== old.sequence ||
+            row.recordedAt !== old.recordedAt ||
+            (row.occurredAt ?? undefined) !== old.occurredAt ||
+            (row.sessionId ?? undefined) !== old.sessionId ||
+            (row.source ?? undefined) !== old.source ||
+            (row.sourceEventId ?? undefined) !== old.sourceEventId
+          )
+            throw new MemoryError('SOURCE_CONFLICT', 'A stream source changed before commit.');
+        }
+        const jobId = `stream:${input[0].id}`;
+        for (const draft of drafts) {
+          const memoryId = randomUUID();
+          tx.insert(l1Memories)
+            .values({
+              id: memoryId,
+              jobId,
+              spaceId: input[0].spaceId,
+              content: draft.content,
+              abstraction: draft.abstraction,
+              maintenanceStatus: 'pending',
+              createdAt: now,
+            })
+            .run();
+          tx.insert(l1MaintenanceTasks)
+            .values({
+              memoryId,
+              spaceId: input[0].spaceId,
+              state: 'pending',
+              resultMemoryId: memoryId,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run();
+          tx.insert(l1Sources)
+            .values(draft.sourceIds.map((l0Id) => ({ memoryId, l0Id })))
+            .run();
+          if (draft.cues.length)
+            tx.insert(l1Cues)
+              .values(draft.cues.map((cue) => ({ memoryId, cue })))
+              .run();
+          const sourceSpaces = draft.sourceIds
+            .map((id) => input.find((source) => source.id === id)?.spaceId)
+            .filter((id): id is string => !!id);
+          const relatedSpaceIds = [...new Set([...draft.relatedSpaceIds, ...sourceSpaces])].filter(
+            (id) => id !== input[0].spaceId
+          );
+          if (relatedSpaceIds.length)
+            tx.insert(l1SpaceLinks)
+              .values(relatedSpaceIds.map((spaceId) => ({ memoryId, spaceId })))
+              .run();
+          created.push(memoryId);
+        }
+      },
+      { behavior: 'immediate' }
+    );
+    return created.map((id) =>
+      this.loadMemory(
+        id,
+        input.map((item) => item.spaceId)
+      )!
+    );
+  }
+
   failJob(
     id: string,
     token: string,

@@ -71,6 +71,27 @@
       "when": 1793439500000,
       "tag": "0009_l2_supersede",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1793439600000,
+      "tag": "0010_stream_queue",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793439700000,
+      "tag": "0011_stream_l1",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793439800000,
+      "tag": "0012_drop_jobs",
+      "breakpoints": true
     }
   ]
 }

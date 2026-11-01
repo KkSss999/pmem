@@ -12,7 +12,7 @@ import {
   l2Memories,
   l2SpaceLinks,
 } from './schema';
-import { invalidateL3ForL2Change, registerL3ChangeForL2 } from './l3-invalidation';
+import { invalidateL3ForL2Change } from './l3-invalidation';
 
 type Db = Pick<
   BetterSQLite3Database,
@@ -204,7 +204,6 @@ export function migrateL2LinksForMerge(
       .run();
     recomputeScope(db, l2Id, now);
     invalidateL3ForL2Change(db, l2Id, now);
-    registerL3ChangeForL2(db, l2Id, 'updated', now);
   }
   return affected;
 }
@@ -219,7 +218,6 @@ export function invalidateL2ForScopeChange(db: Db, l1Id: string, now: string): s
   for (const l2Id of affected) {
     recomputeScope(db, l2Id, now);
     invalidateL3ForL2Change(db, l2Id, now);
-    registerL3ChangeForL2(db, l2Id, 'updated', now);
   }
   return affected;
 }

@@ -7,21 +7,9 @@ import type {
   MaintenanceSnapshot,
   PreparedMaintenance,
 } from '../../service/memory/l1-maintenance-ports';
-import {
-  l1Cues,
-  l1JobResults,
-  l1MaintenanceTasks,
-  l1Memories,
-  l1Sources,
-  l1SpaceLinks,
-} from './schema';
+import { l1Cues, l1MaintenanceTasks, l1Memories, l1Sources, l1SpaceLinks } from './schema';
 import { assertIndexHealthy } from './l1-search-index';
-import {
-  hashMaintenanceSnapshot,
-  l1SnapshotHash,
-  migrateL2LinksForMerge,
-  recordL2Change,
-} from './l2-invalidation';
+import { migrateL2LinksForMerge } from './l2-invalidation';
 
 export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
   constructor(private readonly db: BetterSQLite3Database) {}
@@ -59,13 +47,6 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
       .orderBy(asc(l1Sources.l0Id))
       .all()
       .map((x) => x.value);
-    const jobIds = this.db
-      .select({ value: l1JobResults.jobId })
-      .from(l1JobResults)
-      .where(eq(l1JobResults.memoryId, id))
-      .orderBy(asc(l1JobResults.jobId))
-      .all()
-      .map((x) => x.value);
     return {
       id,
       spaceId: row.spaceId,
@@ -74,7 +55,7 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
       cues,
       scope: this.scope(id, row.spaceId),
       sourceIds,
-      jobIds,
+      jobIds: [],
       sequence: task.sequence,
       createdAt: row.createdAt,
     };
@@ -115,6 +96,28 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
             )
             .run();
         return selected.map((row) => row.id);
+      },
+      { behavior: 'immediate' }
+    );
+  }
+
+  claimStream(id: string, allowed: readonly string[], token: string, now: string): boolean {
+    if (!allowed.length) return false;
+    return this.db.transaction(
+      (tx) => {
+        const memory = tx
+          .select({ spaceId: l1Memories.spaceId })
+          .from(l1Memories)
+          .where(eq(l1Memories.id, id))
+          .get();
+        if (!memory || !allowed.includes(memory.spaceId)) return false;
+        const row = tx
+          .update(l1MaintenanceTasks)
+          .set({ state: 'running', claimToken: token, failureCode: null, updatedAt: now })
+          .where(and(eq(l1MaintenanceTasks.memoryId, id), eq(l1MaintenanceTasks.state, 'pending')))
+          .returning({ id: l1MaintenanceTasks.memoryId })
+          .get();
+        return !!row;
       },
       { behavior: 'immediate' }
     );
@@ -215,12 +218,6 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
           const current = this.snapshot(id);
           if (!current || JSON.stringify(current) !== JSON.stringify(item.memory))
             throw new MemoryError('SOURCE_CONFLICT', 'Maintenance memory changed.');
-          const wasComplete =
-            tx
-              .select({ status: l1Memories.maintenanceStatus })
-              .from(l1Memories)
-              .where(eq(l1Memories.id, id))
-              .get()?.status === 'complete';
           const changed = item.candidates.some((candidate) => {
             const latest = this.snapshot(candidate.id);
             const task = tx
@@ -265,16 +262,10 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
                 .values(current.sourceIds.map((l0Id) => ({ memoryId: target.id, l0Id })))
                 .onConflictDoNothing()
                 .run();
-            if (current.jobIds.length)
-              tx.insert(l1JobResults)
-                .values(current.jobIds.map((jobId) => ({ jobId, memoryId: target.id })))
-                .onConflictDoNothing()
-                .run();
             tx.update(l1MaintenanceTasks)
               .set({ resultMemoryId: target.id })
               .where(eq(l1MaintenanceTasks.resultMemoryId, id))
               .run();
-            tx.delete(l1JobResults).where(eq(l1JobResults.memoryId, id)).run();
             tx.delete(l1Sources).where(eq(l1Sources.memoryId, id)).run();
             tx.delete(l1Cues).where(eq(l1Cues.memoryId, id)).run();
             tx.delete(l1SpaceLinks).where(eq(l1SpaceLinks.memoryId, id)).run();
@@ -290,24 +281,6 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
               .where(eq(l1MaintenanceTasks.memoryId, id))
               .run();
             migrateL2LinksForMerge(tx, id, target.id, now);
-            recordL2Change(tx, {
-              l1Id: id,
-              ownerSpaceId: current.spaceId,
-              kind: 'merged',
-              l1Hash: hashMaintenanceSnapshot(current),
-              state: 'processed',
-              survivorL1Id: target.id,
-              now,
-            });
-            const targetHash = l1SnapshotHash(tx, target.id);
-            if (targetHash)
-              recordL2Change(tx, {
-                l1Id: target.id,
-                ownerSpaceId: target.spaceId,
-                kind: 'content_changed',
-                l1Hash: targetHash,
-                now,
-              });
           } else {
             tx.update(l1Memories)
               .set({ maintenanceStatus: 'complete' })
@@ -323,15 +296,6 @@ export class SqliteL1MaintenanceRepository implements L1MaintenanceRepository {
               })
               .where(eq(l1MaintenanceTasks.memoryId, id))
               .run();
-            const changedHash = l1SnapshotHash(tx, id);
-            if (changedHash)
-              recordL2Change(tx, {
-                l1Id: id,
-                ownerSpaceId: item.memory.spaceId,
-                kind: wasComplete ? 'content_changed' : 'created',
-                l1Hash: changedHash,
-                now,
-              });
           }
         }
       },

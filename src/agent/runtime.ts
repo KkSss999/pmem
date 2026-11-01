@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentApplication, AgentApplicationOptions } from '@miao/agent';
 import type { AgentServiceClient, AgentServiceEvent } from '@miao/agent/client';
+import type { HarnessAssemblyContribution, HarnessCatalogDocument } from '@miao/agent/harness';
+import type { CompiledExtension } from '@miao/agent/plugins';
 import type { OwnedDatabase } from '../db/database';
+import { assembleL1 } from '../server/l1';
+import { assembleMemoryStream } from '../server/stream';
 import type { ConversationRole } from '../domain/memory/types';
 import { createSingleUserAgentHost, PMEM_AGENT_WORKSPACE_ID } from './access';
 import type { PmemAgentHost } from './contracts';
@@ -39,6 +43,15 @@ export interface PmemAgentRuntimeOptions {
   providers?: MiaoProviders;
   modelCatalog?: MiaoModelCatalog;
   captureL0?: boolean;
+  plugin?: CompiledExtension;
+  harnessContent?: () => HarnessCatalogDocument;
+  harnessAssembly?: HarnessAssemblyContribution;
+  agentName?: string;
+  sessionTitle?: string;
+  resume?: { agentId: string; sessionId: string };
+  promptTimeoutMs?: number;
+  /** When set, captured user/assistant L0 messages enqueue L1 stream items. */
+  streamScopeId?: string;
 }
 
 export interface PmemPromptResult {
@@ -148,8 +161,15 @@ export class PmemAgentRuntime {
     private readonly recallQueries: Map<string, string>,
     readonly workspaceId: string,
     readonly agentId: string,
-    readonly sessionId: string,
-    private readonly captureL0: boolean
+    public sessionId: string,
+    private readonly sessionTitle: string,
+    private readonly captureL0: boolean,
+    private readonly promptTimeoutMs: number,
+    private readonly stream?: {
+      queue: import('../db/memory/stream-repository').MemoryStreamRepository;
+      l1: import('../service/memory/l1').L1Service;
+      scopeId: string;
+    }
   ) {
     if (captureL0) this.subscribeCapture();
   }
@@ -168,15 +188,17 @@ export class PmemAgentRuntime {
     const persistence = local.persistence;
     const recallQueries = new Map<string, string>();
     const modelCalls = new ModelCallCollector();
-    const plugin = await createPmemMemoryPlugin(memory, host, {
-      queryFor: (binding) => recallQueries.get(binding.sessionId),
-    });
+    const plugin =
+      options.plugin ??
+      (await createPmemMemoryPlugin(memory, host, {
+        queryFor: (binding) => recallQueries.get(binding.sessionId),
+      }));
     const { agent: miao, client: miaoClient } = await loadMiao();
     const application = miao.createAgentApplication({
       persistence,
       runtime: {
-        harnessContent: pmemHarnessContent,
-        harnessAssembly: pmemHarnessAssembly,
+        harnessContent: options.harnessContent ?? pmemHarnessContent,
+        harnessAssembly: options.harnessAssembly ?? pmemHarnessAssembly,
         faux: options.faux ?? false,
         modelCallSink: modelCalls,
         ...(options.model ? { defaultModel: options.model } : {}),
@@ -193,21 +215,51 @@ export class PmemAgentRuntime {
     const client = new miao.AgentServiceClient(miaoClient.createInProcessAgentTransport(endpoint));
     try {
       await client.start(randomUUID());
-      const identity = await client.command(
-        'identity.create',
-        { workspaceId, parentAgentId: null, name: 'PMEM' },
-        randomUUID()
-      );
-      const session = await client.command(
-        'session.create',
-        {
+      let agentId: string;
+      let sessionId: string;
+      const resumed = options.resume
+        ? await client.query(
+            'session.get',
+            {
+              target: {
+                workspaceId,
+                agentId: options.resume.agentId,
+                sessionId: options.resume.sessionId,
+              },
+            },
+            randomUUID()
+          )
+        : null;
+      if (resumed) {
+        agentId = options.resume!.agentId;
+        sessionId = resumed.sessionId;
+      } else {
+        const identity = await client.command(
+          'identity.create',
+          { workspaceId, parentAgentId: null, name: options.agentName ?? 'PMEM' },
+          randomUUID()
+        );
+        const session = await client.command(
+          'session.create',
+          {
+            workspaceId,
+            agentId: identity.identity.agentId,
+            title: options.sessionTitle ?? 'PMEM Agent',
+            ...(options.model ? { model: options.model } : {}),
+          },
+          randomUUID()
+        );
+        agentId = identity.identity.agentId;
+        sessionId = session.session.sessionId;
+      }
+      const streamScopeId =
+        options.streamScopeId ??
+        host.scope({
           workspaceId,
-          agentId: identity.identity.agentId,
-          title: 'PMEM Agent',
-          ...(options.model ? { model: options.model } : {}),
-        },
-        randomUUID()
-      );
+          agentId,
+          sessionId,
+        }).l0SpaceId;
+      const streamStore = assembleMemoryStream(options.database);
       return new PmemAgentRuntime(
         application,
         client,
@@ -217,9 +269,18 @@ export class PmemAgentRuntime {
         modelCalls,
         recallQueries,
         workspaceId,
-        identity.identity.agentId,
-        session.session.sessionId,
-        options.captureL0 ?? true
+        agentId,
+        sessionId,
+        options.sessionTitle ?? 'PMEM Agent',
+        options.captureL0 ?? true,
+        options.promptTimeoutMs ?? PROMPT_TIMEOUT_MS,
+        options.captureL0 === false
+          ? undefined
+          : {
+              queue: streamStore.queue,
+              l1: assembleL1(options.database),
+              scopeId: streamScopeId,
+            }
       );
     } catch (error) {
       client.dispose();
@@ -227,6 +288,25 @@ export class PmemAgentRuntime {
       local.close();
       throw error;
     }
+  }
+
+  /** Start a fresh session for the same Agent when the context budget is reached. */
+  async rotateSession(): Promise<string> {
+    const result = await this.client.command(
+      'session.create',
+      {
+        workspaceId: this.workspaceId,
+        agentId: this.agentId,
+        title: `${this.sessionTitle} (rotated)`,
+      },
+      randomUUID()
+    );
+    this.sessionId = result.session.sessionId;
+    if (this.captureL0) {
+      this.unsubscribeCapture?.();
+      this.subscribeCapture();
+    }
+    return this.sessionId;
   }
 
   /** Send one user turn and return the next completed assistant text. */
@@ -261,6 +341,14 @@ export class PmemAgentRuntime {
   /** Model-call accounting exposed by MiaoTs; cacheRead is provider-reported. */
   modelCalls(): readonly PmemModelCall[] {
     return this.modelCallsStore.list();
+  }
+
+  /** Provider-reported prompt size of the most recent model call. */
+  contextTokens(): number {
+    const calls = this.modelCallsStore.list();
+    const usage = calls[calls.length - 1]?.usage?.tokens;
+    if (!usage) return 0;
+    return usage.input + usage.cacheRead + usage.cacheWrite;
   }
 
   cacheMetrics(): readonly PmemCacheMetrics[] {
@@ -362,7 +450,7 @@ export class PmemAgentRuntime {
     });
     this.captureQueue = this.captureQueue
       .then(() => {
-        this.memory.appendL0(
+        const appended = this.memory.appendL0(
           {
             spaceId: scope.l0SpaceId,
             role,
@@ -374,6 +462,14 @@ export class PmemAgentRuntime {
           },
           scope.access
         );
+        if (this.stream)
+          this.stream.queue.enqueue({
+            workspaceId: this.workspaceId,
+            scopeId: this.stream.scopeId,
+            kind: 'l1-extract',
+            subjectId: appended.message.id,
+            sourceHash: this.stream.l1.streamSourceHash(appended.message.id, scope.access),
+          });
       })
       .catch((error: unknown) => {
         this.captureError ??= error;
@@ -403,7 +499,7 @@ export class PmemAgentRuntime {
     timer = setTimeout(() => {
       cleanup();
       reject(new Error('Timed out waiting for the Agent response.'));
-    }, PROMPT_TIMEOUT_MS);
+    }, this.promptTimeoutMs);
     unsubscribe = this.client.subscribe(
       (event) => {
         if (settled) return;

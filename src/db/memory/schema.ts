@@ -59,9 +59,7 @@ export const l1Memories = sqliteTable(
   'memory_l1',
   {
     id: text('id').primaryKey(),
-    jobId: text('job_id')
-      .notNull()
-      .references(() => l1Jobs.id),
+    jobId: text('job_id').notNull(),
     spaceId: text('space_id')
       .notNull()
       .references(() => spaces.id),
@@ -147,9 +145,7 @@ export const l1Jobs = sqliteTable(
 export const l1JobResults = sqliteTable(
   'memory_l1_job_results',
   {
-    jobId: text('job_id')
-      .notNull()
-      .references(() => l1Jobs.id),
+    jobId: text('job_id').notNull(),
     memoryId: text('memory_id')
       .notNull()
       .references(() => l1Memories.id),
@@ -189,9 +185,7 @@ export const l1MaintenanceTasks = sqliteTable(
 export const l1JobSources = sqliteTable(
   'memory_l1_job_sources',
   {
-    jobId: text('job_id')
-      .notNull()
-      .references(() => l1Jobs.id),
+    jobId: text('job_id').notNull(),
     l0Id: text('l0_id')
       .notNull()
       .references(() => l0Messages.id),
@@ -220,9 +214,7 @@ export const l1AutoGroups = sqliteTable(
 export const l1JobSpaces = sqliteTable(
   'memory_l1_job_spaces',
   {
-    jobId: text('job_id')
-      .notNull()
-      .references(() => l1Jobs.id),
+    jobId: text('job_id').notNull(),
     spaceId: text('space_id')
       .notNull()
       .references(() => spaces.id),

@@ -19,6 +19,7 @@ export interface PreparedMaintenance {
 }
 export interface L1MaintenanceRepository {
   claim(allowed: readonly string[], token: string, now: string): string[];
+  claimStream(id: string, allowed: readonly string[], token: string, now: string): boolean;
   prepare(ids: readonly string[], allowed: readonly string[], token: string): PreparedMaintenance[];
   apply(
     cases: readonly PreparedMaintenance[],

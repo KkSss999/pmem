@@ -1,5 +1,5 @@
-import { MemoryError, type MemoryAccess } from '../../domain/memory/types';
-import { randomUUID } from 'node:crypto';
+import { MemoryError, type L0Message, type MemoryAccess } from '../../domain/memory/types';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   L1ModelError,
   type L1Draft,
@@ -13,6 +13,12 @@ import {
 import { identifier, requireRead, requireWrite, validateAccess } from './index';
 import type { MemoryRepository } from './ports';
 import type { L1Repository } from './l1-ports';
+
+export interface L1StreamPreparation {
+  message: L0Message;
+  space: import('../../domain/memory/types').MemorySpace;
+  now: string;
+}
 
 export interface QueueL1Input {
   id: string;
@@ -78,6 +84,46 @@ export class L1Service {
     private readonly l0: MemoryRepository,
     private readonly readOnly: boolean
   ) {}
+
+  streamSourceHash(messageId: string, access: MemoryAccess): string {
+    identifier(messageId, 'message ID');
+    validateAccess(access);
+    const message = this.l0.getMessage(messageId, access.readableSpaceIds);
+    if (!message) throw new MemoryError('JOB_NOT_FOUND', 'L0 message not found.');
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          id: message.id,
+          spaceId: message.spaceId,
+          role: message.role,
+          content: message.content,
+          occurredAt: message.occurredAt ?? null,
+          recordedAt: message.recordedAt,
+        })
+      )
+      .digest('hex');
+  }
+
+  prepareStream(messageId: string, access: MemoryAccess): L1StreamPreparation {
+    identifier(messageId, 'message ID');
+    validateAccess(access);
+    const message = this.l0.getMessage(messageId, access.readableSpaceIds);
+    if (!message) throw new MemoryError('JOB_NOT_FOUND', 'L0 message not found.');
+    requireRead(access, message.spaceId);
+    requireWrite(access, message.spaceId);
+    const space = this.l0.getSpace(message.spaceId);
+    if (!space) throw new MemoryError('SPACE_NOT_FOUND', 'Space does not exist.');
+    return { message, space, now: new Date().toISOString() };
+  }
+
+  applyStream(prep: L1StreamPreparation, raw: unknown, access: MemoryAccess): L1Memory[] {
+    validateAccess(access);
+    if (this.readOnly) throw new MemoryError('READ_ONLY', 'Memory is read-only.');
+    requireRead(access, prep.message.spaceId);
+    requireWrite(access, prep.message.spaceId);
+    const drafts = validateDrafts(raw, [prep.message.id], []);
+    return this.repository.commitStream([prep.message], drafts, new Date().toISOString());
+  }
 
   enqueue(input: QueueL1Input, access: MemoryAccess): L1Job {
     if (!input || typeof input !== 'object')
